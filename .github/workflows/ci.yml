@@ -89,6 +89,7 @@ jobs:
         run: >
           maturin build --release
           --target wasm32-unknown-emscripten
+          --no-default-features
           -i python3.12
       - name: Upload wasm wheel artifact
         uses: actions/upload-artifact@v4
