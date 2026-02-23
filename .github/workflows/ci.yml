@@ -71,8 +71,10 @@ jobs:
       - name: Set up Emscripten SDK
         uses: mymindstorm/setup-emsdk@v14
         with:
-          # Keep this version in sync with the Pyodide version used in CI.
-          version: 3.1.58
+          # 3.1.65 ships Binaryen 119, which added --enable-bulk-memory-opt.
+          # EMSDK 3.1.58 (Binaryen 116) did not know this flag and failed.
+          # 3.1.65 is also the version used by Pyodide 0.27.
+          version: 3.1.65
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
