@@ -71,9 +71,10 @@ jobs:
       - name: Set up Emscripten SDK
         uses: mymindstorm/setup-emsdk@v14
         with:
-          # 3.1.65 ships Binaryen 119, which added --enable-bulk-memory-opt.
-          # EMSDK 3.1.58 (Binaryen 116) did not know this flag and failed.
-          # 3.1.65 is also the version used by Pyodide 0.27.
+          # 3.1.65 is the version used by Pyodide 0.27.
+          # wasm-opt is bypassed entirely via .cargo/config.toml (opt-level=0
+          # for wasm32-unknown-emscripten), so the exact Binaryen version does
+          # not matter.
           version: 3.1.65
       - name: Set up Python
         uses: actions/setup-python@v5

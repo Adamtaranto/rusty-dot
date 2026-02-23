@@ -1,0 +1,18 @@
+# Disable wasm-opt for wasm32-unknown-emscripten builds by forcing opt-level = 0
+# at the rustc level.  When rustc calls emcc as the linker with -O0, emcc skips
+# its wasm-opt post-processing step entirely.
+#
+# Without this override, maturin's --release flag causes emcc to run wasm-opt
+# with -O3 plus feature flags (including --enable-bulk-memory-opt).  The
+# --enable-bulk-memory-opt flag was added to emcc >= 3.1.65 but the bundled
+# wasm-opt binary in that same EMSDK release does not yet know the option,
+# producing:
+#
+#   error: Unknown option '--enable-bulk-memory-opt'
+#
+# Setting opt-level = 0 here for the wasm target does NOT affect native builds;
+# the [target.*] table is target-specific.  The compiled wasm bytecode will be
+# unoptimised, which is acceptable for a CI artefact whose purpose is to verify
+# that the crate links cleanly to wasm32-unknown-emscripten.
+[target.wasm32-unknown-emscripten]
+rustflags = ["-C", "opt-level=0"]
