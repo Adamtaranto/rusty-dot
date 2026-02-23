@@ -10,6 +10,10 @@ use pyo3::prelude::*;
 use std::collections::{HashMap, HashSet};
 
 /// A simple FM-index wrapper holding the necessary data structures.
+///
+/// The suffix array is computed once at construction time and stored so that
+/// `find` queries can be answered in O(k + m) time (where `k` is the pattern
+/// length and `m` is the number of occurrences) without rebuilding the SA.
 pub struct FmIdx {
     /// The BWT of the text.
     pub bwt_data: Vec<u8>,
@@ -17,8 +21,10 @@ pub struct FmIdx {
     pub less_data: Vec<usize>,
     /// The Occ table.
     pub occ_data: Occ,
-    /// The original text (needed for re-querying without storing the SA).
-    pub text: Vec<u8>,
+    /// Precomputed suffix array (never serialised; rebuilt from bytes on load).
+    pub sa: Vec<usize>,
+    /// Length of the indexed text including the sentinel character.
+    pub text_len: usize,
     /// Sampling rate for the occurrence table (stored as u32 to match bio API).
     pub occ_sampling: u32,
 }
@@ -27,11 +33,13 @@ impl FmIdx {
     /// Build an FM-index from a text sequence.
     ///
     /// The text must end with a sentinel character `$`.
+    /// The suffix array is computed once and stored for reuse across queries.
     /// The alphabet used is the DNA alphabet (A, C, G, T, N, $).
     ///
     /// # Arguments
     ///
-    /// * `text` - The sequence bytes (uppercase DNA + sentinel).
+    /// * `text` - The sequence bytes (uppercase DNA + sentinel).  Consumed by
+    ///   this function; only derived data structures are retained.
     ///
     /// # Returns
     ///
@@ -47,17 +55,22 @@ impl FmIdx {
         let less_data = less(&bwt_data, &alphabet);
         let occ_sampling: u32 = 3;
         let occ_data = Occ::new(&bwt_data, occ_sampling, &alphabet);
+        let text_len = text.len();
 
         Ok(FmIdx {
             bwt_data,
             less_data,
             occ_data,
-            text,
+            sa,
+            text_len,
             occ_sampling,
         })
     }
 
     /// Query the FM-index for all occurrences of a pattern.
+    ///
+    /// Uses the precomputed suffix array stored at construction time, so each
+    /// call runs in O(k + m) rather than O(n log n + m).
     ///
     /// # Arguments
     ///
@@ -67,13 +80,12 @@ impl FmIdx {
     ///
     /// A `Vec<usize>` of 0-based start positions in the original text.
     pub fn find(&self, pattern: &[u8]) -> Vec<usize> {
-        let sa = suffix_array(&self.text);
         let fm = FMIndex::new(&self.bwt_data, &self.less_data, &self.occ_data);
         match fm.backward_search(pattern.iter()) {
             BackwardSearchResult::Complete(interval) => interval
-                .occ(&sa)
+                .occ(&self.sa)
                 .into_iter()
-                .filter(|&pos| pos + pattern.len() <= self.text.len())
+                .filter(|&pos| pos + pattern.len() <= self.text_len)
                 .collect(),
             BackwardSearchResult::Partial(_, _) | BackwardSearchResult::Absent => Vec::new(),
         }

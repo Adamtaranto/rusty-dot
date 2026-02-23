@@ -22,13 +22,15 @@ pub struct CoordPair {
 
 /// Merge consecutive k-mer matches into contiguous coordinate runs.
 ///
-/// For each query position, there may be multiple target positions.
-/// This function collects all (query_pos, target_pos) pairs for a given
-/// k-mer length and merges runs where:
-/// - `query_pos[i+1] == query_pos[i] + 1` (consecutive in query)
-/// - `target_pos[i+1] == target_pos[i] + 1` (consecutive in target)
+/// For each query position there may be multiple target positions.
+/// This function collects all `(query_pos, target_pos)` pairs, groups them
+/// by *diagonal* (`target_pos as i64 − query_pos as i64`), and within each
+/// diagonal merges runs where `query_pos[i+1] == query_pos[i] + 1`
+/// (which implies `target_pos` also increments by 1 on the same diagonal).
 ///
-/// Each run is reported as a `CoordPair` with the merged start/end.
+/// Sorting by `(diagonal, query_pos)` rather than `(query_pos, target_pos)`
+/// is critical: the naive sort would interleave hits from different diagonals
+/// with the same query position, incorrectly breaking co-linear runs.
 ///
 /// # Arguments
 ///
@@ -38,7 +40,8 @@ pub struct CoordPair {
 ///
 /// # Returns
 ///
-/// A sorted `Vec<CoordPair>` of merged match regions.
+/// A `Vec<CoordPair>` of merged match regions, ordered by diagonal then
+/// query start position.
 pub fn merge_kmer_runs(
     kmer_coords: &HashMap<String, Vec<usize>>,
     query_kmer_positions: &HashMap<String, Vec<usize>>,
@@ -61,25 +64,31 @@ pub fn merge_kmer_runs(
         return Vec::new();
     }
 
-    // Sort by query position then target position
-    pairs.sort_unstable();
+    // Sort by (diagonal, query_pos) so that all hits on the same diagonal are
+    // adjacent and ordered by query position. This is essential for correct
+    // merging: sorting only by (query, target) would interleave hits from
+    // parallel diagonals sharing the same query position.
+    pairs.sort_unstable_by_key(|&(q, t)| (t as i64 - q as i64, q as i64));
     pairs.dedup();
 
-    // Merge consecutive runs
+    // Merge consecutive runs within each diagonal
     let mut merged: Vec<CoordPair> = Vec::new();
     let mut iter = pairs.iter().peekable();
 
-    if let Some(&(mut q_start, mut t_start)) = iter.next() {
-        let mut q_prev = q_start;
-        let mut t_prev = t_start;
+    if let Some(&(first_q, first_t)) = iter.next() {
+        let mut q_start = first_q;
+        let mut t_start = first_t;
+        let mut q_prev = first_q;
+        let mut t_prev = first_t;
 
         while let Some(&(q, t)) = iter.next() {
-            // Check if this pair extends the current run
-            if q == q_prev + 1 && t == t_prev + 1 {
+            // A hit extends the current run when it is on the same diagonal
+            // AND the query position increments by exactly 1.
+            let same_diag = (t as i64 - q as i64) == (t_prev as i64 - q_prev as i64);
+            if same_diag && q == q_prev + 1 {
                 q_prev = q;
                 t_prev = t;
             } else {
-                // Save the current run
                 merged.push(CoordPair {
                     query_start: q_start,
                     query_end: q_prev + k,
@@ -92,7 +101,7 @@ pub fn merge_kmer_runs(
                 t_prev = t;
             }
         }
-        // Push the last run
+        // Push the final run
         merged.push(CoordPair {
             query_start: q_start,
             query_end: q_prev + k,

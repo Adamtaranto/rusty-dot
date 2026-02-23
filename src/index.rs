@@ -37,8 +37,8 @@ pub struct SequenceIndex {
     sequences: HashMap<String, SequenceData>,
     /// The k-mer length used for indexing.
     k: usize,
-    /// Cache of pairwise comparison results: (query, target) -> merged coord pairs.
-    pair_cache: HashMap<(String, String), Vec<CoordPair>>,
+    /// Cache of pairwise comparison results: (query, target, merge) -> coord pairs.
+    pair_cache: HashMap<(String, String, bool), Vec<CoordPair>>,
 }
 
 #[pymethods]
@@ -231,7 +231,7 @@ impl SequenceIndex {
         target_name: &str,
         merge: bool,
     ) -> PyResult<Vec<(usize, usize, usize, usize)>> {
-        let cache_key = (query_name.to_string(), target_name.to_string());
+        let cache_key = (query_name.to_string(), target_name.to_string(), merge);
 
         if let Some(cached) = self.pair_cache.get(&cache_key) {
             return Ok(cached
@@ -360,7 +360,7 @@ impl SequenceIndex {
         merge: bool,
     ) -> PyResult<Vec<String>> {
         let _ = self.compare_sequences(query_name, target_name, merge)?;
-        let cache_key = (query_name.to_string(), target_name.to_string());
+        let cache_key = (query_name.to_string(), target_name.to_string(), merge);
         let matches = self
             .pair_cache
             .get(&cache_key)
