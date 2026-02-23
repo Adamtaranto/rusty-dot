@@ -1,8 +1,8 @@
 name: Ruff Formatting
-on: 
+on:
   pull_request:
     branches: ["main"]
-    
+
 jobs:
   ruff:
     if: ${{ github.actor != 'dependabot[bot]' }} # Do not run on commits created by dependabot
