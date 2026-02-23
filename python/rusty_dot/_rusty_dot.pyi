@@ -243,6 +243,78 @@ class SequenceIndex:
         """
         ...
 
+    def compare_sequences_stranded(
+        self,
+        query_name: str,
+        target_name: str,
+        merge: bool = True,
+    ) -> list[tuple[int, int, int, int, str]]:
+        """Find shared k-mer matches between two sequences on both strands.
+
+        In addition to the forward (``+``) strand matches returned by
+        :meth:`compare_sequences`, this method also searches for k-mers in
+        the query whose reverse complement appears in the target, reporting
+        those as ``"-"`` strand matches.
+
+        Parameters
+        ----------
+        query_name : str
+            Name of the query sequence.
+        target_name : str
+            Name of the target sequence.
+        merge : bool, optional
+            Whether to merge co-linear k-mer runs.  Forward runs are merged
+            by diagonal; reverse runs are merged by anti-diagonal.
+            Default is ``True``.
+
+        Returns
+        -------
+        list[tuple[int, int, int, int, str]]
+            List of ``(query_start, query_end, target_start, target_end, strand)``
+            tuples.  Coordinates are 0-based; end positions are exclusive.
+            ``strand`` is ``"+"`` for forward matches and ``"-"`` for
+            reverse-complement matches.
+
+        Raises
+        ------
+        KeyError
+            If either sequence name is not present in the index.
+        """
+        ...
+
+    def optimal_contig_order(
+        self,
+        query_names: list[str],
+        target_names: list[str],
+    ) -> tuple[list[str], list[str]]:
+        """Return query and target contig names sorted for maximum collinearity.
+
+        Uses the gravity-centre algorithm: for each query contig the gravity
+        is the weighted mean of target mid-point positions (normalised by
+        total target span) across all matches.  Query contigs with no matches
+        are placed at the end.  The same algorithm is applied symmetrically to
+        reorder the target contigs.
+
+        Parameters
+        ----------
+        query_names : list[str]
+            Names of the query sequences to reorder.
+        target_names : list[str]
+            Names of the target sequences to use as the reference axis.
+
+        Returns
+        -------
+        tuple[list[str], list[str]]
+            ``(sorted_query_names, sorted_target_names)`` ordered by ascending
+            gravity centre.
+
+        Raises
+        ------
+        KeyError
+            If any sequence name is not present in the index.
+        """
+        ...
+
     def save(self, path: str) -> None:
         """Serialise the index to a binary file.
 

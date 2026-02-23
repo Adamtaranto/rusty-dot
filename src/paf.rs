@@ -41,12 +41,14 @@ pub fn coords_to_paf(
         .iter()
         .map(|m| {
             let match_len = m.query_end - m.query_start;
+            let strand = m.strand as char;
             format!(
-                "{}\t{}\t{}\t{}\t+\t{}\t{}\t{}\t{}\t{}\t{}\t255",
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t255",
                 query_name,
                 query_len,
                 m.query_start,
                 m.query_end,
+                strand,
                 target_name,
                 target_len,
                 m.target_start,
@@ -92,6 +94,7 @@ pub fn py_coords_to_paf(
             query_end: qe,
             target_start: ts,
             target_end: te,
+            strand: crate::strand::STRAND_FWD,
         })
         .collect();
     Ok(coords_to_paf(

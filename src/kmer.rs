@@ -1,6 +1,7 @@
 //! K-mer set building and coordinate lookup using the FM-index.
 
 use crate::error::RustyDotError;
+use crate::strand::revcomp;
 use ahash::AHashSet;
 use bio::alphabets::dna;
 use bio::data_structures::bwt::{bwt, less, Occ};
@@ -162,6 +163,41 @@ pub fn find_kmer_coords_in_index(
     let mut coords: HashMap<String, Vec<usize>> = HashMap::new();
     for kmer in kmer_set {
         let positions = fm.find(kmer.as_bytes());
+        if !positions.is_empty() {
+            coords.insert(kmer.clone(), positions);
+        }
+    }
+    coords
+}
+
+/// Find positions of the reverse complement of each k-mer in the FM-index.
+///
+/// For each k-mer in `kmer_set`, searches the target FM-index for the reverse
+/// complement of that k-mer.  This identifies positions where a k-mer in the
+/// query matches the reverse-complement strand of the target sequence.
+///
+/// The returned map uses the *original* (non-complemented) k-mer as key, so
+/// that callers can correlate results with query k-mer positions without needing
+/// to recompute reverse complements.
+///
+/// # Arguments
+///
+/// * `kmer_set` - The set of query k-mers to look up by reverse complement.
+/// * `fm` - The FM-index for the target sequence.
+///
+/// # Returns
+///
+/// A `HashMap` mapping each query k-mer string to the 0-based start positions
+/// of its reverse complement in the target.  K-mers whose RC is not found are
+/// omitted.
+pub fn find_rev_coords_in_index(
+    kmer_set: &AHashSet<String>,
+    fm: &FmIdx,
+) -> HashMap<String, Vec<usize>> {
+    let mut coords: HashMap<String, Vec<usize>> = HashMap::new();
+    for kmer in kmer_set {
+        let rc = revcomp(kmer.as_bytes());
+        let positions = fm.find(&rc);
         if !positions.is_empty() {
             coords.insert(kmer.clone(), positions);
         }

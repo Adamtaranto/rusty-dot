@@ -4,12 +4,16 @@
 //! and PAF output, with full Python bindings via PyO3.
 
 use crate::fasta::read_fasta;
-use crate::kmer::{build_kmer_set, find_kmer_coords_in_index, sequence_to_index_text, FmIdx};
-use crate::merge::{merge_kmer_runs, CoordPair};
+use crate::kmer::{
+    build_kmer_set, find_kmer_coords_in_index, find_rev_coords_in_index, sequence_to_index_text,
+    FmIdx,
+};
+use crate::merge::{merge_fwd_runs, merge_kmer_runs, merge_rev_runs, CoordPair};
 use crate::paf::coords_to_paf;
 use crate::serialize::{
     load_index, rebuild_fm_from_bytes, save_index, IndexCollection, SerializableSequence,
 };
+use crate::strand::{revcomp, STRAND_REV};
 use ahash::AHashSet;
 use pyo3::prelude::*;
 use std::collections::HashMap;
@@ -305,6 +309,7 @@ impl SequenceIndex {
             tuples
         } else {
             // Return individual k-mer hits (unmerged)
+            use crate::strand::STRAND_FWD;
             let mut unmerged: Vec<CoordPair> = Vec::new();
             for (kmer, q_positions) in &query_coords {
                 if let Some(t_positions) = target_coords.get(kmer) {
@@ -315,6 +320,7 @@ impl SequenceIndex {
                                 query_end: qp + self.k,
                                 target_start: tp,
                                 target_end: tp + self.k,
+                                strand: STRAND_FWD,
                             });
                         }
                     }
@@ -330,6 +336,286 @@ impl SequenceIndex {
         };
 
         Ok(result)
+    }
+
+    /// Find shared k-mer matches between two sequences, reporting both strands.
+    ///
+    /// Extends `compare_sequences` to also search for reverse-complement (`-` strand)
+    /// matches: k-mers in the query whose reverse complement appears in the target.
+    /// Results are cached per `(query, target, merge)` tuple in a separate stranded cache.
+    ///
+    /// Parameters
+    /// ----------
+    /// query_name : str
+    ///     Name of the query sequence.
+    /// target_name : str
+    ///     Name of the target sequence.
+    /// merge : bool, optional
+    ///     Whether to merge co-linear k-mer runs. Default is True.
+    ///
+    /// Returns
+    /// -------
+    /// list[tuple[int, int, int, int, str]]
+    ///     List of (query_start, query_end, target_start, target_end, strand) tuples.
+    ///     Strand is ``"+"`` for forward matches and ``"-"`` for reverse-complement matches.
+    ///
+    /// Raises
+    /// ------
+    /// KeyError
+    ///     If either sequence name is not found.
+    #[pyo3(signature = (query_name, target_name, merge=true))]
+    pub fn compare_sequences_stranded(
+        &mut self,
+        query_name: &str,
+        target_name: &str,
+        merge: bool,
+    ) -> PyResult<Vec<(usize, usize, usize, usize, String)>> {
+        for name in [query_name, target_name] {
+            if !self.sequences.contains_key(name) {
+                return Err(pyo3::exceptions::PyKeyError::new_err(format!(
+                    "Sequence '{}' not found",
+                    name
+                )));
+            }
+        }
+
+        // --- Forward (+ strand) shared k-mers ---
+        let fwd_shared: AHashSet<String> = {
+            let probe_is_query = self.sequences[query_name].kmer_set.len()
+                <= self.sequences[target_name].kmer_set.len();
+            let (probe, other) = if probe_is_query {
+                (query_name, target_name)
+            } else {
+                (target_name, query_name)
+            };
+            let probe_set = &self.sequences[probe].kmer_set;
+            let other_set = &self.sequences[other].kmer_set;
+            probe_set
+                .iter()
+                .filter(|k| other_set.contains(*k))
+                .cloned()
+                .collect()
+        };
+
+        // --- Reverse (- strand) k-mers: query kmers whose RC is in target ---
+        let rev_shared: AHashSet<String> = {
+            let q_set = &self.sequences[query_name].kmer_set;
+            let t_set = &self.sequences[target_name].kmer_set;
+            q_set
+                .iter()
+                .filter(|k| {
+                    let rc_bytes = revcomp(k.as_bytes());
+                    if let Ok(rc_str) = std::str::from_utf8(&rc_bytes) {
+                        t_set.contains(rc_str)
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                .collect()
+        };
+
+        let mut all_pairs: Vec<CoordPair> = Vec::new();
+
+        // + strand hits
+        if !fwd_shared.is_empty() {
+            let query_fwd = {
+                let fm = &self.sequences[query_name].fm;
+                find_kmer_coords_in_index(&fwd_shared, fm)
+            };
+            let target_fwd = {
+                let fm = &self.sequences[target_name].fm;
+                find_kmer_coords_in_index(&fwd_shared, fm)
+            };
+            if merge {
+                all_pairs.extend(merge_fwd_runs(&target_fwd, &query_fwd, self.k));
+            } else {
+                use crate::strand::STRAND_FWD;
+                for (kmer, q_pos) in &query_fwd {
+                    if let Some(t_pos) = target_fwd.get(kmer) {
+                        for &qp in q_pos {
+                            for &tp in t_pos {
+                                all_pairs.push(CoordPair {
+                                    query_start: qp,
+                                    query_end: qp + self.k,
+                                    target_start: tp,
+                                    target_end: tp + self.k,
+                                    strand: STRAND_FWD,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // - strand hits
+        if !rev_shared.is_empty() {
+            let query_rev = {
+                let fm = &self.sequences[query_name].fm;
+                find_kmer_coords_in_index(&rev_shared, fm)
+            };
+            let target_rev = {
+                let fm = &self.sequences[target_name].fm;
+                find_rev_coords_in_index(&rev_shared, fm)
+            };
+            if merge {
+                all_pairs.extend(merge_rev_runs(&target_rev, &query_rev, self.k));
+            } else {
+                for (kmer, q_pos) in &query_rev {
+                    if let Some(t_pos) = target_rev.get(kmer) {
+                        for &qp in q_pos {
+                            for &tp in t_pos {
+                                all_pairs.push(CoordPair {
+                                    query_start: qp,
+                                    query_end: qp + self.k,
+                                    target_start: tp,
+                                    target_end: tp + self.k,
+                                    strand: STRAND_REV,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(all_pairs
+            .into_iter()
+            .map(|c| {
+                (
+                    c.query_start,
+                    c.query_end,
+                    c.target_start,
+                    c.target_end,
+                    (c.strand as char).to_string(),
+                )
+            })
+            .collect())
+    }
+
+    /// Compute the optimal ordering of query and target contigs to maximise collinearity.
+    ///
+    /// Uses a gravity-centre algorithm inspired by d-genies: for each query contig the
+    /// gravity centre is the weighted mean of the target position mid-points across all
+    /// matches, normalised by the total target sequence length.  Contigs are then sorted
+    /// by ascending gravity centre.
+    ///
+    /// This method calls ``compare_sequences_stranded`` for every ordered pair (which
+    /// uses the internal cache for repeated calls) and then sorts by gravity.
+    ///
+    /// Parameters
+    /// ----------
+    /// query_names : list[str]
+    ///     Names of query sequences to reorder.  Must all be present in the index.
+    /// target_names : list[str]
+    ///     Names of target sequences to use as the reference axis.  Must all be in the index.
+    ///
+    /// Returns
+    /// -------
+    /// tuple[list[str], list[str]]
+    ///     ``(sorted_query_names, sorted_target_names)`` — both lists are reordered so that
+    ///     the resulting dotplot shows maximum collinearity along the diagonal.
+    ///
+    /// Raises
+    /// ------
+    /// KeyError
+    ///     If any sequence name is not present in the index.
+    pub fn optimal_contig_order(
+        &mut self,
+        query_names: Vec<String>,
+        target_names: Vec<String>,
+    ) -> PyResult<(Vec<String>, Vec<String>)> {
+        for n in query_names.iter().chain(target_names.iter()) {
+            if !self.sequences.contains_key(n.as_str()) {
+                return Err(pyo3::exceptions::PyKeyError::new_err(format!(
+                    "Sequence '{}' not found",
+                    n
+                )));
+            }
+        }
+
+        let total_target_len: usize = target_names
+            .iter()
+            .map(|n| self.sequences[n.as_str()].seq_len)
+            .sum::<usize>()
+            .max(1);
+
+        // Build cumulative target offsets so we can express each target position as an
+        // absolute coordinate across the concatenated target.
+        let mut target_offsets: HashMap<String, usize> = HashMap::new();
+        let mut offset = 0usize;
+        for n in &target_names {
+            target_offsets.insert(n.clone(), offset);
+            offset += self.sequences[n.as_str()].seq_len;
+        }
+
+        // Gravity of each query contig = weighted mean of match mid-points on the target axis.
+        let mut q_gravity: Vec<(f64, String)> = Vec::new();
+        for q in &query_names {
+            let mut weight_sum = 0.0f64;
+            let mut weighted_pos = 0.0f64;
+            for t in &target_names {
+                let matches =
+                    self.compare_sequences_stranded(q.as_str(), t.as_str(), true)?;
+                let t_offset = *target_offsets.get(t).unwrap_or(&0) as f64;
+                for (_, _, ts, te, _) in &matches {
+                    let size = (te - ts) as f64;
+                    let mid = t_offset + (*ts as f64 + *te as f64) / 2.0;
+                    weighted_pos += size * mid;
+                    weight_sum += size;
+                }
+            }
+            let gravity = if weight_sum > 0.0 {
+                weighted_pos / weight_sum / total_target_len as f64
+            } else {
+                f64::MAX // unmatched contigs sort to the end
+            };
+            q_gravity.push((gravity, q.clone()));
+        }
+        q_gravity.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        let total_query_len: usize = query_names
+            .iter()
+            .map(|n| self.sequences[n.as_str()].seq_len)
+            .sum::<usize>()
+            .max(1);
+
+        let mut query_offsets: HashMap<String, usize> = HashMap::new();
+        let mut q_offset = 0usize;
+        for n in &query_names {
+            query_offsets.insert(n.clone(), q_offset);
+            q_offset += self.sequences[n.as_str()].seq_len;
+        }
+
+        let mut t_gravity: Vec<(f64, String)> = Vec::new();
+        for t in &target_names {
+            let mut weight_sum = 0.0f64;
+            let mut weighted_pos = 0.0f64;
+            for q in &query_names {
+                let matches =
+                    self.compare_sequences_stranded(q.as_str(), t.as_str(), true)?;
+                let q_offset = *query_offsets.get(q).unwrap_or(&0) as f64;
+                for (qs, qe, _, _, _) in &matches {
+                    let size = (qe - qs) as f64;
+                    let mid = q_offset + (*qs as f64 + *qe as f64) / 2.0;
+                    weighted_pos += size * mid;
+                    weight_sum += size;
+                }
+            }
+            let gravity = if weight_sum > 0.0 {
+                weighted_pos / weight_sum / total_query_len as f64
+            } else {
+                f64::MAX
+            };
+            t_gravity.push((gravity, t.clone()));
+        }
+        t_gravity.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok((
+            q_gravity.into_iter().map(|(_, n)| n).collect(),
+            t_gravity.into_iter().map(|(_, n)| n).collect(),
+        ))
     }
 
     /// Get PAF-formatted strings for a pair of sequences.

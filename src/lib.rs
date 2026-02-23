@@ -18,6 +18,7 @@ pub mod kmer;
 pub mod merge;
 pub mod paf;
 pub mod serialize;
+pub mod strand;
 
 use index::SequenceIndex;
 
