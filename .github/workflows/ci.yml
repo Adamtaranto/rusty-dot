@@ -49,7 +49,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Install maturin and dependencies
         run: |
-          pip install maturin pytest matplotlib numpy
+          pip install maturin pytest pytest-cov matplotlib numpy
       - name: Build and install rusty-dot
         run: |
           maturin build --release
@@ -101,4 +101,3 @@ jobs:
         with:
           name: wasm-wheel
           path: target/wheels/*.whl
-
