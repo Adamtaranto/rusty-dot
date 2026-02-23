@@ -166,8 +166,7 @@ pub fn merge_rev_runs(
         let mut t_prev = first_t;
 
         while let Some(&(q, t)) = iter.next() {
-            let same_antidiag =
-                (q as i64 + t as i64) == (q_prev as i64 + t_prev as i64);
+            let same_antidiag = (q as i64 + t as i64) == (q_prev as i64 + t_prev as i64);
             // Guard t_prev > 0 before subtraction to prevent usize underflow.
             let consecutive = same_antidiag && q == q_prev + 1 && t_prev > 0 && t == t_prev - 1;
             if consecutive {

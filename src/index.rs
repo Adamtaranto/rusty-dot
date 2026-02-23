@@ -126,8 +126,7 @@ impl SequenceIndex {
         for (name, seq) in &seqs {
             let text = sequence_to_index_text(seq);
             let fm = FmIdx::new(text).map_err(|e| -> pyo3::PyErr { e.into() })?;
-            let kmer_set =
-                build_kmer_set(seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
+            let kmer_set = build_kmer_set(seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
             let seq_len = seq.len();
             let seq_bytes = seq.as_bytes().to_vec();
             self.sequences.insert(
@@ -557,8 +556,7 @@ impl SequenceIndex {
             let mut weight_sum = 0.0f64;
             let mut weighted_pos = 0.0f64;
             for t in &target_names {
-                let matches =
-                    self.compare_sequences_stranded(q.as_str(), t.as_str(), true)?;
+                let matches = self.compare_sequences_stranded(q.as_str(), t.as_str(), true)?;
                 let t_offset = *target_offsets.get(t).unwrap_or(&0) as f64;
                 for (_, _, ts, te, _) in &matches {
                     let size = (te - ts) as f64;
@@ -594,8 +592,7 @@ impl SequenceIndex {
             let mut weight_sum = 0.0f64;
             let mut weighted_pos = 0.0f64;
             for q in &query_names {
-                let matches =
-                    self.compare_sequences_stranded(q.as_str(), t.as_str(), true)?;
+                let matches = self.compare_sequences_stranded(q.as_str(), t.as_str(), true)?;
                 let q_offset = *query_offsets.get(q).unwrap_or(&0) as f64;
                 for (qs, qe, _, _, _) in &matches {
                     let size = (qe - qs) as f64;

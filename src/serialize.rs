@@ -46,8 +46,8 @@ pub struct IndexCollection {
 ///
 /// Returns `RustyDotError::Serialization` if serialization fails.
 pub fn save_index(collection: &IndexCollection, path: &str) -> Result<(), RustyDotError> {
-    let file = File::create(Path::new(path))
-        .map_err(|e| RustyDotError::Serialization(e.to_string()))?;
+    let file =
+        File::create(Path::new(path)).map_err(|e| RustyDotError::Serialization(e.to_string()))?;
     let writer = BufWriter::new(file);
     bincode::serialize_into(writer, collection)
         .map_err(|e| RustyDotError::Serialization(e.to_string()))?;
@@ -71,8 +71,7 @@ pub fn load_index(path: &str) -> Result<IndexCollection, RustyDotError> {
     let file =
         File::open(Path::new(path)).map_err(|e| RustyDotError::Serialization(e.to_string()))?;
     let reader = BufReader::new(file);
-    bincode::deserialize_from(reader)
-        .map_err(|e| RustyDotError::Serialization(e.to_string()))
+    bincode::deserialize_from(reader).map_err(|e| RustyDotError::Serialization(e.to_string()))
 }
 
 /// Rebuild an `FmIdx` from stored sequence bytes.
@@ -115,8 +114,7 @@ pub fn py_save_index(path: &str, sequences: HashMap<String, String>, k: usize) -
     let mut kmer_sets_map = HashMap::new();
 
     for (name, seq) in &sequences {
-        let kmer_set = build_kmer_set(seq, k)
-            .map_err(|e| -> pyo3::PyErr { e.into() })?;
+        let kmer_set = build_kmer_set(seq, k).map_err(|e| -> pyo3::PyErr { e.into() })?;
         seq_map.insert(
             name.clone(),
             SerializableSequence {

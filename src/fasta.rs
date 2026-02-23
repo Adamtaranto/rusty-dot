@@ -35,8 +35,8 @@ use std::path::Path;
 pub fn read_fasta(path: &str) -> Result<HashMap<String, String>, RustyDotError> {
     let mut seqs: HashMap<String, String> = HashMap::new();
 
-    let mut reader = parse_fastx_file(Path::new(path))
-        .map_err(|e| RustyDotError::FastaParse(e.to_string()))?;
+    let mut reader =
+        parse_fastx_file(Path::new(path)).map_err(|e| RustyDotError::FastaParse(e.to_string()))?;
 
     while let Some(record) = reader.next() {
         let record = record.map_err(|e| RustyDotError::FastaParse(e.to_string()))?;
@@ -65,8 +65,7 @@ pub fn read_fasta(path: &str) -> Result<HashMap<String, String>, RustyDotError> 
 pub fn read_fasta_stdin() -> Result<HashMap<String, String>, RustyDotError> {
     let mut seqs: HashMap<String, String> = HashMap::new();
 
-    let mut reader =
-        parse_fastx_stdin().map_err(|e| RustyDotError::FastaParse(e.to_string()))?;
+    let mut reader = parse_fastx_stdin().map_err(|e| RustyDotError::FastaParse(e.to_string()))?;
 
     while let Some(record) = reader.next() {
         let record = record.map_err(|e| RustyDotError::FastaParse(e.to_string()))?;
