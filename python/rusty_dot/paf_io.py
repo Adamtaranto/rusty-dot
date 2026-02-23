@@ -35,17 +35,16 @@ Examples
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
 from typing import Any, Generator, Iterable
-
 
 # ---------------------------------------------------------------------------
 # CIGAR parsing
 # ---------------------------------------------------------------------------
 
-_CIGAR_RE = re.compile(r"(\d+)([MIDNSHP=X])")
+_CIGAR_RE = re.compile(r'(\d+)([MIDNSHP=X])')
 
 
 def _parse_cigar(cigar: str) -> dict[str, int]:
@@ -92,27 +91,23 @@ def _cigar_stats(cigar: str, residue_matches: int) -> dict[str, int]:
     ops = _parse_cigar(cigar)
     # Alignment length = bases consumed on the target
     alignment_length = (
-        ops.get("M", 0)
-        + ops.get("D", 0)
-        + ops.get("N", 0)
-        + ops.get("=", 0)
-        + ops.get("X", 0)
+        ops.get('M', 0)
+        + ops.get('D', 0)
+        + ops.get('N', 0)
+        + ops.get('=', 0)
+        + ops.get('X', 0)
     )
-    n_matches = ops.get("=", residue_matches)
-    n_mismatches = ops.get("X", 0)
-    n_gap_bases = ops.get("I", 0) + ops.get("D", 0)
+    n_matches = ops.get('=', residue_matches)
+    n_mismatches = ops.get('X', 0)
+    n_gap_bases = ops.get('I', 0) + ops.get('D', 0)
     # Count distinct gap-opening events (each I or D run counts as one event).
-    n_gaps = sum(
-        1
-        for _, op in _CIGAR_RE.findall(cigar)
-        if op in ("I", "D")
-    )
+    n_gaps = sum(1 for _, op in _CIGAR_RE.findall(cigar) if op in ('I', 'D'))
     return {
-        "alignment_length": alignment_length,
-        "n_matches": n_matches,
-        "n_mismatches": n_mismatches,
-        "n_gaps": n_gaps,
-        "n_gap_bases": n_gap_bases,
+        'alignment_length': alignment_length,
+        'n_matches': n_matches,
+        'n_mismatches': n_mismatches,
+        'n_gaps': n_gaps,
+        'n_gap_bases': n_gap_bases,
     }
 
 
@@ -216,7 +211,7 @@ class PafRecord:
         return self.target_end - self.target_start
 
     @classmethod
-    def from_line(cls, line: str) -> "PafRecord":
+    def from_line(cls, line: str) -> 'PafRecord':
         """Parse a single PAF text line into a :class:`PafRecord`.
 
         Parameters
@@ -234,24 +229,24 @@ class PafRecord:
         ValueError
             If the line has fewer than 12 tab-separated fields.
         """
-        fields = line.rstrip("\n").split("\t")
+        fields = line.rstrip('\n').split('\t')
         if len(fields) < 12:
             raise ValueError(
-                f"PAF line has {len(fields)} fields; expected at least 12: {line!r}"
+                f'PAF line has {len(fields)} fields; expected at least 12: {line!r}'
             )
         tags: dict[str, Any] = {}
         cigar: str | None = None
         for tag_field in fields[12:]:
-            parts = tag_field.split(":", 2)
+            parts = tag_field.split(':', 2)
             if len(parts) == 3:
                 tag_name, tag_type, tag_value = parts
-                if tag_type == "i":
+                if tag_type == 'i':
                     tags[tag_name] = int(tag_value)
-                elif tag_type == "f":
+                elif tag_type == 'f':
                     tags[tag_name] = float(tag_value)
                 else:
                     tags[tag_name] = tag_value
-                if tag_name == "cg" and tag_type == "Z":
+                if tag_name == 'cg' and tag_type == 'Z':
                     cigar = tag_value
 
         residue_matches = int(fields[9])
@@ -274,11 +269,11 @@ class PafRecord:
             mapping_quality=int(fields[11]),
             tags=tags,
             cigar=cigar,
-            alignment_length=stats.get("alignment_length"),
-            n_matches=stats.get("n_matches"),
-            n_mismatches=stats.get("n_mismatches"),
-            n_gaps=stats.get("n_gaps"),
-            n_gap_bases=stats.get("n_gap_bases"),
+            alignment_length=stats.get('alignment_length'),
+            n_matches=stats.get('n_matches'),
+            n_mismatches=stats.get('n_mismatches'),
+            n_gaps=stats.get('n_gaps'),
+            n_gap_bases=stats.get('n_gap_bases'),
         )
 
     def to_line(self) -> str:
@@ -290,7 +285,7 @@ class PafRecord:
             Tab-separated PAF line with the 12 required columns.  Optional
             tags are not included.
         """
-        return "\t".join(
+        return '\t'.join(
             str(v)
             for v in [
                 self.query_name,
@@ -338,10 +333,10 @@ def parse_paf_file(path: str | Path) -> Generator[PafRecord, None, None]:
         If a line cannot be parsed as a PAF record.
     """
     path = Path(path)
-    with path.open("r", encoding="utf-8") as fh:
+    with path.open('r', encoding='utf-8') as fh:
         for line in fh:
-            line = line.rstrip("\n")
-            if not line or line.startswith("#"):
+            line = line.rstrip('\n')
+            if not line or line.startswith('#'):
                 continue
             yield PafRecord.from_line(line)
 
@@ -410,10 +405,10 @@ def compute_gravity_contigs(
     total_query_len = max(q_off, 1)
 
     # Accumulate weighted positions.
-    q_weight: dict[str, float] = {n: 0.0 for n in query_names}
-    q_wpos: dict[str, float] = {n: 0.0 for n in query_names}
-    t_weight: dict[str, float] = {n: 0.0 for n in target_names}
-    t_wpos: dict[str, float] = {n: 0.0 for n in target_names}
+    q_weight: dict[str, float] = dict.fromkeys(query_names, 0.0)
+    q_wpos: dict[str, float] = dict.fromkeys(query_names, 0.0)
+    t_weight: dict[str, float] = dict.fromkeys(target_names, 0.0)
+    t_wpos: dict[str, float] = dict.fromkeys(target_names, 0.0)
 
     for rec in all_records:
         if rec.query_name not in query_set or rec.target_name not in target_set:
@@ -423,18 +418,24 @@ def compute_gravity_contigs(
             continue
 
         # Target gravity from query's perspective.
-        t_mid = t_offsets.get(rec.target_name, 0) + (rec.target_start + rec.target_end) / 2.0
+        t_mid = (
+            t_offsets.get(rec.target_name, 0)
+            + (rec.target_start + rec.target_end) / 2.0
+        )
         q_weight[rec.query_name] += size
         q_wpos[rec.query_name] += size * t_mid
 
         # Query gravity from target's perspective.
-        q_mid = q_offsets_real.get(rec.query_name, 0) + (rec.query_start + rec.query_end) / 2.0
+        q_mid = (
+            q_offsets_real.get(rec.query_name, 0)
+            + (rec.query_start + rec.query_end) / 2.0
+        )
         t_weight[rec.target_name] += size
         t_wpos[rec.target_name] += size * q_mid
 
     def _gravity(name: str, wt: dict, wp: dict, total: float) -> float:
         w = wt.get(name, 0.0)
-        return (wp.get(name, 0.0) / w / total) if w > 0 else float("inf")
+        return (wp.get(name, 0.0) / w / total) if w > 0 else float('inf')
 
     sorted_q = sorted(
         query_names,
@@ -480,7 +481,7 @@ class PafAlignment:
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_file(cls, path: str | Path) -> "PafAlignment":
+    def from_file(cls, path: str | Path) -> 'PafAlignment':
         """Load records from a PAF file.
 
         Parameters
@@ -496,7 +497,7 @@ class PafAlignment:
         return cls(list(parse_paf_file(path)))
 
     @classmethod
-    def from_records(cls, records: Iterable[PafRecord]) -> "PafAlignment":
+    def from_records(cls, records: Iterable[PafRecord]) -> 'PafAlignment':
         """Construct from an iterable of :class:`PafRecord` objects.
 
         Parameters
@@ -562,16 +563,16 @@ class PafAlignment:
             ``PafAlignment(records=<n>, queries=<q>, targets=<t>)``.
         """
         return (
-            f"PafAlignment(records={len(self.records)}, "
-            f"queries={len(self.query_names)}, "
-            f"targets={len(self.target_names)})"
+            f'PafAlignment(records={len(self.records)}, '
+            f'queries={len(self.query_names)}, '
+            f'targets={len(self.target_names)})'
         )
 
     # ------------------------------------------------------------------
     # Filtering
     # ------------------------------------------------------------------
 
-    def filter_by_query(self, names: Iterable[str]) -> "PafAlignment":
+    def filter_by_query(self, names: Iterable[str]) -> 'PafAlignment':
         """Return a new :class:`PafAlignment` containing only the given query names.
 
         Parameters
@@ -587,7 +588,7 @@ class PafAlignment:
         keep = set(names)
         return PafAlignment([r for r in self.records if r.query_name in keep])
 
-    def filter_by_target(self, names: Iterable[str]) -> "PafAlignment":
+    def filter_by_target(self, names: Iterable[str]) -> 'PafAlignment':
         """Return a new :class:`PafAlignment` containing only the given target names.
 
         Parameters

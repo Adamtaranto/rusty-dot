@@ -384,7 +384,6 @@ class SequenceIndex:
         """
         ...
 
-
 def py_read_fasta(path: str) -> dict[str, str]:
     """Read sequences from a FASTA or gzipped FASTA file.
 
@@ -410,7 +409,6 @@ def py_read_fasta(path: str) -> dict[str, str]:
         If the file cannot be opened or its contents cannot be parsed.
     """
     ...
-
 
 def py_build_kmer_set(seq: str, k: int) -> set[str]:
     """Build the complete set of unique k-mers in a DNA sequence.
@@ -439,7 +437,6 @@ def py_build_kmer_set(seq: str, k: int) -> set[str]:
     """
     ...
 
-
 def py_find_kmer_coords(seq: str, kmers: list[str]) -> dict[str, list[int]]:
     """Find all start positions of each k-mer in a sequence.
 
@@ -467,7 +464,6 @@ def py_find_kmer_coords(seq: str, kmers: list[str]) -> dict[str, list[int]]:
         If the FM-index cannot be constructed for ``seq``.
     """
     ...
-
 
 def py_merge_kmer_runs(
     kmer_coords: dict[str, list[int]],
@@ -501,7 +497,6 @@ def py_merge_kmer_runs(
         Results are ordered by diagonal and then by query start position.
     """
     ...
-
 
 def py_coords_to_paf(
     matches: list[tuple[int, int, int, int]],
@@ -538,7 +533,6 @@ def py_coords_to_paf(
     """
     ...
 
-
 def py_save_index(path: str, sequences: dict[str, str], k: int) -> None:
     """Build and serialise an index collection to a binary file.
 
@@ -560,7 +554,6 @@ def py_save_index(path: str, sequences: dict[str, str], k: int) -> None:
         If the file cannot be written or serialisation fails.
     """
     ...
-
 
 def py_load_index(path: str) -> tuple[dict[str, list[str]], int]:
     """Load a previously serialised index collection from a binary file.

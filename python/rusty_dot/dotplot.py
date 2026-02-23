@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Optional, Union
 
 import matplotlib
-matplotlib.use("Agg")
+
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from rusty_dot._rusty_dot import SequenceIndex
@@ -52,10 +53,10 @@ class DotPlotter:
         self,
         query_names: Optional[list[str]] = None,
         target_names: Optional[list[str]] = None,
-        output_path: Union[str, Path] = "dotplot.png",
+        output_path: Union[str, Path] = 'dotplot.png',
         figsize_per_panel: float = 4.0,
         dot_size: float = 0.5,
-        dot_color: str = "blue",
+        dot_color: str = 'blue',
         merge: bool = True,
         title: Optional[str] = None,
         dpi: int = 150,
@@ -93,7 +94,7 @@ class DotPlotter:
         """
         all_names = self.index.sequence_names()
         if not all_names:
-            raise ValueError("No sequences in the index.")
+            raise ValueError('No sequences in the index.')
 
         if query_names is None:
             query_names = sorted(all_names)
@@ -129,7 +130,7 @@ class DotPlotter:
             fig.suptitle(title, fontsize=14, y=1.01)
 
         plt.tight_layout()
-        plt.savefig(str(output_path), dpi=dpi, bbox_inches="tight")
+        plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight')
         plt.close(fig)
 
     def _plot_panel(
@@ -138,7 +139,7 @@ class DotPlotter:
         query_name: str,
         target_name: str,
         dot_size: float = 0.5,
-        dot_color: str = "blue",
+        dot_color: str = 'blue',
         merge: bool = True,
     ) -> None:
         """Render a single comparison panel onto the given Axes.
@@ -179,17 +180,17 @@ class DotPlotter:
         ax.invert_yaxis()
         ax.set_xlabel(target_name, fontsize=8)
         ax.set_ylabel(query_name, fontsize=8)
-        ax.tick_params(axis="both", labelsize=6)
-        ax.set_aspect("auto")
+        ax.tick_params(axis='both', labelsize=6)
+        ax.set_aspect('auto')
 
     def plot_single(
         self,
         query_name: str,
         target_name: str,
-        output_path: Union[str, Path] = "dotplot.png",
+        output_path: Union[str, Path] = 'dotplot.png',
         figsize: tuple[float, float] = (6.0, 6.0),
         dot_size: float = 0.5,
-        dot_color: str = "blue",
+        dot_color: str = 'blue',
         merge: bool = True,
         title: Optional[str] = None,
         dpi: int = 150,
@@ -227,8 +228,8 @@ class DotPlotter:
             merge=merge,
         )
         if title is None:
-            title = f"{query_name} vs {target_name}"
+            title = f'{query_name} vs {target_name}'
         ax.set_title(title, fontsize=10)
         plt.tight_layout()
-        plt.savefig(str(output_path), dpi=dpi, bbox_inches="tight")
+        plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight')
         plt.close(fig)

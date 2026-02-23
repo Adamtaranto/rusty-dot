@@ -21,36 +21,35 @@ Basic usage:
 
 from rusty_dot._rusty_dot import (  # noqa: F401
     SequenceIndex,
-    py_read_fasta,
     py_build_kmer_set,
-    py_find_kmer_coords,
-    py_merge_kmer_runs,
     py_coords_to_paf,
-    py_save_index,
+    py_find_kmer_coords,
     py_load_index,
+    py_merge_kmer_runs,
+    py_read_fasta,
+    py_save_index,
 )
-
 from rusty_dot.dotplot import DotPlotter  # noqa: F401
 from rusty_dot.paf_io import (  # noqa: F401
-    PafRecord,
     PafAlignment,
-    parse_paf_file,
+    PafRecord,
     compute_gravity_contigs,
+    parse_paf_file,
 )
 
-__version__ = "0.1.0"
+__version__ = '0.1.0'
 __all__ = [
-    "SequenceIndex",
-    "DotPlotter",
-    "PafRecord",
-    "PafAlignment",
-    "parse_paf_file",
-    "compute_gravity_contigs",
-    "py_read_fasta",
-    "py_build_kmer_set",
-    "py_find_kmer_coords",
-    "py_merge_kmer_runs",
-    "py_coords_to_paf",
-    "py_save_index",
-    "py_load_index",
+    'SequenceIndex',
+    'DotPlotter',
+    'PafRecord',
+    'PafAlignment',
+    'parse_paf_file',
+    'compute_gravity_contigs',
+    'py_read_fasta',
+    'py_build_kmer_set',
+    'py_find_kmer_coords',
+    'py_merge_kmer_runs',
+    'py_coords_to_paf',
+    'py_save_index',
+    'py_load_index',
 ]
