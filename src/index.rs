@@ -3,7 +3,6 @@
 //! Provides FM-index construction, k-mer lookup, sequence comparison,
 //! and PAF output, with full Python bindings via PyO3.
 
-use crate::fasta::read_fasta;
 use crate::kmer::{
     build_kmer_set, find_kmer_coords_in_index, find_rev_coords_in_index, sequence_to_index_text,
     FmIdx,
@@ -119,7 +118,9 @@ impl SequenceIndex {
     /// ------
     /// ValueError
     ///     If the file cannot be read or parsed.
+    #[cfg(feature = "fasta")]
     pub fn load_fasta(&mut self, path: &str) -> PyResult<Vec<String>> {
+        use crate::fasta::read_fasta;
         let seqs = read_fasta(path).map_err(|e| -> pyo3::PyErr { e.into() })?;
         let mut names = Vec::new();
         for (name, seq) in &seqs {

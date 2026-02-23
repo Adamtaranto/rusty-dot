@@ -1,9 +1,18 @@
 //! FASTA/gzipped FASTA parsing utilities using needletail.
+//!
+//! This module is only compiled when the `fasta` feature is enabled (the
+//! default for native builds).  Wasm builds omit it because needletail
+//! cannot link against the `wasm32-unknown-emscripten` target.
 
+#[cfg(feature = "fasta")]
 use crate::error::RustyDotError;
+#[cfg(feature = "fasta")]
 use needletail::{parse_fastx_file, parse_fastx_stdin};
+#[cfg(feature = "fasta")]
 use pyo3::prelude::*;
+#[cfg(feature = "fasta")]
 use std::collections::HashMap;
+#[cfg(feature = "fasta")]
 use std::path::Path;
 
 /// Read sequences from a FASTA (or gzipped FASTA) file.
@@ -22,6 +31,7 @@ use std::path::Path;
 /// # Errors
 ///
 /// Returns a `RustyDotError` if the file cannot be opened or parsed.
+#[cfg(feature = "fasta")]
 pub fn read_fasta(path: &str) -> Result<HashMap<String, String>, RustyDotError> {
     let mut seqs: HashMap<String, String> = HashMap::new();
 
@@ -51,6 +61,7 @@ pub fn read_fasta(path: &str) -> Result<HashMap<String, String>, RustyDotError> 
 /// # Errors
 ///
 /// Returns a `RustyDotError` if stdin cannot be parsed.
+#[cfg(feature = "fasta")]
 pub fn read_fasta_stdin() -> Result<HashMap<String, String>, RustyDotError> {
     let mut seqs: HashMap<String, String> = HashMap::new();
 
@@ -87,6 +98,7 @@ pub fn read_fasta_stdin() -> Result<HashMap<String, String>, RustyDotError> {
 /// ------
 /// ValueError
 ///     If the file cannot be opened or parsed.
+#[cfg(feature = "fasta")]
 #[pyfunction]
 pub fn py_read_fasta(path: &str) -> PyResult<HashMap<String, String>> {
     read_fasta(path).map_err(|e| e.into())

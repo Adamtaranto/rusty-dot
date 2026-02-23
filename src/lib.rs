@@ -28,6 +28,7 @@ use index::SequenceIndex;
 #[pymodule]
 fn _rusty_dot(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SequenceIndex>()?;
+    #[cfg(feature = "fasta")]
     m.add_function(wrap_pyfunction!(fasta::py_read_fasta, m)?)?;
     m.add_function(wrap_pyfunction!(kmer::py_build_kmer_set, m)?)?;
     m.add_function(wrap_pyfunction!(kmer::py_find_kmer_coords, m)?)?;
