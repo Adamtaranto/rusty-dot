@@ -128,4 +128,3 @@ disallow_untyped_defs = true
 convention = "numpy"
 match-dir = "[^\\.].*"     # matches all dirs that don't start with a dot
 match = "(?!test_).*\\.py" # matches files that don't start with 'test_' but end with '.py'
-
