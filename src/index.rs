@@ -361,7 +361,10 @@ impl SequenceIndex {
     ) -> PyResult<Vec<String>> {
         let _ = self.compare_sequences(query_name, target_name, merge)?;
         let cache_key = (query_name.to_string(), target_name.to_string());
-        let matches = self.pair_cache.get(&cache_key).unwrap();
+        let matches = self
+            .pair_cache
+            .get(&cache_key)
+            .expect("cache was just populated by compare_sequences");
         let query_len = self.sequences[query_name].seq_len;
         let target_len = self.sequences[target_name].seq_len;
         Ok(coords_to_paf(
