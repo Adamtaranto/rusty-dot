@@ -1,0 +1,9 @@
+name: rustydot
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - pip
+  - python 3.13
+  - pip:
+      - maturin
