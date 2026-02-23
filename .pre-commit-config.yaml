@@ -1,5 +1,25 @@
 repos:
   # ---------------------------------------------------------------------------
+  # Basic pre-commit checks
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=500, --enforce-all]
+      - id: check-ast
+      - id: check-executables-have-shebangs
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-toml
+      - id: check-yaml
+      - id: debug-statements
+      - id: end-of-file-fixer
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  # ---------------------------------------------------------------------------
   # Rust hooks (run at pre-commit stage — all are fast)
   # ---------------------------------------------------------------------------
   - repo: local
@@ -41,6 +61,16 @@ repos:
         types: [rust]
         pass_filenames: false
         stages: [pre-push]
+  
+  # ---------------------------------------------------------------------------
+  # Python: Ruff formatting checks
+  # ---------------------------------------------------------------------------      
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.3
+    hooks:
+      - id: ruff-check
+        args: [--fix, --exit-non-zero-on-fix, --show-fixes]
+      - id: ruff-format
 
   # ---------------------------------------------------------------------------
   # Python: numpydoc-style docstring validation for .pyi stub files
