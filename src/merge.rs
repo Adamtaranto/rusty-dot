@@ -80,7 +80,7 @@ pub fn merge_fwd_runs(
         let mut q_prev = first_q;
         let mut t_prev = first_t;
 
-        while let Some(&(q, t)) = iter.next() {
+        for &(q, t) in iter {
             let same_diag = (t as i64 - q as i64) == (t_prev as i64 - q_prev as i64);
             if same_diag && q == q_prev + 1 {
                 q_prev = q;
@@ -165,7 +165,7 @@ pub fn merge_rev_runs(
         let mut q_prev = first_q;
         let mut t_prev = first_t;
 
-        while let Some(&(q, t)) = iter.next() {
+        for &(q, t) in iter {
             let same_antidiag = (q as i64 + t as i64) == (q_prev as i64 + t_prev as i64);
             // Guard t_prev > 0 before subtraction to prevent usize underflow.
             let consecutive = same_antidiag && q == q_prev + 1 && t_prev > 0 && t == t_prev - 1;
