@@ -1,0 +1,234 @@
+"""
+Dotplot visualization module for rusty-dot.
+
+Provides the DotPlotter class for generating all-vs-all dotplots from
+DNA sequence comparison data.
+
+Reference: https://github.com/rrwick/Autocycler/blob/b0523350898faac71686251ec58f7d83bc2b1c28/src/dotplot.rs
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional, Union
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from rusty_dot._rusty_dot import SequenceIndex
+
+
+class DotPlotter:
+    """Generate all-vs-all dotplots for sets of DNA sequences.
+
+    Parameters
+    ----------
+    index : SequenceIndex
+        A SequenceIndex with the sequences to plot.
+
+    Examples
+    --------
+    >>> from rusty_dot import SequenceIndex
+    >>> from rusty_dot.dotplot import DotPlotter
+    >>> idx = SequenceIndex(k=10)
+    >>> idx.add_sequence("seq1", "ACGTACGTACGT" * 10)
+    >>> idx.add_sequence("seq2", "TACGTACGTACG" * 10)
+    >>> plotter = DotPlotter(idx)
+    >>> plotter.plot(output_path="dotplot.png")
+    """
+
+    def __init__(self, index: SequenceIndex) -> None:
+        """Initialise the DotPlotter.
+
+        Parameters
+        ----------
+        index : SequenceIndex
+            A populated SequenceIndex instance.
+        """
+        self.index = index
+
+    def plot(
+        self,
+        query_names: Optional[list[str]] = None,
+        target_names: Optional[list[str]] = None,
+        output_path: Union[str, Path] = "dotplot.png",
+        figsize_per_panel: float = 4.0,
+        dot_size: float = 0.5,
+        dot_color: str = "blue",
+        merge: bool = True,
+        title: Optional[str] = None,
+        dpi: int = 150,
+    ) -> None:
+        """Plot an all-vs-all dotplot grid.
+
+        If both ``query_names`` and ``target_names`` are provided, the plot
+        will show each query sequence (rows) against each target sequence
+        (columns). If only one set is provided, or neither, all pairwise
+        combinations within the available sequences are plotted.
+
+        Parameters
+        ----------
+        query_names : list[str], optional
+            Sequence names for the y-axis (rows). If ``None``, uses all
+            sequences in the index.
+        target_names : list[str], optional
+            Sequence names for the x-axis (columns). If ``None``, uses all
+            sequences in the index.
+        output_path : str or Path, optional
+            Output image file path. Default is ``"dotplot.png"``.
+        figsize_per_panel : float, optional
+            Size in inches for each subplot panel. Default is ``4.0``.
+        dot_size : float, optional
+            Size of each dot in the scatter plot. Default is ``0.5``.
+        dot_color : str, optional
+            Colour for match dots. Default is ``"blue"``.
+        merge : bool, optional
+            Whether to merge sequential k-mer runs before plotting.
+            Default is ``True``.
+        title : str, optional
+            Overall figure title. If ``None``, no title is added.
+        dpi : int, optional
+            Resolution of the output image. Default is ``150``.
+        """
+        all_names = self.index.sequence_names()
+        if not all_names:
+            raise ValueError("No sequences in the index.")
+
+        if query_names is None:
+            query_names = sorted(all_names)
+        if target_names is None:
+            target_names = sorted(all_names)
+
+        nrows = len(query_names)
+        ncols = len(target_names)
+
+        fig_w = figsize_per_panel * ncols
+        fig_h = figsize_per_panel * nrows
+
+        fig, axes = plt.subplots(
+            nrows,
+            ncols,
+            figsize=(fig_w, fig_h),
+            squeeze=False,
+        )
+
+        for row_idx, q_name in enumerate(query_names):
+            for col_idx, t_name in enumerate(target_names):
+                ax = axes[row_idx][col_idx]
+                self._plot_panel(
+                    ax,
+                    q_name,
+                    t_name,
+                    dot_size=dot_size,
+                    dot_color=dot_color,
+                    merge=merge,
+                )
+
+        if title:
+            fig.suptitle(title, fontsize=14, y=1.01)
+
+        plt.tight_layout()
+        plt.savefig(str(output_path), dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+
+    def _plot_panel(
+        self,
+        ax: plt.Axes,
+        query_name: str,
+        target_name: str,
+        dot_size: float = 0.5,
+        dot_color: str = "blue",
+        merge: bool = True,
+    ) -> None:
+        """Render a single comparison panel onto the given Axes.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The axes to draw on.
+        query_name : str
+            Name of the query sequence (y-axis).
+        target_name : str
+            Name of the target sequence (x-axis).
+        dot_size : float, optional
+            Marker size. Default is ``0.5``.
+        dot_color : str, optional
+            Marker colour. Default is ``"blue"``.
+        merge : bool, optional
+            Whether to merge sequential runs. Default is ``True``.
+        """
+        q_len = self.index.get_sequence_length(query_name)
+        t_len = self.index.get_sequence_length(target_name)
+
+        matches = self.index.compare_sequences(query_name, target_name, merge)
+
+        # Draw match lines/dots
+        for q_start, q_end, t_start, t_end in matches:
+            # Draw a line from (t_start, q_start) to (t_end, q_end)
+            ax.plot(
+                [t_start, t_end],
+                [q_start, q_end],
+                color=dot_color,
+                linewidth=dot_size,
+                alpha=0.7,
+            )
+
+        ax.set_xlim(0, t_len)
+        ax.set_ylim(0, q_len)
+        ax.invert_yaxis()
+        ax.set_xlabel(target_name, fontsize=8)
+        ax.set_ylabel(query_name, fontsize=8)
+        ax.tick_params(axis="both", labelsize=6)
+        ax.set_aspect("auto")
+
+    def plot_single(
+        self,
+        query_name: str,
+        target_name: str,
+        output_path: Union[str, Path] = "dotplot.png",
+        figsize: tuple[float, float] = (6.0, 6.0),
+        dot_size: float = 0.5,
+        dot_color: str = "blue",
+        merge: bool = True,
+        title: Optional[str] = None,
+        dpi: int = 150,
+    ) -> None:
+        """Plot a single pairwise dotplot.
+
+        Parameters
+        ----------
+        query_name : str
+            Name of the query sequence (y-axis).
+        target_name : str
+            Name of the target sequence (x-axis).
+        output_path : str or Path, optional
+            Output image file path. Default is ``"dotplot.png"``.
+        figsize : tuple[float, float], optional
+            Figure size as (width, height) in inches. Default is ``(6, 6)``.
+        dot_size : float, optional
+            Marker/line size for each match. Default is ``0.5``.
+        dot_color : str, optional
+            Colour for matches. Default is ``"blue"``.
+        merge : bool, optional
+            Whether to merge sequential k-mer runs. Default is ``True``.
+        title : str, optional
+            Plot title. If ``None``, a default title is used.
+        dpi : int, optional
+            Output image resolution. Default is ``150``.
+        """
+        fig, ax = plt.subplots(figsize=figsize)
+        self._plot_panel(
+            ax,
+            query_name,
+            target_name,
+            dot_size=dot_size,
+            dot_color=dot_color,
+            merge=merge,
+        )
+        if title is None:
+            title = f"{query_name} vs {target_name}"
+        ax.set_title(title, fontsize=10)
+        plt.tight_layout()
+        plt.savefig(str(output_path), dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
