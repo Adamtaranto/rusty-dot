@@ -161,3 +161,38 @@ def test_repr(simple_index):
     r = repr(simple_index)
     assert "SequenceIndex" in r
     assert "k=4" in r
+
+
+def test_compare_sequences_cache_isolated_by_merge_flag(simple_index):
+    """Test that merge=True and merge=False cache entries are independent."""
+    merged = simple_index.compare_sequences("seq1", "seq2", merge=True)
+    unmerged = simple_index.compare_sequences("seq1", "seq2", merge=False)
+    # Calling again should return the same cached values for each flag
+    assert simple_index.compare_sequences("seq1", "seq2", merge=True) == merged
+    assert simple_index.compare_sequences("seq1", "seq2", merge=False) == unmerged
+    # Merging reduces or preserves the count
+    assert len(unmerged) >= len(merged)
+
+
+def test_compare_sequence_self():
+    """Test self-comparison produces matches on the main diagonal."""
+    idx = SequenceIndex(k=4)
+    idx.add_sequence("seq1", "ACGTACGT")
+    matches = idx.compare_sequences("seq1", "seq1")
+    assert len(matches) > 0
+    # The main diagonal (q_start == t_start) must be present for an exact self-match
+    main_diag = [m for m in matches if m[0] == m[2]]
+    assert len(main_diag) > 0
+
+
+def test_compare_sequences_missing_query(simple_index):
+    """Test that a missing query name raises KeyError."""
+    with pytest.raises(KeyError):
+        simple_index.compare_sequences("no_such_seq", "seq2")
+
+
+def test_compare_sequences_missing_target(simple_index):
+    """Test that a missing target name raises KeyError."""
+    with pytest.raises(KeyError):
+        simple_index.compare_sequences("seq1", "no_such_seq")
+

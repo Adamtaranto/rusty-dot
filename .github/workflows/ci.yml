@@ -54,3 +54,45 @@ jobs:
           pip install target/wheels/*.whl
       - name: Run pytest
         run: pytest tests/ -v
+
+  wasm-build:
+    name: Wasm (Pyodide) Wheel Build
+    runs-on: ubuntu-latest
+    # Run independently; a wasm build failure does not block other jobs.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable with wasm32-unknown-emscripten target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-emscripten
+      - name: Set up Emscripten SDK
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          # Keep this version in sync with the Pyodide version used in CI.
+          version: 3.1.58
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-wasm-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install maturin
+        run: pip install maturin
+      - name: Build wasm wheel
+        run: >
+          maturin build --release
+          --target wasm32-unknown-emscripten
+          -i python3.12
+      - name: Upload wasm wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-wheel
+          path: target/wheels/*.whl
+
