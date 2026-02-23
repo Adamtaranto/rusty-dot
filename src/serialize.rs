@@ -3,6 +3,8 @@
 //! Rather than serializing the FM-index data structures directly (which may
 //! not implement serde traits), we store only the original sequence text
 //! and k-mer sets, then rebuild the FM-index in memory on load.
+// pyo3 pyfunction return types trigger a false-positive useless_conversion lint.
+#![allow(clippy::useless_conversion)]
 
 use crate::error::RustyDotError;
 use crate::kmer::{build_kmer_set, sequence_to_index_text, FmIdx};

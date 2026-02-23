@@ -3,6 +3,8 @@
 //! PAF format columns (tab-separated):
 //! 1.  Query sequence name
 //! 2.  Query length
+// pyo3 pyfunction return types trigger a false-positive useless_conversion lint.
+#![allow(clippy::useless_conversion)]
 //! 3.  Query start (0-based)
 //! 4.  Query end (exclusive)
 //! 5.  Strand (+/-)

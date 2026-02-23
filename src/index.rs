@@ -2,6 +2,8 @@
 //!
 //! Provides FM-index construction, k-mer lookup, sequence comparison,
 //! and PAF output, with full Python bindings via PyO3.
+// pyo3 pyfunction/pymethods return types trigger a false-positive useless_conversion lint.
+#![allow(clippy::useless_conversion)]
 
 use crate::kmer::{
     build_kmer_set, find_kmer_coords_in_index, find_rev_coords_in_index, sequence_to_index_text,
@@ -16,6 +18,9 @@ use crate::strand::{revcomp, STRAND_REV};
 use ahash::AHashSet;
 use pyo3::prelude::*;
 use std::collections::HashMap;
+
+/// Stranded match coordinates: (query_start, query_end, target_start, target_end, strand).
+type StrandedMatch = (usize, usize, usize, usize, String);
 
 /// In-memory store for a single sequence's index data.
 struct SequenceData {
@@ -369,7 +374,7 @@ impl SequenceIndex {
         query_name: &str,
         target_name: &str,
         merge: bool,
-    ) -> PyResult<Vec<(usize, usize, usize, usize, String)>> {
+    ) -> PyResult<Vec<StrandedMatch>> {
         for name in [query_name, target_name] {
             if !self.sequences.contains_key(name) {
                 return Err(pyo3::exceptions::PyKeyError::new_err(format!(
