@@ -3,14 +3,7 @@
 import gzip
 import pytest
 
-
-FASTA_CONTENT = """>seq1
-ACGTACGTACGTACGTACGT
->seq2
-TACGTACGTACGTACGTACG
->seq3
-GCGCGCGCGCGCGCGCGCGC
-"""
+from tests.test_data import FASTA_CONTENT
 
 
 @pytest.fixture
