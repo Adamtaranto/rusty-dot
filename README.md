@@ -1,6 +1,9 @@
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 # rusty-dot
 
-A Rust + PyO3 tool for making fast dot plot comparisons of DNA sequences using a Rust FM-Index.
+Fast dot plot comparisons of DNA sequences using an FM-Index.
+Written in Rust with PyO3 python bindings.
 
 ## Features
 
@@ -100,6 +103,6 @@ plotter.plot_single("seq1", "seq2", output_path="pair.png")
 
 ```bash
 pip install maturin pytest matplotlib numpy
-maturin develop
+maturin develop --extras dev,docs
 pytest tests/ -v
 ```
