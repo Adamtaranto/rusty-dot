@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Rusty-dot: A Python library for making dot-plot comparisons of DNA sequences powered by a fast Rust FM-Index."
+version: 0.1.0
+date-released: 2026-02-24
+authors:
+  - family-names: Taranto
+    given-names: Adam
+    orcid: https://orcid.org/0000-0003-4759-3475
+    affiliation: "The University of Melbourne"
+repository-code: "https://github.com/Adamtaranto/rusty-dot"
+license: GPL-3
+abstract: >-
+  "rusty-dot is a high performance toolkit for generating dot-plot vizualisations between DNA sequences Rust. The core functions are written in Rust for speed and efficiency, we use the FM-Index from Rust-Bio for fast k-mer lookup. Python bindings are provided via PyO3 Maturin and allow rusty-dot to be imported and used as a standard Python library. "
+keywords:
+  - genome-vizualization
+  - bioinformatics
+  - dotplots
+preferred-citation:
+  type: software
+  authors:
+    - family-names: Taranto
+      given-names: Adam
+      orcid: https://orcid.org/0000-0003-4759-3475
+      affiliation: "The University of Melbourne"
+  title: "Rusty-dot: A Python library for making dot-plot comparisons of DNA sequences powered by a fast Rust FM-Index."
+  year: 2026
+  url: "https://github.com/Adamtaranto/rusty-dot"
+  repository-code: "https://github.com/Adamtaranto/rusty-dot"
+  # doi: TBA
