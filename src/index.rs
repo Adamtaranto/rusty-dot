@@ -9,7 +9,9 @@ use crate::kmer::{
     build_kmer_set, find_kmer_coords_in_index, find_rev_coords_in_index, sequence_to_index_text,
     FmIdx,
 };
-use crate::merge::{merge_fwd_runs, merge_kmer_runs, merge_rev_runs, CoordPair};
+use crate::merge::{
+    merge_fwd_runs, merge_kmer_runs, merge_rev_fwd_runs, merge_rev_runs, CoordPair,
+};
 use crate::paf::coords_to_paf;
 use crate::serialize::{
     load_index, rebuild_fm_from_bytes, save_index, IndexCollection, SerializableSequence,
@@ -36,9 +38,22 @@ struct SequenceData {
 
 /// PyO3-exposed class for building and querying FM-indexes for DNA sequences.
 ///
-/// Consumes FASTA file paths or individual sequences, builds FM-indexes
-/// and k-mer sets, and supports pairwise k-mer coordinate lookup with
-/// optional merging of sequential runs.
+/// Each sequence added to the index receives its **own independent FM-index**
+/// built by [rust-bio](https://docs.rs/bio).  The rust-bio FM-index cannot be
+/// updated or extended after construction, so adding more sequences never
+/// modifies an existing FM-index — it only creates a new one.
+///
+/// The index behaves as a **dictionary of per-sequence FM-indexes**:
+///
+/// * `add_sequence` / `load_fasta` — **add** new entries to the collection;
+///   calling either method multiple times accumulates sequences rather than
+///   replacing them.
+/// * If `add_sequence` (or `load_fasta`) is called with a name that already
+///   exists in the index, the existing entry is **silently overwritten** with a
+///   new FM-index for the new sequence.
+/// * Pairwise comparisons always operate on exactly two independent FM-indexes.
+///
+/// The `k` value is fixed at construction time and applies to all sequences.
 #[pyclass]
 pub struct SequenceIndex {
     /// Map from sequence name to index data.
@@ -78,18 +93,45 @@ impl SequenceIndex {
 
     /// Add a single sequence to the index.
     ///
+    /// Builds a **new independent FM-index** for `seq` using rust-bio and
+    /// stores it alongside the k-mer set and raw sequence bytes.  The
+    /// rust-bio FM-index is constructed once and cannot be extended; each
+    /// call to `add_sequence` creates a separate FM-index for that sequence
+    /// only.
+    ///
+    /// Calling `add_sequence` does **not** affect any other sequence already
+    /// in the index — each sequence has its own isolated FM-index.
+    ///
+    /// If a sequence with `name` already exists in the index, a
+    /// `UserWarning` is emitted and the existing entry is **overwritten**
+    /// with a new FM-index for the new `seq`.
+    ///
     /// Parameters
     /// ----------
     /// name : str
-    ///     The sequence identifier.
+    ///     A unique identifier for the sequence. Re-using an existing name
+    ///     emits a warning and replaces the previous entry.
     /// seq : str
-    ///     The DNA sequence string (uppercase recommended).
+    ///     The DNA sequence string (uppercase recommended; lowercase is
+    ///     accepted and treated as uppercase).
     ///
     /// Raises
     /// ------
     /// ValueError
-    ///     If the FM-index cannot be built.
-    pub fn add_sequence(&mut self, name: &str, seq: &str) -> PyResult<()> {
+    ///     If the FM-index cannot be built (e.g., invalid characters).
+    pub fn add_sequence(&mut self, py: Python<'_>, name: &str, seq: &str) -> PyResult<()> {
+        if self.sequences.contains_key(name) {
+            let warnings = py.import_bound("warnings")?;
+            warnings.call_method1(
+                "warn",
+                (
+                    format!(
+                        "Sequence name '{name}' already exists in the index and will be overwritten."
+                    ),
+                    py.get_type_bound::<pyo3::exceptions::PyUserWarning>(),
+                ),
+            )?;
+        }
         let text = sequence_to_index_text(seq);
         let fm = FmIdx::new(text).map_err(|e| -> pyo3::PyErr { e.into() })?;
         let kmer_set = build_kmer_set(seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
@@ -109,6 +151,21 @@ impl SequenceIndex {
 
     /// Load all sequences from a FASTA or gzipped FASTA file and add them to the index.
     ///
+    /// Parses the file with needletail (automatic gzip detection) and
+    /// builds a fresh **independent FM-index** for each record.
+    ///
+    /// Sequences already in the index are **preserved** — `load_fasta` only
+    /// adds new entries (or overwrites entries whose name already exists).
+    /// Calling `load_fasta` twice on two different files accumulates all
+    /// sequences from both files in the same index.
+    ///
+    /// If the FASTA file contains **duplicate sequence names** (two records
+    /// with the same identifier), a `ValueError` is raised before any sequences
+    /// are added to the index.
+    ///
+    /// If a record's name **already exists in the index**, a `UserWarning` is
+    /// emitted and the existing entry is overwritten.
+    ///
     /// Parameters
     /// ----------
     /// path : str
@@ -117,18 +174,32 @@ impl SequenceIndex {
     /// Returns
     /// -------
     /// list[str]
-    ///     List of sequence names that were added.
+    ///     List of sequence names that were added (in file order).
     ///
     /// Raises
     /// ------
     /// ValueError
-    ///     If the file cannot be read or parsed.
+    ///     If the file cannot be read or parsed, or if it contains duplicate
+    ///     sequence names.
     #[cfg(feature = "fasta")]
-    pub fn load_fasta(&mut self, path: &str) -> PyResult<Vec<String>> {
+    pub fn load_fasta(&mut self, py: Python<'_>, path: &str) -> PyResult<Vec<String>> {
         use crate::fasta::read_fasta;
+        // read_fasta now errors on internal FASTA duplicates and returns Vec in file order
         let seqs = read_fasta(path).map_err(|e| -> pyo3::PyErr { e.into() })?;
+        let warnings = py.import_bound("warnings")?;
         let mut names = Vec::new();
         for (name, seq) in &seqs {
+            if self.sequences.contains_key(name.as_str()) {
+                warnings.call_method1(
+                    "warn",
+                    (
+                        format!(
+                            "Sequence name '{name}' already exists in the index and will be overwritten."
+                        ),
+                        py.get_type_bound::<pyo3::exceptions::PyUserWarning>(),
+                    ),
+                )?;
+            }
             let text = sequence_to_index_text(seq);
             let fm = FmIdx::new(text).map_err(|e| -> pyo3::PyErr { e.into() })?;
             let kmer_set = build_kmer_set(seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
@@ -465,7 +536,23 @@ impl SequenceIndex {
                 find_rev_coords_in_index(&rev_shared, fm)
             };
             if merge {
-                all_pairs.extend(merge_rev_runs(&target_rev, &query_rev, self.k));
+                // Apply both anti-diagonal and co-diagonal merging for RC hits,
+                // deduplicating identical blocks that arise when a single RC pair
+                // has no neighbours on either diagonal.
+                let anti = merge_rev_runs(&target_rev, &query_rev, self.k);
+                let co = merge_rev_fwd_runs(&target_rev, &query_rev, self.k);
+                let mut seen = std::collections::HashSet::new();
+                for block in anti.into_iter().chain(co.into_iter()) {
+                    let key = (
+                        block.query_start,
+                        block.query_end,
+                        block.target_start,
+                        block.target_end,
+                    );
+                    if seen.insert(key) {
+                        all_pairs.push(block);
+                    }
+                }
             } else {
                 for (kmer, q_pos) in &query_rev {
                     if let Some(t_pos) = target_rev.get(kmer) {

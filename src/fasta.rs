@@ -22,20 +22,24 @@ use std::path::Path;
 /// Uses needletail for fast parsing. Gzip decompression is handled
 /// automatically when the file extension ends in `.gz`.
 ///
+/// Sequences are returned in the order they appear in the file.
+///
 /// # Arguments
 ///
 /// * `path` - Path to the FASTA or FASTA.gz file.
 ///
 /// # Returns
 ///
-/// A `HashMap` mapping sequence names (String) to their sequences (String).
+/// A `Vec` of `(name, sequence)` pairs in file order.
 ///
 /// # Errors
 ///
-/// Returns a `RustyDotError` if the file cannot be opened or parsed.
+/// Returns a `RustyDotError` if the file cannot be opened, parsed, or
+/// contains duplicate sequence names.
 #[cfg(feature = "fasta")]
-pub fn read_fasta(path: &str) -> Result<HashMap<String, String>, RustyDotError> {
-    let mut seqs: HashMap<String, String> = HashMap::new();
+pub fn read_fasta(path: &str) -> Result<Vec<(String, String)>, RustyDotError> {
+    let mut seqs: Vec<(String, String)> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     let mut reader =
         parse_fastx_file(Path::new(path)).map_err(|e| RustyDotError::FastaParse(e.to_string()))?;
@@ -48,7 +52,12 @@ pub fn read_fasta(path: &str) -> Result<HashMap<String, String>, RustyDotError> 
             .unwrap_or("")
             .to_string();
         let seq = String::from_utf8_lossy(&record.seq()).to_uppercase();
-        seqs.insert(name, seq);
+        if !seen.insert(name.clone()) {
+            return Err(RustyDotError::FastaParse(format!(
+                "duplicate sequence name '{name}' in FASTA file '{path}'"
+            )));
+        }
+        seqs.push((name, seq));
     }
 
     Ok(seqs)
@@ -98,9 +107,11 @@ pub fn read_fasta_stdin() -> Result<HashMap<String, String>, RustyDotError> {
 /// Raises
 /// ------
 /// ValueError
-///     If the file cannot be opened or parsed.
+///     If the file cannot be opened, parsed, or contains duplicate sequence
+///     names.
 #[cfg(feature = "fasta")]
 #[pyfunction]
 pub fn py_read_fasta(path: &str) -> PyResult<HashMap<String, String>> {
-    read_fasta(path).map_err(|e| e.into())
+    let seqs = read_fasta(path).map_err(|e| -> PyErr { e.into() })?;
+    Ok(seqs.into_iter().collect())
 }

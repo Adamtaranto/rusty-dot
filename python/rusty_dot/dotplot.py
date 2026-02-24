@@ -10,7 +10,7 @@ Reference: https://github.com/rrwick/Autocycler/blob/b0523350898faac71686251ec58
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import matplotlib
 
@@ -19,14 +19,33 @@ import matplotlib.pyplot as plt
 
 from rusty_dot._rusty_dot import SequenceIndex
 
+if TYPE_CHECKING:
+    from rusty_dot.paf_io import CrossIdx
+
 
 class DotPlotter:
     """Generate all-vs-all dotplots for sets of DNA sequences.
 
+    Accepts either a :class:`~rusty_dot.SequenceIndex` (single sequence
+    collection) or a :class:`~rusty_dot.paf_io.CrossIdx` (multi-group
+    collection).  When using a ``CrossIdx``, pass group-specific names via
+    ``query_names`` and ``target_names``::
+
+        cross = CrossIdx(k=15)
+        cross.load_fasta("assembly_a.fasta", group="a")
+        cross.load_fasta("assembly_b.fasta", group="b")
+
+        plotter = DotPlotter(cross)
+        plotter.plot(
+            query_names=cross.sequence_names(group="a"),
+            target_names=cross.sequence_names(group="b"),
+            output_path="cross_plot.png",
+        )
+
     Parameters
     ----------
-    index : SequenceIndex
-        A SequenceIndex with the sequences to plot.
+    index : SequenceIndex or CrossIdx
+        A populated index instance.
 
     Examples
     --------
@@ -39,13 +58,13 @@ class DotPlotter:
     >>> plotter.plot(output_path="dotplot.png")
     """
 
-    def __init__(self, index: SequenceIndex) -> None:
+    def __init__(self, index: Union[SequenceIndex, 'CrossIdx']) -> None:
         """Initialise the DotPlotter.
 
         Parameters
         ----------
-        index : SequenceIndex
-            A populated SequenceIndex instance.
+        index : SequenceIndex or CrossIdx
+            A populated index instance.
         """
         self.index = index
 
@@ -57,10 +76,11 @@ class DotPlotter:
         figsize_per_panel: float = 4.0,
         dot_size: float = 0.5,
         dot_color: str = 'blue',
+        rc_color: str = 'red',
         merge: bool = True,
         title: Optional[str] = None,
         dpi: int = 150,
-        scale_sequences: bool = False,
+        scale_sequences: bool = True,
     ) -> None:
         """Plot an all-vs-all dotplot grid.
 
@@ -87,7 +107,10 @@ class DotPlotter:
         dot_size : float, optional
             Size of each dot in the scatter plot. Default is ``0.5``.
         dot_color : str, optional
-            Colour for match dots. Default is ``"blue"``.
+            Colour for forward-strand (``+``) match lines. Default is ``"blue"``.
+        rc_color : str, optional
+            Colour for reverse-complement (``-``) strand match lines.
+            Default is ``"red"``.
         merge : bool, optional
             Whether to merge sequential k-mer runs before plotting.
             Default is ``True``.
@@ -96,9 +119,9 @@ class DotPlotter:
         dpi : int, optional
             Resolution of the output image. Default is ``150``.
         scale_sequences : bool, optional
-            When ``True``, subplot widths and heights are proportional to
-            the lengths of the corresponding sequences so that relative
-            sequence sizes are preserved.  When ``False`` (default) every
+            When ``True`` (default), subplot widths and heights are
+            proportional to the lengths of the corresponding sequences so that
+            relative sequence sizes are preserved.  When ``False``, every
             panel has the same fixed size.
         """
         all_names = self.index.sequence_names()
@@ -152,7 +175,11 @@ class DotPlotter:
                     t_name,
                     dot_size=dot_size,
                     dot_color=dot_color,
+                    rc_color=rc_color,
                     merge=merge,
+                    # Only label the leftmost column (y) and bottom row (x)
+                    show_xlabel=(row_idx == nrows - 1),
+                    show_ylabel=(col_idx == 0),
                 )
 
         if title:
@@ -169,7 +196,10 @@ class DotPlotter:
         target_name: str,
         dot_size: float = 0.5,
         dot_color: str = 'blue',
+        rc_color: str = 'red',
         merge: bool = True,
+        show_xlabel: bool = True,
+        show_ylabel: bool = True,
     ) -> None:
         """Render a single comparison panel onto the given Axes.
 
@@ -184,22 +214,37 @@ class DotPlotter:
         dot_size : float, optional
             Marker size. Default is ``0.5``.
         dot_color : str, optional
-            Marker colour. Default is ``"blue"``.
+            Marker colour for forward-strand (``+``) matches. Default is ``"blue"``.
+        rc_color : str, optional
+            Marker colour for reverse-complement (``-``) matches. Default is ``"red"``.
         merge : bool, optional
             Whether to merge sequential runs. Default is ``True``.
+        show_xlabel : bool, optional
+            Whether to render the target sequence name as an x-axis label.
+            Default is ``True``.
+        show_ylabel : bool, optional
+            Whether to render the query sequence name as a y-axis label.
+            Default is ``True``.
         """
         q_len = self.index.get_sequence_length(query_name)
         t_len = self.index.get_sequence_length(target_name)
 
-        matches = self.index.compare_sequences(query_name, target_name, merge)
+        matches = self.index.compare_sequences_stranded(query_name, target_name, merge)
 
-        # Draw match lines/dots
-        for q_start, q_end, t_start, t_end in matches:
-            # Draw a line from (t_start, q_start) to (t_end, q_end)
+        # Draw match lines/dots; RC matches are drawn as anti-diagonal lines.
+        for q_start, q_end, t_start, t_end, strand in matches:
+            if strand == '-':
+                # Reverse complement: as query advances (q_start→q_end) the
+                # target position retreats (t_end→t_start).
+                xs = [t_end, t_start]
+                color = rc_color
+            else:
+                xs = [t_start, t_end]
+                color = dot_color
             ax.plot(
-                [t_start, t_end],
+                xs,
                 [q_start, q_end],
-                color=dot_color,
+                color=color,
                 linewidth=dot_size,
                 alpha=0.7,
             )
@@ -207,8 +252,10 @@ class DotPlotter:
         ax.set_xlim(0, t_len)
         ax.set_ylim(0, q_len)
         ax.invert_yaxis()
-        ax.set_xlabel(target_name, fontsize=8)
-        ax.set_ylabel(query_name, fontsize=8)
+        if show_xlabel:
+            ax.set_xlabel(target_name, fontsize=8)
+        if show_ylabel:
+            ax.set_ylabel(query_name, fontsize=8)
         ax.tick_params(axis='both', labelsize=6)
         ax.set_aspect('auto')
 
@@ -220,6 +267,7 @@ class DotPlotter:
         figsize: tuple[float, float] = (6.0, 6.0),
         dot_size: float = 0.5,
         dot_color: str = 'blue',
+        rc_color: str = 'red',
         merge: bool = True,
         title: Optional[str] = None,
         dpi: int = 150,
@@ -239,7 +287,9 @@ class DotPlotter:
         dot_size : float, optional
             Marker/line size for each match. Default is ``0.5``.
         dot_color : str, optional
-            Colour for matches. Default is ``"blue"``.
+            Colour for forward-strand (``+``) matches. Default is ``"blue"``.
+        rc_color : str, optional
+            Colour for reverse-complement (``-``) matches. Default is ``"red"``.
         merge : bool, optional
             Whether to merge sequential k-mer runs. Default is ``True``.
         title : str, optional
@@ -254,6 +304,7 @@ class DotPlotter:
             target_name,
             dot_size=dot_size,
             dot_color=dot_color,
+            rc_color=rc_color,
             merge=merge,
         )
         if title is None:

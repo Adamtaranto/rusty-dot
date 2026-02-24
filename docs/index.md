@@ -13,10 +13,13 @@ At its core, it builds an [FM-index](https://en.wikipedia.org/wiki/FM-index) (vi
 - **Read FASTA / gzipped FASTA files** via [needletail](https://docs.rs/needletail)
 - **Build FM-indexes** per sequence using [rust-bio](https://docs.rs/bio)
 - **K-mer set intersection** for efficient shared k-mer lookup
-- **Merge sequential k-mer runs** into contiguous match blocks
+- **Both-strand k-mer matching**: forward (`+`) and reverse-complement (`-`) hits via `compare_sequences_stranded`
+- **Complete RC hit coverage**: two patterns merged independently — anti-diagonal (standard inverted repeat) and co-diagonal (both arms same direction)
+- **Unified merge API** (`py_merge_runs`) handles all orientation cases with a single call
 - **PAF format output** for alignment records
 - **FM-index serialization/deserialization** with [serde](https://docs.rs/serde) + bincode
-- **All-vs-all dotplot visualization** with matplotlib
+- **All-vs-all dotplot visualization** with matplotlib: forward hits in blue, RC hits in red; edge-only axis labels in grid plots; subpanels scaled by sequence length by default (`scale_sequences=True`)
+- **`CrossIdx`** multi-group cross-index: N arbitrary sequence groups, configurable group pairs for alignment, per-group contig ordering (insertion order, length, or collinearity), `run_merge` to update cached PAF records, compatible with `DotPlotter`
 - **Full Python bindings** via [PyO3](https://pyo3.rs)
 
 ## Quick Start
@@ -30,11 +33,16 @@ idx = SequenceIndex(k=15)
 idx.load_fasta("genome1.fasta")
 idx.load_fasta("genome2.fasta")
 
-# Get PAF-format alignments
+# Get PAF-format alignments (forward strand only)
 for line in idx.get_paf("seq1", "seq2"):
     print(line)
 
-# Generate dotplot
+# Stranded comparison: forward (+) and reverse-complement (-) hits
+hits = idx.compare_sequences_stranded("seq1", "seq2", merge=True)
+for qs, qe, ts, te, strand in hits:
+    print(f"{strand}  q[{qs}:{qe}]  t[{ts}:{te}]")
+
+# Generate dotplot — forward hits blue, RC hits red
 plotter = DotPlotter(idx)
 plotter.plot(output_path="dotplot.png")
 ```

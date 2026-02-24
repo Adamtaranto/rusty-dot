@@ -14,7 +14,34 @@ For most use cases, the [`SequenceIndex`](sequence_index.md) class is more conve
 
 ::: rusty_dot._rusty_dot.py_find_kmer_coords
 
+## Merging K-mer Runs
+
+rusty-dot provides four merge functions covering all k-mer alignment orientations.
+`py_merge_runs` is the recommended entry-point for new code; the strand-specific
+functions are available for lower-level control.
+
+### Unified entry-point
+
+::: rusty_dot._rusty_dot.py_merge_runs
+
+### Forward-strand merge
+
 ::: rusty_dot._rusty_dot.py_merge_kmer_runs
+
+### Reverse-complement merges
+
+Two complementary algorithms cover all reverse-complement alignment patterns:
+
+| Pattern | When to use |
+|---------|-------------|
+| `py_merge_rev_runs` | RC target positions *decrease* as query advances (query +1, target −1 per step) — standard inverted-repeat alignment where the two arms face each other |
+| `py_merge_rev_fwd_runs` | RC target positions *increase* as query advances (query +1, target +1 per step) — both repeat arms run in the same left-to-right direction |
+
+`py_merge_runs(strand="-")` calls both and deduplicates the results automatically.
+
+::: rusty_dot._rusty_dot.py_merge_rev_runs
+
+::: rusty_dot._rusty_dot.py_merge_rev_fwd_runs
 
 ## PAF Formatting
 

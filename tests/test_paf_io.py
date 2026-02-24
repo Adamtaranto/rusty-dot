@@ -260,32 +260,43 @@ class TestReorderContigs:
 
 
 # ---------------------------------------------------------------------------
-# CrossIndexPaf
+# ---------------------------------------------------------------------------
+# CrossIdx (formerly CrossIndexPaf)
 # ---------------------------------------------------------------------------
 
 
-class TestCrossIndexPaf:
+class TestCrossIdx:
     def test_add_sequence_and_repr(self):
-        from rusty_dot.paf_io import CrossIndexPaf
+        from rusty_dot.paf_io import CrossIdx
 
-        cross = CrossIndexPaf(k=4)
+        cross = CrossIdx(k=4)
         cross.add_sequence('q1', 'ACGTACGTACGT', group='a')
         cross.add_sequence('t1', 'TACGTACGTACG', group='b')
-        assert 'CrossIndexPaf' in repr(cross)
+        r = repr(cross)
+        assert r.startswith('CrossIdx(')
         assert cross.query_names == ['q1']
         assert cross.target_names == ['t1']
 
-    def test_invalid_group_raises(self):
-        from rusty_dot.paf_io import CrossIndexPaf
+    def test_group_colon_in_name_raises(self):
+        """Group names must not contain ':'."""
+        from rusty_dot.paf_io import CrossIdx
 
-        cross = CrossIndexPaf(k=4)
-        with pytest.raises(ValueError):
-            cross.add_sequence('x', 'ACGT', group='c')
+        cross = CrossIdx(k=4)
+        with pytest.raises(ValueError, match="must not contain ':'"):
+            cross.add_sequence('x', 'ACGT', group='bad:group')
+
+    def test_arbitrary_group_names_accepted(self):
+        """Any group name without ':' is accepted."""
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('x', 'ACGT' * 4, group='assembly_c')
+        assert 'assembly_c' in cross.group_names
 
     def test_get_paf_all_cross(self):
-        from rusty_dot.paf_io import CrossIndexPaf
+        from rusty_dot.paf_io import CrossIdx
 
-        cross = CrossIndexPaf(k=4)
+        cross = CrossIdx(k=4)
         cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
         cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
         lines = cross.get_paf_all()
@@ -298,15 +309,226 @@ class TestCrossIndexPaf:
 
     def test_get_paf_all_single_group(self):
         """get_paf_all with no group-B sequences does all-vs-all within group A."""
-        from rusty_dot.paf_io import CrossIndexPaf
+        from rusty_dot.paf_io import CrossIdx
 
-        cross = CrossIndexPaf(k=4)
+        cross = CrossIdx(k=4)
         cross.add_sequence('s1', 'ACGTACGTACGTACGT', group='a')
         cross.add_sequence('s2', 'ACGTACGTACGTACGT', group='a')
         lines = cross.get_paf_all()
-        # s1 vs s2 and s2 vs s1 should both appear
         queries = {line.split('\t')[0] for line in lines}
-        assert 's1' in queries or 's2' in queries
+        # Both sequences should appear as queries (s1→s2 and s2→s1)
+        assert queries == {'s1', 's2'}
+
+    def test_reorder_contigs_raises_without_group_b(self):
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('s1', 'ACGTACGTACGTACGT', group='a')
+        with pytest.raises(ValueError):
+            cross.reorder_contigs()
+
+    def test_reorder_contigs_returns_original_names(self):
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
+        cross.add_sequence('q2', 'TACGTACGTACGTACG', group='a')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+        q_sorted, t_sorted = cross.reorder_contigs()
+        assert set(q_sorted) == {'q1', 'q2'}
+        assert set(t_sorted) == {'t1'}
+
+    def test_contig_order_default_insertion(self):
+        """contig_order reflects insertion order by default."""
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('c', 'CCCC' * 4, group='g')
+        cross.add_sequence('a', 'AAAA' * 4, group='g')
+        cross.add_sequence('b', 'TTTT' * 4, group='g')
+        assert cross.contig_order['g'] == ['c', 'a', 'b']
+
+    def test_reorder_by_length(self):
+        """reorder_by_length sorts within a group by descending sequence length."""
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('short', 'ACGT' * 4, group='g')  # 16 bp
+        cross.add_sequence('long', 'ACGT' * 10, group='g')  # 40 bp
+        cross.add_sequence('mid', 'ACGT' * 6, group='g')  # 24 bp
+        cross.reorder_by_length(group='g')
+        assert cross.contig_order['g'] == ['long', 'mid', 'short']
+
+    def test_reorder_by_length_all_groups(self):
+        """reorder_by_length with group=None sorts all groups."""
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('s', 'ACGT' * 4, group='g1')
+        cross.add_sequence('l', 'ACGT' * 8, group='g1')
+        cross.add_sequence('x', 'TTTT' * 4, group='g2')
+        cross.add_sequence('y', 'TTTT' * 8, group='g2')
+        cross.reorder_by_length()
+        assert cross.contig_order['g1'][0] == 'l'
+        assert cross.contig_order['g2'][0] == 'y'
+
+    def test_reorder_for_colinearity_updates_contig_order(self):
+        """reorder_for_colinearity updates contig_order for both groups."""
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGT' * 4, group='a')
+        cross.add_sequence('q2', 'TTTTACGTACGT' * 4, group='a')
+        cross.add_sequence('t1', 'ACGTACGTACGT' * 4, group='b')
+        orig_a = list(cross.contig_order['a'])
+        cross.reorder_for_colinearity('a', 'b')
+        # Order may or may not change, but both groups must be present
+        assert set(cross.contig_order['a']) == set(orig_a)
+        assert 't1' in cross.contig_order['b']
+
+    def test_sequence_names_returns_prefixed(self):
+        """sequence_names returns 'group:name' strings."""
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('seq1', 'ACGT' * 4, group='g')
+        names = cross.sequence_names(group='g')
+        assert names == ['g:seq1']
+
+    def test_sequence_names_all_groups(self):
+        """sequence_names with no group returns all groups combined."""
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('s1', 'ACGT' * 4, group='a')
+        cross.add_sequence('s2', 'ACGT' * 4, group='b')
+        names = set(cross.sequence_names())
+        assert names == {'a:s1', 'b:s2'}
+
+    def test_get_sequence_length_via_internal_name(self):
+        """get_sequence_length works with 'group:name' key."""
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('s1', 'ACGT' * 5, group='a')
+        assert cross.get_sequence_length('a:s1') == 20
+
+    def test_get_paf_two_groups(self):
+        """get_paf returns un-prefixed names in PAF fields."""
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+        lines = cross.get_paf()
+        assert isinstance(lines, list)
+        for line in lines:
+            fields = line.split('\t')
+            assert fields[0] == 'q1'
+            assert fields[5] == 't1'
+
+    def test_run_merge_populates_paf_records(self):
+        """run_merge populates _paf_records."""
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+        assert len(cross._paf_records) == 0
+        cross.run_merge()
+        assert len(cross._paf_records) > 0
+
+    def test_str_summary(self):
+        """__str__ includes group stats."""
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('q1', 'ACGT' * 4, group='a')
+        cross.add_sequence('t1', 'ACGT' * 4, group='b')
+        s = str(cross)
+        assert 'CrossIdx' in s
+        assert "'a'" in s
+        assert "'b'" in s
+
+    def test_three_group_default_pairs(self):
+        """With 3 groups, all non-self ordered pairs are aligned."""
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('s1', 'ACGTACGTACGTACGT', group='g1')
+        cross.add_sequence('s2', 'ACGTACGTACGTACGT', group='g2')
+        cross.add_sequence('s3', 'ACGTACGTACGTACGT', group='g3')
+        pairs = cross._get_default_group_pairs()
+        assert len(pairs) == 6  # 3 groups → 6 ordered non-self pairs
+
+    def test_get_paf_explicit_group_pairs(self):
+        """get_paf respects explicit group_pairs argument."""
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('s1', 'ACGTACGTACGTACGT', group='g1')
+        cross.add_sequence('s2', 'ACGTACGTACGTACGT', group='g2')
+        cross.add_sequence('s3', 'TTTTTTTTTTTTTTTT', group='g3')
+        # Only compare g1 vs g2; g3 should not appear
+        lines = cross.get_paf(group_pairs=[('g1', 'g2')])
+        for line in lines:
+            fields = line.split('\t')
+            assert fields[0] != 's3'
+            assert fields[5] != 's3'
+
+    def test_backward_compat_alias(self):
+        """CrossIndexPaf is still importable as an alias."""
+        from rusty_dot.paf_io import CrossIndexPaf
+
+        cross = CrossIndexPaf(k=4)
+        assert isinstance(cross, CrossIndexPaf)
+
+    def test_dotplotter_compatibility(self, tmp_path):
+        """CrossIdx can be passed to DotPlotter."""
+        from rusty_dot.dotplot import DotPlotter
+        from rusty_dot.paf_io import CrossIdx
+
+        cross = CrossIdx(k=4)
+        cross.add_sequence('q1', 'ACGT' * 15, group='a')
+        cross.add_sequence('t1', 'ACGT' * 15, group='b')
+
+        plotter = DotPlotter(cross)
+        out = tmp_path / 'cross.png'
+        plotter.plot(
+            query_names=cross.sequence_names(group='a'),
+            target_names=cross.sequence_names(group='b'),
+            output_path=str(out),
+        )
+        assert out.exists()
+
+
+# Backward-compat: existing CrossIndexPaf tests still pass via alias
+class TestCrossIndexPaf:
+    """Kept for backward compatibility — delegates to CrossIdx via alias."""
+
+    def test_add_sequence_and_repr(self):
+        from rusty_dot.paf_io import CrossIndexPaf
+
+        cross = CrossIndexPaf(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGT', group='a')
+        cross.add_sequence('t1', 'TACGTACGTACG', group='b')
+        # repr now says CrossIdx, not CrossIndexPaf
+        assert 'CrossIdx' in repr(cross)
+        assert cross.query_names == ['q1']
+        assert cross.target_names == ['t1']
+
+    def test_get_paf_all_cross(self):
+        from rusty_dot.paf_io import CrossIndexPaf
+
+        cross = CrossIndexPaf(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+        lines = cross.get_paf_all()
+        assert isinstance(lines, list)
+        for line in lines:
+            fields = line.split('\t')
+            assert fields[0] == 'q1'
+            assert fields[5] == 't1'
 
     def test_reorder_contigs_raises_without_group_b(self):
         from rusty_dot.paf_io import CrossIndexPaf
