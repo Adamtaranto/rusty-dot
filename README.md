@@ -137,11 +137,3 @@ with open("alignments.paf", "w") as f:
     for line in paf_lines:
         f.write(line + "\n")
 ```
-
-## Running Tests
-
-```bash
-pip install maturin pytest matplotlib numpy
-maturin develop --extras dev,docs
-pytest tests/ -v
-```
