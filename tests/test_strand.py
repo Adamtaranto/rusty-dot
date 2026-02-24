@@ -207,6 +207,55 @@ class TestStrandHandling:
         assert rev[0] == 1, f'RC hit q_start should be 1, got {rev}'
         assert rev[2] == 4, f'RC hit t_start should be 4, got {rev}'
 
+    def test_co_diagonal_rc_hits_merged(self):
+        """RC hits that advance on a forward diagonal (co-diagonal) are merged.
+
+        query='ACACAC' (k=3), target='GTGTGT'.
+        RC(ACA)=TGT at target positions 1 and 3 (forward-strand coordinates).
+        RC(CAC)=GTG at target positions 0 and 2.
+
+        Before the fix, ``compare_sequences_stranded`` would return 3 small
+        blocks (only anti-diagonal merging).  After the fix it must also return
+        the co-diagonal merged blocks whose RC positions advance with query
+        position:
+          co-diag t-q=1: (q=0,t=1),(q=1,t=2),(q=2,t=3) → block (0,5,1,6,'-')
+          co-diag t-q=-1: (q=1,t=0),(q=2,t=1),(q=3,t=2) → block (1,6,0,5,'-')
+        """
+        idx = make_idx({'q': 'ACACAC', 't': 'GTGTGT'}, k=3)
+        stranded = idx.compare_sequences_stranded('q', 't', merge=True)
+        rev_hits = [m for m in stranded if m[4] == '-']
+
+        assert len(rev_hits) > 3, (
+            f'expected more than 3 merged RC blocks (co-diagonal hits must be merged), '
+            f'got {len(rev_hits)}: {rev_hits}'
+        )
+
+        coords = {(qs, qe, ts, te) for qs, qe, ts, te, _ in rev_hits}
+        # Co-diagonal block for t-q=1 diagonal
+        assert (0, 5, 1, 6) in coords, (
+            f'expected co-diagonal block (0,5,1,6) in RC hits, got {coords}'
+        )
+        # Co-diagonal block for t-q=-1 diagonal
+        assert (1, 6, 0, 5) in coords, (
+            f'expected co-diagonal block (1,6,0,5) in RC hits, got {coords}'
+        )
+
+    def test_standard_inverted_repeat_still_detected(self):
+        """Standard anti-diagonal RC alignment (inverted repeat) is still reported.
+
+        query='AAACCC' (k=3), target='GGGTTT' (= RC of query).
+        As query advances +1, the RC target position decreases by 1.
+        Should merge to one anti-diagonal block (0,6,0,6,'-').
+        """
+        idx = make_idx({'q': 'AAACCC', 't': 'GGGTTT'}, k=3)
+        stranded = idx.compare_sequences_stranded('q', 't', merge=True)
+        rev_hits = [m for m in stranded if m[4] == '-']
+        assert len(rev_hits) >= 1, f'expected at least one RC block, got {stranded}'
+        coords = {(qs, qe, ts, te) for qs, qe, ts, te, _ in rev_hits}
+        assert (0, 6, 0, 6) in coords, (
+            f'expected anti-diagonal merged block (0,6,0,6) in {coords}'
+        )
+
 
 # ---------------------------------------------------------------------------
 # Optimal contig order

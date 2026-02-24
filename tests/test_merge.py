@@ -1,6 +1,6 @@
 """Tests for k-mer run merging."""
 
-from rusty_dot._rusty_dot import py_merge_kmer_runs, py_merge_rev_runs, py_merge_runs
+from rusty_dot._rusty_dot import py_merge_kmer_runs, py_merge_rev_fwd_runs, py_merge_rev_runs, py_merge_runs
 
 
 def test_merge_consecutive_runs():
@@ -262,22 +262,23 @@ def test_merge_runs_fwd_consecutive():
 
 
 def test_merge_runs_rev_consecutive():
-    """py_merge_runs with strand='-' merges reverse-complement anti-diagonal hits.
+    """py_merge_runs with strand='-' includes the anti-diagonal merged block.
 
     query='AAACCC' (k=3), target='GGGTTT' (RC of query).
-    All k-mers share anti-diagonal q+t=3 → single merged block (0, 6, 0, 6, '-').
+    All k-mers share anti-diagonal q+t=3 → anti-diagonal merge produces block
+    (0, 6, 0, 6, '-').  Since py_merge_runs also applies co-diagonal merging,
+    additional single-k-mer blocks may be present; the key invariant is that
+    the large anti-diagonal block is returned and every block carries '-' strand.
     """
     k = 3
     target_rev = {'AAA': [3], 'AAC': [2], 'ACC': [1], 'CCC': [0]}
     query_pos = {'AAA': [0], 'AAC': [1], 'ACC': [2], 'CCC': [3]}
     merged = py_merge_runs(target_rev, query_pos, k, '-')
-    assert len(merged) == 1, f'expected 1 block, got {merged}'
-    qs, qe, ts, te, strand = merged[0]
-    assert qs == 0
-    assert qe == 6
-    assert ts == 0
-    assert te == 6
-    assert strand == '-'
+    coords = {(qs, qe, ts, te) for qs, qe, ts, te, _ in merged}
+    assert (0, 6, 0, 6) in coords, (
+        f'expected anti-diagonal merged block (0,6,0,6) in {coords}'
+    )
+    assert all(s == '-' for _, _, _, _, s in merged), 'all blocks must be - strand'
 
 
 def test_merge_runs_fwd_empty():
@@ -321,3 +322,88 @@ def test_merge_runs_rev_non_consecutive_stays_separate():
     merged = py_merge_runs({'AAAC': [0], 'CCCC': [5]}, {'AAAC': [0], 'CCCC': [0]}, k, '-')
     assert len(merged) == 2
     assert all(row[4] == '-' for row in merged)
+
+
+# ---------------------------------------------------------------------------
+# py_merge_rev_fwd_runs — co-diagonal RC merge
+# ---------------------------------------------------------------------------
+
+
+def test_merge_rev_fwd_consecutive():
+    """Co-diagonal RC hits (t increases with q) merge into one block.
+
+    query='ACACAC' (k=3), target='GTGTGT'.
+    RC(ACA)=TGT at t=1,3; RC(CAC)=GTG at t=0,2.
+    Forward diagonal t-q=1: (q=0,t=1),(q=1,t=2),(q=2,t=3) → block (0,5,1,6).
+    Forward diagonal t-q=-1: (q=1,t=0),(q=2,t=1),(q=3,t=2) → block (1,6,0,5).
+    """
+    k = 3
+    t_rev = {'ACA': [1, 3], 'CAC': [0, 2]}
+    q_pos = {'ACA': [0, 2], 'CAC': [1, 3]}
+    result = py_merge_rev_fwd_runs(t_rev, q_pos, k)
+    result_set = set(result)
+    assert (0, 5, 1, 6) in result_set, f'missing co-diag block (0,5,1,6) in {result_set}'
+    assert (1, 6, 0, 5) in result_set, f'missing co-diag block (1,6,0,5) in {result_set}'
+
+
+def test_merge_rev_fwd_empty():
+    assert py_merge_rev_fwd_runs({}, {}, 4) == []
+
+
+def test_merge_rev_fwd_single_kmer():
+    """Single co-diagonal RC hit produces one block of size k."""
+    k = 4
+    result = py_merge_rev_fwd_runs({'AAAC': [5]}, {'AAAC': [0]}, k)
+    assert len(result) == 1
+    qs, qe, ts, te = result[0]
+    assert qs == 0
+    assert qe == k
+    assert ts == 5
+    assert te == 5 + k
+
+
+def test_merge_rev_fwd_does_not_merge_antidiagonal_pairs():
+    """Anti-diagonal pairs (t decreases with q) are NOT merged by py_merge_rev_fwd_runs."""
+    k = 4
+    result = py_merge_rev_fwd_runs({'AAAA': [5], 'CCCC': [4]}, {'AAAA': [0], 'CCCC': [1]}, k)
+    assert len(result) == 2, f'anti-diagonal pairs must not merge, got {result}'
+
+
+def test_merge_rev_fwd_parallel_codiagonals():
+    """Two parallel co-diagonal RC runs stay separate."""
+    k = 4
+    t_rev = {'AAAA': [5, 10], 'CCCC': [6, 11]}
+    q_pos = {'AAAA': [0], 'CCCC': [1]}
+    result = py_merge_rev_fwd_runs(t_rev, q_pos, k)
+    assert len(result) == 2, f'expected 2 separate co-diagonal blocks, got {result}'
+    result_set = set(result)
+    assert (0, 1 + k, 5, 6 + k) in result_set
+    assert (0, 1 + k, 10, 11 + k) in result_set
+
+
+# ---------------------------------------------------------------------------
+# py_merge_runs("-") — both anti-diagonal and co-diagonal
+# ---------------------------------------------------------------------------
+
+
+def test_merge_runs_rev_includes_co_diagonal():
+    """py_merge_runs with strand='-' returns both anti-diagonal and co-diagonal blocks."""
+    k = 3
+    t_rev = {'ACA': [1, 3], 'CAC': [0, 2]}
+    q_pos = {'ACA': [0, 2], 'CAC': [1, 3]}
+    merged = py_merge_runs(t_rev, q_pos, k, '-')
+    coords = set((qs, qe, ts, te) for qs, qe, ts, te, _ in merged)
+    # Anti-diagonal block (anti-diag q+t=3: all 4 pairs)
+    assert (0, 6, 0, 6) in coords, f'missing anti-diag block (0,6,0,6) in {coords}'
+    # Co-diagonal block (diag t-q=1: 3 pairs)
+    assert (0, 5, 1, 6) in coords, f'missing co-diag block (0,5,1,6) in {coords}'
+    assert all(s == '-' for _, _, _, _, s in merged), 'all blocks must be - strand'
+
+
+def test_merge_runs_rev_no_duplicate_isolated_pair():
+    """An isolated RC pair that has no sequential neighbours is reported exactly once."""
+    # Single pair: only one anti-diagonal group AND one forward diagonal group,
+    # both producing identical single-k-mer blocks → dedup keeps just one.
+    result = py_merge_runs({'AAAC': [0]}, {'AAAC': [0]}, 4, '-')
+    assert len(result) == 1, f'isolated pair should appear once, got {result}'
+    assert result[0][4] == '-'

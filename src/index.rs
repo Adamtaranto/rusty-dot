@@ -9,7 +9,7 @@ use crate::kmer::{
     build_kmer_set, find_kmer_coords_in_index, find_rev_coords_in_index, sequence_to_index_text,
     FmIdx,
 };
-use crate::merge::{merge_fwd_runs, merge_kmer_runs, merge_rev_runs, CoordPair};
+use crate::merge::{merge_fwd_runs, merge_kmer_runs, merge_rev_fwd_runs, merge_rev_runs, CoordPair};
 use crate::paf::coords_to_paf;
 use crate::serialize::{
     load_index, rebuild_fm_from_bytes, save_index, IndexCollection, SerializableSequence,
@@ -465,7 +465,18 @@ impl SequenceIndex {
                 find_rev_coords_in_index(&rev_shared, fm)
             };
             if merge {
-                all_pairs.extend(merge_rev_runs(&target_rev, &query_rev, self.k));
+                // Apply both anti-diagonal and co-diagonal merging for RC hits,
+                // deduplicating identical blocks that arise when a single RC pair
+                // has no neighbours on either diagonal.
+                let anti = merge_rev_runs(&target_rev, &query_rev, self.k);
+                let co = merge_rev_fwd_runs(&target_rev, &query_rev, self.k);
+                let mut seen = std::collections::HashSet::new();
+                for block in anti.into_iter().chain(co.into_iter()) {
+                    let key = (block.query_start, block.query_end, block.target_start, block.target_end);
+                    if seen.insert(key) {
+                        all_pairs.push(block);
+                    }
+                }
             } else {
                 for (kmer, q_pos) in &query_rev {
                     if let Some(t_pos) = target_rev.get(kmer) {
