@@ -190,7 +190,9 @@ class TestStrandHandling:
         rev_hits = [m for m in stranded if m[4] == '-']
 
         assert len(fwd_hits) >= 1, f'expected + strand hit for AACC, got {stranded}'
-        assert len(rev_hits) >= 1, f'expected - strand hit for ACCC→GGGT, got {stranded}'
+        assert len(rev_hits) >= 1, (
+            f'expected - strand hit for ACCC→GGGT, got {stranded}'
+        )
 
         # Exactly one block per strand: no cross-strand merging occurred.
         assert len(stranded) == 2, (

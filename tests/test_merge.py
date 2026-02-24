@@ -1,6 +1,11 @@
 """Tests for k-mer run merging."""
 
-from rusty_dot._rusty_dot import py_merge_kmer_runs, py_merge_rev_fwd_runs, py_merge_rev_runs, py_merge_runs
+from rusty_dot._rusty_dot import (
+    py_merge_kmer_runs,
+    py_merge_rev_fwd_runs,
+    py_merge_rev_runs,
+    py_merge_runs,
+)
 
 
 def test_merge_consecutive_runs():
@@ -251,7 +256,9 @@ def test_merge_rev_does_not_merge_diagonal_pairs():
 def test_merge_runs_fwd_consecutive():
     """py_merge_runs with strand='+' merges forward co-linear hits."""
     k = 4
-    merged = py_merge_runs({'ACGT': [10], 'CGTA': [11]}, {'ACGT': [0], 'CGTA': [1]}, k, '+')
+    merged = py_merge_runs(
+        {'ACGT': [10], 'CGTA': [11]}, {'ACGT': [0], 'CGTA': [1]}, k, '+'
+    )
     assert len(merged) == 1
     qs, qe, ts, te, strand = merged[0]
     assert qs == 0
@@ -294,7 +301,8 @@ def test_merge_runs_rev_empty():
 def test_merge_runs_invalid_strand_raises():
     """py_merge_runs raises ValueError for an unrecognised strand value."""
     import pytest
-    with pytest.raises(ValueError, match="strand must be"):
+
+    with pytest.raises(ValueError, match='strand must be'):
         py_merge_runs({'ACGT': [0]}, {'ACGT': [0]}, 4, 'x')
 
 
@@ -311,7 +319,9 @@ def test_merge_runs_returns_strand_label():
 def test_merge_runs_fwd_non_consecutive_stays_separate():
     """Forward non-consecutive k-mer hits remain separate blocks."""
     k = 4
-    merged = py_merge_runs({'ACGT': [0], 'TTTT': [20]}, {'ACGT': [0], 'TTTT': [5]}, k, '+')
+    merged = py_merge_runs(
+        {'ACGT': [0], 'TTTT': [20]}, {'ACGT': [0], 'TTTT': [5]}, k, '+'
+    )
     assert len(merged) == 2
     assert all(row[4] == '+' for row in merged)
 
@@ -319,7 +329,9 @@ def test_merge_runs_fwd_non_consecutive_stays_separate():
 def test_merge_runs_rev_non_consecutive_stays_separate():
     """Reverse non-consecutive RC k-mer hits remain separate blocks."""
     k = 4
-    merged = py_merge_runs({'AAAC': [0], 'CCCC': [5]}, {'AAAC': [0], 'CCCC': [0]}, k, '-')
+    merged = py_merge_runs(
+        {'AAAC': [0], 'CCCC': [5]}, {'AAAC': [0], 'CCCC': [0]}, k, '-'
+    )
     assert len(merged) == 2
     assert all(row[4] == '-' for row in merged)
 
@@ -342,8 +354,12 @@ def test_merge_rev_fwd_consecutive():
     q_pos = {'ACA': [0, 2], 'CAC': [1, 3]}
     result = py_merge_rev_fwd_runs(t_rev, q_pos, k)
     result_set = set(result)
-    assert (0, 5, 1, 6) in result_set, f'missing co-diag block (0,5,1,6) in {result_set}'
-    assert (1, 6, 0, 5) in result_set, f'missing co-diag block (1,6,0,5) in {result_set}'
+    assert (0, 5, 1, 6) in result_set, (
+        f'missing co-diag block (0,5,1,6) in {result_set}'
+    )
+    assert (1, 6, 0, 5) in result_set, (
+        f'missing co-diag block (1,6,0,5) in {result_set}'
+    )
 
 
 def test_merge_rev_fwd_empty():
@@ -365,7 +381,9 @@ def test_merge_rev_fwd_single_kmer():
 def test_merge_rev_fwd_does_not_merge_antidiagonal_pairs():
     """Anti-diagonal pairs (t decreases with q) are NOT merged by py_merge_rev_fwd_runs."""
     k = 4
-    result = py_merge_rev_fwd_runs({'AAAA': [5], 'CCCC': [4]}, {'AAAA': [0], 'CCCC': [1]}, k)
+    result = py_merge_rev_fwd_runs(
+        {'AAAA': [5], 'CCCC': [4]}, {'AAAA': [0], 'CCCC': [1]}, k
+    )
     assert len(result) == 2, f'anti-diagonal pairs must not merge, got {result}'
 
 
@@ -392,7 +410,7 @@ def test_merge_runs_rev_includes_co_diagonal():
     t_rev = {'ACA': [1, 3], 'CAC': [0, 2]}
     q_pos = {'ACA': [0, 2], 'CAC': [1, 3]}
     merged = py_merge_runs(t_rev, q_pos, k, '-')
-    coords = set((qs, qe, ts, te) for qs, qe, ts, te, _ in merged)
+    coords = {(qs, qe, ts, te) for qs, qe, ts, te, _ in merged}
     # Anti-diagonal block (anti-diag q+t=3: all 4 pairs)
     assert (0, 6, 0, 6) in coords, f'missing anti-diag block (0,6,0,6) in {coords}'
     # Co-diagonal block (diag t-q=1: 3 pairs)

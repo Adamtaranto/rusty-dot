@@ -293,7 +293,6 @@ pub fn merge_rev_fwd_runs(
     merged
 }
 
-
 ///
 /// Equivalent to [`merge_fwd_runs`].
 pub fn merge_kmer_runs(
@@ -478,7 +477,12 @@ pub fn py_merge_runs(
             let mut seen = std::collections::HashSet::new();
             let mut combined: Vec<CoordPair> = Vec::new();
             for block in anti.into_iter().chain(co.into_iter()) {
-                let key = (block.query_start, block.query_end, block.target_start, block.target_end);
+                let key = (
+                    block.query_start,
+                    block.query_end,
+                    block.target_start,
+                    block.target_end,
+                );
                 if seen.insert(key) {
                     combined.push(block);
                 }
@@ -505,7 +509,6 @@ pub fn py_merge_runs(
         })
         .collect())
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -602,7 +605,12 @@ mod tests {
             ("CCC", vec![3]),
         ]);
         let result = merge_rev_runs(&t_rev, &q, 3);
-        assert_eq!(result.len(), 1, "expected one merged RC block, got {:?}", result);
+        assert_eq!(
+            result.len(),
+            1,
+            "expected one merged RC block, got {:?}",
+            result
+        );
         assert_eq!(result[0].query_start, 0);
         assert_eq!(result[0].query_end, 6); // q_prev=3, 3+3=6
         assert_eq!(result[0].target_start, 0); // t_prev=0 (min t)
@@ -675,23 +683,31 @@ mod tests {
         // Two separate RC alignments on different anti-diagonals:
         //   anti-diag q+t=5: (0,5), (1,4)
         //   anti-diag q+t=10: (0,10), (1,9)
-        let t_rev = make_map(&[
-            ("AAAA", vec![5, 10]),
-            ("CCCC", vec![4, 9]),
-        ]);
+        let t_rev = make_map(&[("AAAA", vec![5, 10]), ("CCCC", vec![4, 9])]);
         let q = make_map(&[("AAAA", vec![0]), ("CCCC", vec![1])]);
         let result = merge_rev_runs(&t_rev, &q, 4);
-        assert_eq!(result.len(), 2, "expected 2 separate merged RC blocks, got {:?}", result);
+        assert_eq!(
+            result.len(),
+            2,
+            "expected 2 separate merged RC blocks, got {:?}",
+            result
+        );
         let result_set: std::collections::HashSet<(usize, usize, usize, usize)> = result
             .iter()
             .map(|c| (c.query_start, c.query_end, c.target_start, c.target_end))
             .collect();
         // anti-diag 5: q=[0,5), t=[4,9) (t_prev=4, t_start+k=5+4=9)
-        assert!(result_set.contains(&(0, 1 + 4, 4, 5 + 4)),
-            "missing anti-diag-5 block in {:?}", result_set);
+        assert!(
+            result_set.contains(&(0, 1 + 4, 4, 5 + 4)),
+            "missing anti-diag-5 block in {:?}",
+            result_set
+        );
         // anti-diag 10: q=[0,5), t=[9,14) (t_prev=9, t_start+k=10+4=14)
-        assert!(result_set.contains(&(0, 1 + 4, 9, 10 + 4)),
-            "missing anti-diag-10 block in {:?}", result_set);
+        assert!(
+            result_set.contains(&(0, 1 + 4, 9, 10 + 4)),
+            "missing anti-diag-10 block in {:?}",
+            result_set
+        );
     }
 
     // --- merge_rev_fwd_runs ---
@@ -725,7 +741,11 @@ mod tests {
         let q = make_map(&[("ACA", vec![0, 2]), ("CAC", vec![1, 3])]);
         let result = merge_rev_fwd_runs(&t_rev, &q, 3);
         // All forward-diagonal groups; expect merged blocks (not all 8 singletons)
-        assert!(result.len() < 8, "expected merging to reduce blocks, got {:?}", result);
+        assert!(
+            result.len() < 8,
+            "expected merging to reduce blocks, got {:?}",
+            result
+        );
         for block in &result {
             assert_eq!(block.strand, STRAND_REV, "all blocks must be STRAND_REV");
         }
@@ -736,12 +756,14 @@ mod tests {
         // Diagonal t-q=1: (0,1),(1,2),(2,3) → (qs=0, qe=2+3=5, ts=1, te=3+3=6)
         assert!(
             result_set.contains(&(0, 5, 1, 6)),
-            "expected co-diagonal block (0,5,1,6) in {:?}", result_set
+            "expected co-diagonal block (0,5,1,6) in {:?}",
+            result_set
         );
         // Diagonal t-q=-1: (1,0),(2,1),(3,2) → (qs=1, qe=3+3=6, ts=0, te=2+3=5)
         assert!(
             result_set.contains(&(1, 6, 0, 5)),
-            "expected co-diagonal block (1,6,0,5) in {:?}", result_set
+            "expected co-diagonal block (1,6,0,5) in {:?}",
+            result_set
         );
     }
 
@@ -753,8 +775,10 @@ mod tests {
         let q = make_map(&[("AAAA", vec![0]), ("CCCC", vec![1])]);
         let result = merge_rev_fwd_runs(&t_rev, &q, 4);
         assert_eq!(
-            result.len(), 2,
-            "merge_rev_fwd_runs must not merge anti-diagonal pairs: {:?}", result
+            result.len(),
+            2,
+            "merge_rev_fwd_runs must not merge anti-diagonal pairs: {:?}",
+            result
         );
         for block in &result {
             assert_eq!(block.strand, STRAND_REV);
@@ -769,14 +793,25 @@ mod tests {
         let t_rev = make_map(&[("AAAA", vec![5, 10]), ("CCCC", vec![6, 11])]);
         let q = make_map(&[("AAAA", vec![0]), ("CCCC", vec![1])]);
         let result = merge_rev_fwd_runs(&t_rev, &q, 4);
-        assert_eq!(result.len(), 2, "expected 2 merged co-diagonal blocks, got {:?}", result);
+        assert_eq!(
+            result.len(),
+            2,
+            "expected 2 merged co-diagonal blocks, got {:?}",
+            result
+        );
         let result_set: std::collections::HashSet<(usize, usize, usize, usize)> = result
             .iter()
             .map(|c| (c.query_start, c.query_end, c.target_start, c.target_end))
             .collect();
-        assert!(result_set.contains(&(0, 1 + 4, 5, 6 + 4)),
-            "missing diagonal-5 block in {:?}", result_set);
-        assert!(result_set.contains(&(0, 1 + 4, 10, 11 + 4)),
-            "missing diagonal-10 block in {:?}", result_set);
+        assert!(
+            result_set.contains(&(0, 1 + 4, 5, 6 + 4)),
+            "missing diagonal-5 block in {:?}",
+            result_set
+        );
+        assert!(
+            result_set.contains(&(0, 1 + 4, 10, 11 + 4)),
+            "missing diagonal-10 block in {:?}",
+            result_set
+        );
     }
 }
