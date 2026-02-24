@@ -164,6 +164,7 @@ def test_plot_grid_labels_only_at_edges():
     """In a multi-panel grid plot, x-labels appear only on the bottom row
     and y-labels appear only on the leftmost column."""
     import matplotlib
+
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
@@ -192,7 +193,9 @@ def test_plot_grid_labels_only_at_edges():
 
     # Bottom row: xlabel present
     assert axes[nrows - 1][0].get_xlabel() != '', 'bottom-left should have x-label'
-    assert axes[nrows - 1][ncols - 1].get_xlabel() != '', 'bottom-right should have x-label'
+    assert axes[nrows - 1][ncols - 1].get_xlabel() != '', (
+        'bottom-right should have x-label'
+    )
     # Non-bottom rows: xlabel absent
     assert axes[0][0].get_xlabel() == '', 'top-left should not have x-label'
     assert axes[0][ncols - 1].get_xlabel() == '', 'top-right should not have x-label'
@@ -201,4 +204,6 @@ def test_plot_grid_labels_only_at_edges():
     assert axes[nrows - 1][0].get_ylabel() != '', 'bottom-left should have y-label'
     # Non-leftmost columns: ylabel absent
     assert axes[0][ncols - 1].get_ylabel() == '', 'top-right should not have y-label'
-    assert axes[nrows - 1][ncols - 1].get_ylabel() == '', 'bottom-right should not have y-label'
+    assert axes[nrows - 1][ncols - 1].get_ylabel() == '', (
+        'bottom-right should not have y-label'
+    )

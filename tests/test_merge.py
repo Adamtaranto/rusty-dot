@@ -145,16 +145,18 @@ def test_merge_rev_consecutive_merge():
     assert len(merged) == 1, f'expected 1 merged block, got {merged}'
     qs, qe, ts, te = merged[0]
     assert qs == 0
-    assert qe == 6   # q_prev=3, 3+k=6
-    assert ts == 0   # min RC position in target
-    assert te == 6   # max RC position + k = 3+3=6
+    assert qe == 6  # q_prev=3, 3+k=6
+    assert ts == 0  # min RC position in target
+    assert te == 6  # max RC position + k = 3+3=6
 
 
 def test_merge_rev_non_consecutive_stays_separate():
     """Non-consecutive RC hits on different anti-diagonals remain separate."""
     k = 4
     # (q=0, t=0): q+t=0  and  (q=0, t=5): q+t=5 → different anti-diagonals
-    merged = py_merge_rev_runs({'AAAC': [0], 'CCCC': [5]}, {'AAAC': [0], 'CCCC': [0]}, k)
+    merged = py_merge_rev_runs(
+        {'AAAC': [0], 'CCCC': [5]}, {'AAAC': [0], 'CCCC': [0]}, k
+    )
     assert len(merged) == 2
 
 
@@ -170,8 +172,12 @@ def test_merge_rev_parallel_antidiagonals():
     merged = py_merge_rev_runs(target_rev, query_pos, k)
     assert len(merged) == 2, f'expected 2 blocks, got {merged}'
     result_set = set(merged)
-    assert (0, 1 + k, 4, 5 + k) in result_set, f'missing anti-diag-5 block in {result_set}'
-    assert (0, 1 + k, 9, 10 + k) in result_set, f'missing anti-diag-10 block in {result_set}'
+    assert (0, 1 + k, 4, 5 + k) in result_set, (
+        f'missing anti-diag-5 block in {result_set}'
+    )
+    assert (0, 1 + k, 9, 10 + k) in result_set, (
+        f'missing anti-diag-10 block in {result_set}'
+    )
 
 
 def test_merge_rev_longer_run():
@@ -184,9 +190,9 @@ def test_merge_rev_longer_run():
     assert len(merged) == 1, f'expected 1 merged block, got {merged}'
     qs, qe, ts, te = merged[0]
     assert qs == 0
-    assert qe == 4 + k   # q_prev=4, 4+3=7
-    assert ts == 4        # min RC position
-    assert te == 8 + k   # max RC position + k = 8+3=11
+    assert qe == 4 + k  # q_prev=4, 4+3=7
+    assert ts == 4  # min RC position
+    assert te == 8 + k  # max RC position + k = 8+3=11
 
 
 def test_merge_rev_empty_input():
