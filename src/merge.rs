@@ -460,6 +460,7 @@ pub fn py_merge_rev_fwd_runs(
 /// ValueError
 ///     If ``strand`` is neither ``"+"`` nor ``"-"``.
 #[pyfunction]
+#[allow(clippy::type_complexity)]
 pub fn py_merge_runs(
     kmer_coords: HashMap<String, Vec<usize>>,
     query_kmer_positions: HashMap<String, Vec<usize>>,
