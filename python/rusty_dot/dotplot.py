@@ -57,6 +57,7 @@ class DotPlotter:
         figsize_per_panel: float = 4.0,
         dot_size: float = 0.5,
         dot_color: str = 'blue',
+        rc_color: str = 'red',
         merge: bool = True,
         title: Optional[str] = None,
         dpi: int = 150,
@@ -87,7 +88,10 @@ class DotPlotter:
         dot_size : float, optional
             Size of each dot in the scatter plot. Default is ``0.5``.
         dot_color : str, optional
-            Colour for match dots. Default is ``"blue"``.
+            Colour for forward-strand (``+``) match lines. Default is ``"blue"``.
+        rc_color : str, optional
+            Colour for reverse-complement (``-``) strand match lines.
+            Default is ``"red"``.
         merge : bool, optional
             Whether to merge sequential k-mer runs before plotting.
             Default is ``True``.
@@ -152,6 +156,7 @@ class DotPlotter:
                     t_name,
                     dot_size=dot_size,
                     dot_color=dot_color,
+                    rc_color=rc_color,
                     merge=merge,
                 )
 
@@ -169,6 +174,7 @@ class DotPlotter:
         target_name: str,
         dot_size: float = 0.5,
         dot_color: str = 'blue',
+        rc_color: str = 'red',
         merge: bool = True,
     ) -> None:
         """Render a single comparison panel onto the given Axes.
@@ -184,22 +190,31 @@ class DotPlotter:
         dot_size : float, optional
             Marker size. Default is ``0.5``.
         dot_color : str, optional
-            Marker colour. Default is ``"blue"``.
+            Marker colour for forward-strand (``+``) matches. Default is ``"blue"``.
+        rc_color : str, optional
+            Marker colour for reverse-complement (``-``) matches. Default is ``"red"``.
         merge : bool, optional
             Whether to merge sequential runs. Default is ``True``.
         """
         q_len = self.index.get_sequence_length(query_name)
         t_len = self.index.get_sequence_length(target_name)
 
-        matches = self.index.compare_sequences(query_name, target_name, merge)
+        matches = self.index.compare_sequences_stranded(query_name, target_name, merge)
 
-        # Draw match lines/dots
-        for q_start, q_end, t_start, t_end in matches:
-            # Draw a line from (t_start, q_start) to (t_end, q_end)
+        # Draw match lines/dots; RC matches are drawn as anti-diagonal lines.
+        for q_start, q_end, t_start, t_end, strand in matches:
+            if strand == '-':
+                # Reverse complement: as query advances (q_start→q_end) the
+                # target position retreats (t_end→t_start).
+                xs = [t_end, t_start]
+                color = rc_color
+            else:
+                xs = [t_start, t_end]
+                color = dot_color
             ax.plot(
-                [t_start, t_end],
+                xs,
                 [q_start, q_end],
-                color=dot_color,
+                color=color,
                 linewidth=dot_size,
                 alpha=0.7,
             )
@@ -220,6 +235,7 @@ class DotPlotter:
         figsize: tuple[float, float] = (6.0, 6.0),
         dot_size: float = 0.5,
         dot_color: str = 'blue',
+        rc_color: str = 'red',
         merge: bool = True,
         title: Optional[str] = None,
         dpi: int = 150,
@@ -239,7 +255,9 @@ class DotPlotter:
         dot_size : float, optional
             Marker/line size for each match. Default is ``0.5``.
         dot_color : str, optional
-            Colour for matches. Default is ``"blue"``.
+            Colour for forward-strand (``+``) matches. Default is ``"blue"``.
+        rc_color : str, optional
+            Colour for reverse-complement (``-``) matches. Default is ``"red"``.
         merge : bool, optional
             Whether to merge sequential k-mer runs. Default is ``True``.
         title : str, optional
@@ -254,6 +272,7 @@ class DotPlotter:
             target_name,
             dot_size=dot_size,
             dot_color=dot_color,
+            rc_color=rc_color,
             merge=merge,
         )
         if title is None:

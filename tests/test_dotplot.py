@@ -70,6 +70,80 @@ def test_plot_scale_sequences(dotplot_index, tmp_path):
     assert os.path.getsize(output) > 0
 
 
+def test_plot_rc_only_sequences(tmp_path):
+    """Sequences with only reverse-complement matches produce a non-empty dotplot."""
+    # 'q' k-mer AAAC has revcomp GTTT which is in 't'; no forward shared k-mers
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('q', 'AAACAAACAAAC')
+    idx.add_sequence('t', 'GTTTGTTTGTTT')
+    plotter = DotPlotter(idx)
+    output = str(tmp_path / 'rc_only.png')
+    plotter.plot_single('q', 't', output_path=output)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_plot_rc_lines_are_anti_diagonal(tmp_path):
+    """RC matches are drawn as anti-diagonal lines in the plot axes."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    # 'q' = AAAC repeated; 't' = GTTT repeated (only RC matches, no forward)
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('q', 'AAACAAACAAAC')
+    idx.add_sequence('t', 'GTTTGTTTGTTT')
+    plotter = DotPlotter(idx)
+
+    fig, ax = plt.subplots()
+    plotter._plot_panel(ax, 'q', 't')
+    plt.close(fig)
+
+    # At least one line must have been drawn
+    assert len(ax.lines) > 0
+
+    # For every RC match line, the x-data must be decreasing (anti-diagonal)
+    for line in ax.lines:
+        xdata = line.get_xdata()
+        if len(xdata) == 2:
+            # anti-diagonal: x goes from t_end to t_start (decreasing)
+            assert xdata[0] >= xdata[1], (
+                f'Expected anti-diagonal line (x decreasing) for RC match, '
+                f'got x={xdata}'
+            )
+
+
+def test_plot_fwd_lines_are_diagonal(tmp_path):
+    """Forward matches are drawn as diagonal lines (x increasing) in the axes."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('q', 'ACGTACGTACGT')
+    idx.add_sequence('t', 'ACGTACGTACGT')
+    plotter = DotPlotter(idx)
+
+    fig, ax = plt.subplots()
+    plotter._plot_panel(ax, 'q', 't')
+    plt.close(fig)
+
+    fwd_lines = [line for line in ax.lines if list(line.get_xdata()) == sorted(line.get_xdata())]
+    assert len(fwd_lines) > 0, 'Expected at least one forward (diagonal) match line'
+
+
+def test_plot_rc_color_parameter(tmp_path):
+    """The rc_color parameter is accepted and produces a valid plot."""
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('q', 'AAACAAACAAAC')
+    idx.add_sequence('t', 'GTTTGTTTGTTT')
+    plotter = DotPlotter(idx)
+    output = str(tmp_path / 'rc_color.png')
+    plotter.plot_single('q', 't', output_path=output, rc_color='green')
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
 def test_plot_scale_sequences_false_matches_default(dotplot_index, tmp_path):
     """Test that scale_sequences=False (default) and not passing it produce same-size files."""
     plotter = DotPlotter(dotplot_index)
