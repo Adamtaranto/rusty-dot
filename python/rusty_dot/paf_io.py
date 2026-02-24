@@ -6,6 +6,8 @@ This module provides:
 - :class:`PafAlignment` — a container that loads PAF records from a file or
   a list and provides a :meth:`~PafAlignment.reorder_contigs` method to
   reorganise sequences for maximum collinearity.
+- :class:`CrossIndexPaf` — computes pairwise PAF alignments between sequences
+  belonging to two separate index groups (e.g. two different genome assemblies).
 
 CIGAR support
 -------------
@@ -35,10 +37,15 @@ Examples
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 import re
 from typing import Any, Generator, Iterable
+
+from rusty_dot._rusty_dot import SequenceIndex
+
+_log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # CIGAR parsing
@@ -437,13 +444,26 @@ def compute_gravity_contigs(
         w = wt.get(name, 0.0)
         return (wp.get(name, 0.0) / w / total) if w > 0 else float('inf')
 
+    def _sort_key_with_len(
+        name: str,
+        wt: dict,
+        wp: dict,
+        total: float,
+        len_map: dict,
+    ) -> tuple:
+        g = _gravity(name, wt, wp, total)
+        if g == float('inf'):
+            # Unmatched: sort after matched (1 > 0), then by descending length
+            return (1, -len_map.get(name, 0))
+        return (0, g)
+
     sorted_q = sorted(
         query_names,
-        key=lambda n: _gravity(n, q_weight, q_wpos, total_target_len),
+        key=lambda n: _sort_key_with_len(n, q_weight, q_wpos, total_target_len, q_len_map),
     )
     sorted_t = sorted(
         target_names,
-        key=lambda n: _gravity(n, t_weight, t_wpos, total_query_len),
+        key=lambda n: _sort_key_with_len(n, t_weight, t_wpos, total_query_len, t_len_map),
     )
     return sorted_q, sorted_t
 
@@ -634,3 +654,284 @@ class PafAlignment:
         q = query_names if query_names is not None else self.query_names
         t = target_names if target_names is not None else self.target_names
         return compute_gravity_contigs(self.records, q, t)
+
+
+# ---------------------------------------------------------------------------
+# CrossIndexPaf: pairwise comparisons between two sequence groups
+# ---------------------------------------------------------------------------
+
+
+class CrossIndexPaf:
+    """Compute pairwise PAF alignments between two groups of sequences.
+
+    This class builds a single shared :class:`~rusty_dot.SequenceIndex`
+    containing all sequences from both groups (using ``a:`` / ``b:``
+    prefixes to avoid name collisions) and then computes k-mer-based
+    alignments for every (group-A sequence) × (group-B sequence) pair.
+
+    If only one group is provided, all-vs-all comparisons within that group
+    are performed (equivalent to calling
+    :meth:`~rusty_dot.SequenceIndex.get_paf_all` directly).
+
+    Parameters
+    ----------
+    k : int
+        K-mer length to use for indexing and comparison.
+
+    Examples
+    --------
+    >>> from rusty_dot.paf_io import CrossIndexPaf
+    >>> cross = CrossIndexPaf(k=10)
+    >>> cross.load_fasta('genome_a.fasta', group='a')
+    >>> cross.load_fasta('genome_b.fasta', group='b')
+    >>> paf_lines = cross.get_paf_all()
+    """
+
+    # Internal name prefixes to avoid collisions between groups.
+    _PREFIX_A = 'a:'
+    _PREFIX_B = 'b:'
+
+    def __init__(self, k: int) -> None:
+        """Initialise an empty CrossIndexPaf.
+
+        Parameters
+        ----------
+        k : int
+            K-mer length to use when building the sequence index.
+        """
+        self._index: SequenceIndex = SequenceIndex(k=k)
+        self._names_a: list[str] = []
+        self._names_b: list[str] = []
+        self._k = k
+
+    # ------------------------------------------------------------------
+    # Adding sequences
+    # ------------------------------------------------------------------
+
+    def add_sequence(self, name: str, seq: str, group: str = 'a') -> None:
+        """Add a single sequence to group A or B.
+
+        Parameters
+        ----------
+        name : str
+            Sequence identifier.  The identifier is stored with a group
+            prefix (``a:`` or ``b:``) internally to avoid name collisions.
+        seq : str
+            DNA sequence string.
+        group : str, optional
+            ``'a'`` (default) or ``'b'``.
+
+        Raises
+        ------
+        ValueError
+            If *group* is not ``'a'`` or ``'b'``.
+        """
+        if group not in ('a', 'b'):
+            raise ValueError(f"group must be 'a' or 'b', got {group!r}")
+        prefix = self._PREFIX_A if group == 'a' else self._PREFIX_B
+        internal = prefix + name
+        self._index.add_sequence(internal, seq)
+        if group == 'a':
+            self._names_a.append(internal)
+        else:
+            self._names_b.append(internal)
+
+    def load_fasta(self, path: str, group: str = 'a') -> list[str]:
+        """Load sequences from a FASTA file into group A or B.
+
+        Parameters
+        ----------
+        path : str
+            Path to a FASTA (``.fa`` / ``.fasta``) or gzipped FASTA file.
+        group : str, optional
+            ``'a'`` (default) or ``'b'``.
+
+        Returns
+        -------
+        list[str]
+            The original (un-prefixed) sequence names that were loaded.
+
+        Raises
+        ------
+        ValueError
+            If *group* is not ``'a'`` or ``'b'``, or if the file cannot be
+            parsed.
+        """
+        if group not in ('a', 'b'):
+            raise ValueError(f"group must be 'a' or 'b', got {group!r}")
+        prefix = self._PREFIX_A if group == 'a' else self._PREFIX_B
+        from rusty_dot._rusty_dot import py_read_fasta
+        seqs = py_read_fasta(path)
+        names: list[str] = []
+        for name, seq in seqs.items():
+            internal = prefix + name
+            self._index.add_sequence(internal, seq)
+            if group == 'a':
+                self._names_a.append(internal)
+            else:
+                self._names_b.append(internal)
+            names.append(name)
+        return names
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+
+    @property
+    def query_names(self) -> list[str]:
+        """Return original (un-prefixed) names for group-A sequences.
+
+        Returns
+        -------
+        list[str]
+            Sequence names from group A, in insertion order.
+        """
+        return [n[len(self._PREFIX_A):] for n in self._names_a]
+
+    @property
+    def target_names(self) -> list[str]:
+        """Return original (un-prefixed) names for group-B sequences.
+
+        Returns
+        -------
+        list[str]
+            Sequence names from group B, in insertion order.
+        """
+        return [n[len(self._PREFIX_B):] for n in self._names_b]
+
+    def __repr__(self) -> str:
+        """Return a concise string representation.
+
+        Returns
+        -------
+        str
+            ``CrossIndexPaf(k=<k>, queries=<n_a>, targets=<n_b>)``.
+        """
+        return (
+            f'CrossIndexPaf(k={self._k}, '
+            f'queries={len(self._names_a)}, '
+            f'targets={len(self._names_b)})'
+        )
+
+    # ------------------------------------------------------------------
+    # PAF output
+    # ------------------------------------------------------------------
+
+    def get_paf_all(self, merge: bool = True) -> list[str]:
+        """Return PAF lines for all cross-group sequence comparisons.
+
+        Computes alignments for every (group-A sequence, group-B sequence)
+        pair.  If no group-B sequences have been added, all-vs-all
+        comparisons within group A are returned instead.
+
+        An informative log message is emitted at ``INFO`` level before
+        computation begins.
+
+        Parameters
+        ----------
+        merge : bool, optional
+            Whether to merge consecutive co-linear k-mer runs before
+            generating PAF lines.  Default is ``True``.
+
+        Returns
+        -------
+        list[str]
+            PAF-formatted lines (12 tab-separated columns each).
+        """
+        if self._names_b:
+            _log.info(
+                'CrossIndexPaf: computing %d x %d pairwise alignments '
+                'between group A (%d sequences) and group B (%d sequences)',
+                len(self._names_a),
+                len(self._names_b),
+                len(self._names_a),
+                len(self._names_b),
+            )
+            paf_lines: list[str] = []
+            for q_internal in self._names_a:
+                for t_internal in self._names_b:
+                    lines = self._index.get_paf(q_internal, t_internal, merge)
+                    # Replace internal prefixed names with original names
+                    q_orig = q_internal[len(self._PREFIX_A):]
+                    t_orig = t_internal[len(self._PREFIX_B):]
+                    for line in lines:
+                        fields = line.split('\t')
+                        fields[0] = q_orig
+                        fields[5] = t_orig
+                        paf_lines.append('\t'.join(fields))
+            return paf_lines
+        else:
+            _log.info(
+                'CrossIndexPaf: computing all-vs-all pairwise alignments '
+                'within group A (%d sequences)',
+                len(self._names_a),
+            )
+            paf_lines = []
+            for i, q_internal in enumerate(self._names_a):
+                for j, t_internal in enumerate(self._names_a):
+                    if i == j:
+                        continue
+                    lines = self._index.get_paf(q_internal, t_internal, merge)
+                    q_orig = q_internal[len(self._PREFIX_A):]
+                    t_orig = t_internal[len(self._PREFIX_A):]
+                    for line in lines:
+                        fields = line.split('\t')
+                        fields[0] = q_orig
+                        fields[5] = t_orig
+                        paf_lines.append('\t'.join(fields))
+            return paf_lines
+
+    def reorder_contigs(
+        self,
+        query_names: list[str] | None = None,
+        target_names: list[str] | None = None,
+    ) -> tuple[list[str], list[str]]:
+        """Sort query and target contig names for maximum collinearity.
+
+        Uses the gravity-centre algorithm via
+        :meth:`~rusty_dot.SequenceIndex.optimal_contig_order`.
+        Unmatched contigs are placed at the end, sorted by descending length.
+
+        Parameters
+        ----------
+        query_names : list[str] or None, optional
+            Original (un-prefixed) names for group-A sequences to reorder.
+            Defaults to all group-A sequences.
+        target_names : list[str] or None, optional
+            Original (un-prefixed) names for group-B sequences to reorder.
+            Defaults to all group-B sequences.
+
+        Returns
+        -------
+        tuple[list[str], list[str]]
+            ``(sorted_query_names, sorted_target_names)`` — both lists use
+            the original un-prefixed names.
+
+        Raises
+        ------
+        ValueError
+            If group B is empty (use a single :class:`SequenceIndex` and
+            its :meth:`~rusty_dot.SequenceIndex.optimal_contig_order`
+            for single-group reordering).
+        """
+        if not self._names_b:
+            raise ValueError(
+                'reorder_contigs requires group B sequences; '
+                'use SequenceIndex.optimal_contig_order for single-group reordering.'
+            )
+        q_internal = (
+            self._names_a
+            if query_names is None
+            else [self._PREFIX_A + n for n in query_names]
+        )
+        t_internal = (
+            self._names_b
+            if target_names is None
+            else [self._PREFIX_B + n for n in target_names]
+        )
+        sorted_q_int, sorted_t_int = self._index.optimal_contig_order(
+            q_internal, t_internal
+        )
+        sorted_q = [n[len(self._PREFIX_A):] for n in sorted_q_int]
+        sorted_t = [n[len(self._PREFIX_B):] for n in sorted_t_int]
+        return sorted_q, sorted_t

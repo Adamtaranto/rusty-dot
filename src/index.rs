@@ -577,7 +577,24 @@ impl SequenceIndex {
             };
             q_gravity.push((gravity, q.clone()));
         }
-        q_gravity.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort: matched contigs by ascending gravity, then unmatched by descending length.
+        let mut matched_q: Vec<(f64, String)> = q_gravity
+            .iter()
+            .filter(|(g, _)| *g < f64::MAX)
+            .cloned()
+            .collect();
+        let mut unmatched_q: Vec<(usize, String)> = q_gravity
+            .iter()
+            .filter(|(g, _)| *g >= f64::MAX)
+            .map(|(_, n)| (self.sequences[n.as_str()].seq_len, n.clone()))
+            .collect();
+        matched_q.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        unmatched_q.sort_by(|a, b| b.0.cmp(&a.0)); // descending length
+        let q_gravity: Vec<String> = matched_q
+            .into_iter()
+            .map(|(_, n)| n)
+            .chain(unmatched_q.into_iter().map(|(_, n)| n))
+            .collect();
 
         let total_query_len: usize = query_names
             .iter()
@@ -613,12 +630,26 @@ impl SequenceIndex {
             };
             t_gravity.push((gravity, t.clone()));
         }
-        t_gravity.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort: matched contigs by ascending gravity, then unmatched by descending length.
+        let mut matched_t: Vec<(f64, String)> = t_gravity
+            .iter()
+            .filter(|(g, _)| *g < f64::MAX)
+            .cloned()
+            .collect();
+        let mut unmatched_t: Vec<(usize, String)> = t_gravity
+            .iter()
+            .filter(|(g, _)| *g >= f64::MAX)
+            .map(|(_, n)| (self.sequences[n.as_str()].seq_len, n.clone()))
+            .collect();
+        matched_t.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        unmatched_t.sort_by(|a, b| b.0.cmp(&a.0)); // descending length
+        let t_gravity: Vec<String> = matched_t
+            .into_iter()
+            .map(|(_, n)| n)
+            .chain(unmatched_t.into_iter().map(|(_, n)| n))
+            .collect();
 
-        Ok((
-            q_gravity.into_iter().map(|(_, n)| n).collect(),
-            t_gravity.into_iter().map(|(_, n)| n).collect(),
-        ))
+        Ok((q_gravity, t_gravity))
     }
 
     /// Get PAF-formatted strings for a pair of sequences.
@@ -663,6 +694,38 @@ impl SequenceIndex {
             target_name,
             target_len,
         ))
+    }
+
+    /// Return PAF-formatted strings for every ordered sequence pair in the index.
+    ///
+    /// Calls :meth:`get_paf` for every ``(i, j)`` pair where ``i != j``,
+    /// populating the comparison cache as a side-effect.
+    ///
+    /// Parameters
+    /// ----------
+    /// merge : bool, optional
+    ///     Whether to merge sequential k-mer runs before generating PAF lines.
+    ///     Default is ``True``.
+    ///
+    /// Returns
+    /// -------
+    /// list[str]
+    ///     All PAF lines for every pairwise comparison, one line per match.
+    #[pyo3(signature = (merge=true))]
+    pub fn get_paf_all(&mut self, merge: bool) -> PyResult<Vec<String>> {
+        let names: Vec<String> = self.sequences.keys().cloned().collect();
+        let mut all_paf: Vec<String> = Vec::new();
+        for i in 0..names.len() {
+            for j in 0..names.len() {
+                if i != j {
+                    let q = names[i].clone();
+                    let t = names[j].clone();
+                    let lines = self.get_paf(&q, &t, merge)?;
+                    all_paf.extend(lines);
+                }
+            }
+        }
+        Ok(all_paf)
     }
 
     /// Pre-calculate pairwise comparisons for all sequence pairs.

@@ -22,6 +22,7 @@ theme:
   features:
     - navigation.tabs
     - navigation.sections
+    - navigation.expand
     - navigation.top
     - search.suggest
     - search.highlight
@@ -64,6 +65,8 @@ nav:
       - Quick Start: tutorials/quickstart.ipynb
       - Dotplot Visualization: tutorials/dotplot_tutorial.ipynb
       - PAF Workflow: tutorials/paf_workflow.ipynb
+      - All-vs-All Between Two Indices: tutorials/all_vs_all_two_indices.ipynb
+      - Minimap2 PAF Visualization: tutorials/minimap2_paf_tutorial.ipynb
   - API Reference:
       - Overview: api/index.md
       - SequenceIndex: api/sequence_index.md
