@@ -31,6 +31,7 @@ from rusty_dot._rusty_dot import (  # noqa: F401
 )
 from rusty_dot.dotplot import DotPlotter  # noqa: F401
 from rusty_dot.paf_io import (  # noqa: F401
+    CrossIdx,
     CrossIndexPaf,
     PafAlignment,
     PafRecord,
@@ -42,6 +43,7 @@ __version__ = '0.1.0'
 __all__ = [
     'SequenceIndex',
     'DotPlotter',
+    'CrossIdx',
     'CrossIndexPaf',
     'PafRecord',
     'PafAlignment',

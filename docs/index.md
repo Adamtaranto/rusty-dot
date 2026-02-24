@@ -18,7 +18,8 @@ At its core, it builds an [FM-index](https://en.wikipedia.org/wiki/FM-index) (vi
 - **Unified merge API** (`py_merge_runs`) handles all orientation cases with a single call
 - **PAF format output** for alignment records
 - **FM-index serialization/deserialization** with [serde](https://docs.rs/serde) + bincode
-- **All-vs-all dotplot visualization** with matplotlib: forward hits in blue, RC hits in red; edge-only axis labels in grid plots
+- **All-vs-all dotplot visualization** with matplotlib: forward hits in blue, RC hits in red; edge-only axis labels in grid plots; subpanels scaled by sequence length by default (`scale_sequences=True`)
+- **`CrossIdx`** multi-group cross-index: N arbitrary sequence groups, configurable group pairs for alignment, per-group contig ordering (insertion order, length, or collinearity), `run_merge` to update cached PAF records, compatible with `DotPlotter`
 - **Full Python bindings** via [PyO3](https://pyo3.rs)
 
 ## Quick Start

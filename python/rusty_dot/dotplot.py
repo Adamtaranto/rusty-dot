@@ -10,7 +10,7 @@ Reference: https://github.com/rrwick/Autocycler/blob/b0523350898faac71686251ec58
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 import matplotlib
 
@@ -19,14 +19,33 @@ import matplotlib.pyplot as plt
 
 from rusty_dot._rusty_dot import SequenceIndex
 
+if TYPE_CHECKING:
+    from rusty_dot.paf_io import CrossIdx
+
 
 class DotPlotter:
     """Generate all-vs-all dotplots for sets of DNA sequences.
 
+    Accepts either a :class:`~rusty_dot.SequenceIndex` (single sequence
+    collection) or a :class:`~rusty_dot.paf_io.CrossIdx` (multi-group
+    collection).  When using a ``CrossIdx``, pass group-specific names via
+    ``query_names`` and ``target_names``::
+
+        cross = CrossIdx(k=15)
+        cross.load_fasta("assembly_a.fasta", group="a")
+        cross.load_fasta("assembly_b.fasta", group="b")
+
+        plotter = DotPlotter(cross)
+        plotter.plot(
+            query_names=cross.sequence_names(group="a"),
+            target_names=cross.sequence_names(group="b"),
+            output_path="cross_plot.png",
+        )
+
     Parameters
     ----------
-    index : SequenceIndex
-        A SequenceIndex with the sequences to plot.
+    index : SequenceIndex or CrossIdx
+        A populated index instance.
 
     Examples
     --------
@@ -39,13 +58,13 @@ class DotPlotter:
     >>> plotter.plot(output_path="dotplot.png")
     """
 
-    def __init__(self, index: SequenceIndex) -> None:
+    def __init__(self, index: Union[SequenceIndex, 'CrossIdx']) -> None:
         """Initialise the DotPlotter.
 
         Parameters
         ----------
-        index : SequenceIndex
-            A populated SequenceIndex instance.
+        index : SequenceIndex or CrossIdx
+            A populated index instance.
         """
         self.index = index
 
@@ -61,7 +80,7 @@ class DotPlotter:
         merge: bool = True,
         title: Optional[str] = None,
         dpi: int = 150,
-        scale_sequences: bool = False,
+        scale_sequences: bool = True,
     ) -> None:
         """Plot an all-vs-all dotplot grid.
 
@@ -100,9 +119,9 @@ class DotPlotter:
         dpi : int, optional
             Resolution of the output image. Default is ``150``.
         scale_sequences : bool, optional
-            When ``True``, subplot widths and heights are proportional to
-            the lengths of the corresponding sequences so that relative
-            sequence sizes are preserved.  When ``False`` (default) every
+            When ``True`` (default), subplot widths and heights are
+            proportional to the lengths of the corresponding sequences so that
+            relative sequence sizes are preserved.  When ``False``, every
             panel has the same fixed size.
         """
         all_names = self.index.sequence_names()

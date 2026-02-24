@@ -149,12 +149,12 @@ def test_plot_rc_color_parameter(tmp_path):
 
 
 def test_plot_scale_sequences_false_matches_default(dotplot_index, tmp_path):
-    """Test that scale_sequences=False (default) and not passing it produce same-size files."""
+    """Test that scale_sequences=True (default) and not passing it produce same-size files."""
     plotter = DotPlotter(dotplot_index)
-    out1 = str(tmp_path / 'unscaled1.png')
-    out2 = str(tmp_path / 'unscaled2.png')
-    plotter.plot(output_path=out1, scale_sequences=False)
-    plotter.plot(output_path=out2)  # default
+    out1 = str(tmp_path / 'scaled1.png')
+    out2 = str(tmp_path / 'scaled2.png')
+    plotter.plot(output_path=out1, scale_sequences=True)
+    plotter.plot(output_path=out2)  # default (True)
     # Both should exist and be non-empty
     assert os.path.getsize(out1) > 0
     assert os.path.getsize(out2) > 0

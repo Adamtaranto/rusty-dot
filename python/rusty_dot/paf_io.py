@@ -6,8 +6,10 @@ This module provides:
 - :class:`PafAlignment` — a container that loads PAF records from a file or
   a list and provides a :meth:`~PafAlignment.reorder_contigs` method to
   reorganise sequences for maximum collinearity.
-- :class:`CrossIndexPaf` — computes pairwise PAF alignments between sequences
-  belonging to two separate index groups (e.g. two different genome assemblies).
+- :class:`CrossIdx` — multi-group sequence index for cross-group pairwise
+  comparisons (e.g. two or more genome assemblies).  Sequences are organised
+  into named groups; alignments are computed between non-self group pairs.
+  Compatible with :class:`~rusty_dot.dotplot.DotPlotter`.
 
 CIGAR support
 -------------
@@ -661,21 +663,43 @@ class PafAlignment:
 
 
 # ---------------------------------------------------------------------------
-# CrossIndexPaf: pairwise comparisons between two sequence groups
+# CrossIdx: multi-group pairwise sequence comparisons
 # ---------------------------------------------------------------------------
 
 
-class CrossIndexPaf:
-    """Compute pairwise PAF alignments between two groups of sequences.
+class CrossIdx:
+    """Multi-group sequence index for cross-group pairwise comparisons.
 
-    This class builds a single shared :class:`~rusty_dot.SequenceIndex`
-    containing all sequences from both groups (using ``a:`` / ``b:``
-    prefixes to avoid name collisions) and then computes k-mer-based
-    alignments for every (group-A sequence) × (group-B sequence) pair.
+    Sequences are organised into named groups (e.g. ``'assembly_a'``,
+    ``'assembly_b'``).  Each sequence is stored in a shared
+    :class:`~rusty_dot.SequenceIndex` under a ``group:name`` internal key,
+    which keeps names unique even when the same sequence identifier appears
+    in multiple groups.
 
-    If only one group is provided, all-vs-all comparisons within that group
-    are performed (equivalent to calling
-    :meth:`~rusty_dot.SequenceIndex.get_paf_all` directly).
+    **Alignment scope by number of groups**
+
+    * **2 groups** — alignments are computed between the two groups only.
+    * **3+ groups** — alignments are computed for every non-self ordered pair
+      of groups.  Use the *group_pairs* argument of :meth:`get_paf` to
+      restrict to specific pairs.
+
+    **DotPlotter compatibility**
+
+    ``CrossIdx`` exposes :meth:`get_sequence_length`,
+    :meth:`compare_sequences_stranded`, and :meth:`sequence_names` so that it
+    can be passed directly to :class:`~rusty_dot.dotplot.DotPlotter`::
+
+        cross = CrossIdx(k=15)
+        cross.load_fasta("assembly_a.fasta", group="a")
+        cross.load_fasta("assembly_b.fasta", group="b")
+
+        from rusty_dot.dotplot import DotPlotter
+        plotter = DotPlotter(cross)
+        plotter.plot(
+            query_names=cross.sequence_names(group="a"),
+            target_names=cross.sequence_names(group="b"),
+            output_path="cross_plot.png",
+        )
 
     Parameters
     ----------
@@ -684,156 +708,312 @@ class CrossIndexPaf:
 
     Examples
     --------
-    >>> from rusty_dot.paf_io import CrossIndexPaf
-    >>> cross = CrossIndexPaf(k=10)
-    >>> cross.load_fasta('genome_a.fasta', group='a')
-    >>> cross.load_fasta('genome_b.fasta', group='b')
-    >>> paf_lines = cross.get_paf_all()
+    >>> from rusty_dot.paf_io import CrossIdx
+    >>> cross = CrossIdx(k=10)
+    >>> cross.load_fasta("genome_a.fasta", group="a")
+    >>> cross.load_fasta("genome_b.fasta", group="b")
+    >>> paf_lines = cross.get_paf()
     """
 
-    # Internal name prefixes to avoid collisions between groups.
-    _PREFIX_A = 'a:'
-    _PREFIX_B = 'b:'
-
     def __init__(self, k: int) -> None:
-        """Initialise an empty CrossIndexPaf.
+        """Initialise an empty CrossIdx.
 
         Parameters
         ----------
         k : int
             K-mer length to use when building the sequence index.
         """
+        self._k: int = k
         self._index: SequenceIndex = SequenceIndex(k=k)
-        self._names_a: list[str] = []
-        self._names_b: list[str] = []
-        self._k = k
+        # group_label -> ordered list of original (un-prefixed) sequence names
+        self._groups: dict[str, list[str]] = {}
+        # Cached PAF records from the last :meth:`run_merge` call
+        self._paf_records: list[PafRecord] = []
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_internal(group: str, name: str) -> str:
+        """Format an internal (prefixed) name for use in SequenceIndex."""
+        return f'{group}:{name}'
+
+    @staticmethod
+    def _split_internal(internal: str) -> tuple[str, str]:
+        """Split ``'group:name'`` into ``(group, name)``."""
+        group, _, name = internal.partition(':')
+        return group, name
 
     # ------------------------------------------------------------------
     # Adding sequences
     # ------------------------------------------------------------------
 
     def add_sequence(self, name: str, seq: str, group: str = 'a') -> None:
-        """Add a single sequence to group A or B.
+        """Add a single sequence to the specified group.
 
         Parameters
         ----------
         name : str
-            Sequence identifier.  The identifier is stored with a group
-            prefix (``a:`` or ``b:``) internally to avoid name collisions.
+            Sequence identifier (must be unique within the group).
         seq : str
             DNA sequence string.
         group : str, optional
-            ``'a'`` (default) or ``'b'``.
+            Group label.  Any non-empty string is accepted; ``':'`` is
+            forbidden because it is used as an internal separator.
+            Default is ``'a'``.
 
         Raises
         ------
         ValueError
-            If *group* is not ``'a'`` or ``'b'``.
+            If *group* contains ``':'``.
         """
-        if group not in ('a', 'b'):
-            raise ValueError(f"group must be 'a' or 'b', got {group!r}")
-        prefix = self._PREFIX_A if group == 'a' else self._PREFIX_B
-        internal = prefix + name
+        if ':' in group:
+            raise ValueError(f"Group name must not contain ':', got {group!r}")
+        internal = self._make_internal(group, name)
         self._index.add_sequence(internal, seq)
-        if group == 'a':
-            self._names_a.append(internal)
-        else:
-            self._names_b.append(internal)
+        if group not in self._groups:
+            self._groups[group] = []
+        self._groups[group].append(name)
 
     def load_fasta(self, path: str, group: str = 'a') -> list[str]:
-        """Load sequences from a FASTA file into group A or B.
+        """Load sequences from a FASTA file into the specified group.
 
         Parameters
         ----------
         path : str
             Path to a FASTA (``.fa`` / ``.fasta``) or gzipped FASTA file.
         group : str, optional
-            ``'a'`` (default) or ``'b'``.
+            Group label.  Default is ``'a'``.
 
         Returns
         -------
         list[str]
-            The original (un-prefixed) sequence names that were loaded.
+            The original (un-prefixed) sequence names that were loaded, in
+            file order.
 
         Raises
         ------
         ValueError
-            If *group* is not ``'a'`` or ``'b'``, or if the file cannot be
-            parsed.
+            If *group* contains ``':'``, or if the file cannot be parsed, or
+            if the FASTA file contains duplicate sequence names.
         """
-        if group not in ('a', 'b'):
-            raise ValueError(f"group must be 'a' or 'b', got {group!r}")
-        prefix = self._PREFIX_A if group == 'a' else self._PREFIX_B
+        if ':' in group:
+            raise ValueError(f"Group name must not contain ':', got {group!r}")
         from rusty_dot._rusty_dot import py_read_fasta
 
         seqs = py_read_fasta(path)
+        if group not in self._groups:
+            self._groups[group] = []
         names: list[str] = []
         for name, seq in seqs.items():
-            internal = prefix + name
+            internal = self._make_internal(group, name)
             self._index.add_sequence(internal, seq)
-            if group == 'a':
-                self._names_a.append(internal)
-            else:
-                self._names_b.append(internal)
+            self._groups[group].append(name)
             names.append(name)
         return names
 
     # ------------------------------------------------------------------
-    # Properties
+    # Properties and name helpers
+    # ------------------------------------------------------------------
+
+    @property
+    def group_names(self) -> list[str]:
+        """Return the list of group labels in insertion order.
+
+        Returns
+        -------
+        list[str]
+            Group labels.
+        """
+        return list(self._groups.keys())
+
+    def sequence_names(self, group: str | None = None) -> list[str]:
+        """Return internal (``group:name``) identifiers suitable for DotPlotter.
+
+        Parameters
+        ----------
+        group : str or None, optional
+            If given, return only names from that group.  If ``None``
+            (default), return names from all groups.
+
+        Returns
+        -------
+        list[str]
+            Internal ``group:name`` strings in current :attr:`contig_order`.
+        """
+        if group is not None:
+            return [self._make_internal(group, n) for n in self._groups.get(group, [])]
+        result: list[str] = []
+        for g, names in self._groups.items():
+            result.extend(self._make_internal(g, n) for n in names)
+        return result
+
+    @property
+    def contig_order(self) -> dict[str, list[str]]:
+        """Current contig order per group as original (un-prefixed) names.
+
+        Returns
+        -------
+        dict[str, list[str]]
+            Mapping of group label → ordered list of sequence names.
+            Updated in-place by :meth:`reorder_by_length` and
+            :meth:`reorder_for_colinearity`.
+        """
+        return {g: list(names) for g, names in self._groups.items()}
+
+    # ------------------------------------------------------------------
+    # Backward-compatible properties (two-group a/b model)
     # ------------------------------------------------------------------
 
     @property
     def query_names(self) -> list[str]:
-        """Return original (un-prefixed) names for group-A sequences.
+        """Un-prefixed names for group ``'a'`` (backward compatible).
 
         Returns
         -------
         list[str]
-            Sequence names from group A, in insertion order.
         """
-        return [n[len(self._PREFIX_A) :] for n in self._names_a]
+        return list(self._groups.get('a', []))
 
     @property
     def target_names(self) -> list[str]:
-        """Return original (un-prefixed) names for group-B sequences.
+        """Un-prefixed names for group ``'b'`` (backward compatible).
 
         Returns
         -------
         list[str]
-            Sequence names from group B, in insertion order.
         """
-        return [n[len(self._PREFIX_B) :] for n in self._names_b]
+        return list(self._groups.get('b', []))
 
-    def __repr__(self) -> str:
-        """Return a concise string representation.
+    # ------------------------------------------------------------------
+    # DotPlotter-compatible interface
+    # ------------------------------------------------------------------
+
+    def get_sequence_length(self, name: str) -> int:
+        """Return the length of the sequence identified by its internal name.
+
+        Parameters
+        ----------
+        name : str
+            Internal (``group:name``) identifier.
 
         Returns
         -------
-        str
-            ``CrossIndexPaf(k=<k>, queries=<n_a>, targets=<n_b>)``.
+        int
+            Sequence length in bases.
         """
-        return (
-            f'CrossIndexPaf(k={self._k}, '
-            f'queries={len(self._names_a)}, '
-            f'targets={len(self._names_b)})'
+        return self._index.get_sequence_length(name)
+
+    def compare_sequences_stranded(
+        self, name1: str, name2: str, merge: bool = True
+    ) -> list:
+        """Compare two sequences by their internal names, returning stranded matches.
+
+        Parameters
+        ----------
+        name1 : str
+            Internal name of the query sequence.
+        name2 : str
+            Internal name of the target sequence.
+        merge : bool, optional
+            Whether to merge consecutive co-linear k-mer runs.
+            Default is ``True``.
+
+        Returns
+        -------
+        list of (int, int, int, int, str)
+            List of ``(query_start, query_end, target_start, target_end, strand)``
+            tuples.
+        """
+        return self._index.compare_sequences_stranded(name1, name2, merge)
+
+    # ------------------------------------------------------------------
+    # Contig reordering
+    # ------------------------------------------------------------------
+
+    def reorder_by_length(self, group: str | None = None) -> None:
+        """Reorder contigs within one or all groups by descending sequence length.
+
+        Updates :attr:`contig_order` in-place.
+
+        Parameters
+        ----------
+        group : str or None, optional
+            Group to reorder.  If ``None`` (default), all groups are reordered.
+        """
+        groups_to_sort = [group] if group is not None else list(self._groups.keys())
+        for g in groups_to_sort:
+            self._groups[g].sort(
+                key=lambda n: self._index.get_sequence_length(
+                    self._make_internal(g, n)
+                ),
+                reverse=True,
+            )
+
+    def reorder_for_colinearity(self, query_group: str, target_group: str) -> None:
+        """Reorder sequences in two groups to maximise dotplot collinearity.
+
+        Uses the gravity-centre algorithm via
+        :meth:`~rusty_dot.SequenceIndex.optimal_contig_order`.  Updates
+        :attr:`contig_order` in-place for both groups.
+
+        Parameters
+        ----------
+        query_group : str
+            Group label for the query (y-axis / rows).
+        target_group : str
+            Group label for the target (x-axis / columns).
+
+        Raises
+        ------
+        KeyError
+            If either group label is not present in the index.
+        """
+        q_internal = [
+            self._make_internal(query_group, n) for n in self._groups[query_group]
+        ]
+        t_internal = [
+            self._make_internal(target_group, n) for n in self._groups[target_group]
+        ]
+        sorted_q_int, sorted_t_int = self._index.optimal_contig_order(
+            q_internal, t_internal
         )
+        self._groups[query_group] = [self._split_internal(n)[1] for n in sorted_q_int]
+        self._groups[target_group] = [self._split_internal(n)[1] for n in sorted_t_int]
 
     # ------------------------------------------------------------------
     # PAF output
     # ------------------------------------------------------------------
 
-    def get_paf_all(self, merge: bool = True) -> list[str]:
-        """Return PAF lines for all cross-group sequence comparisons.
+    def _get_default_group_pairs(self) -> list[tuple[str, str]]:
+        """Return default group pairs for alignment.
 
-        Computes alignments for every (group-A sequence, group-B sequence)
-        pair.  If no group-B sequences have been added, all-vs-all
-        comparisons within group A are returned instead.
+        * 2 groups → one pair between the two groups.
+        * 3+ groups → all non-self ordered pairs.
+        """
+        groups = list(self._groups.keys())
+        if len(groups) == 2:
+            return [(groups[0], groups[1])]
+        return [
+            (a, b) for i, a in enumerate(groups) for j, b in enumerate(groups) if i != j
+        ]
 
-        An informative log message is emitted at ``INFO`` level before
-        computation begins.
+    def get_paf(
+        self,
+        group_pairs: list[tuple[str, str]] | None = None,
+        merge: bool = True,
+    ) -> list[str]:
+        """Return PAF lines for cross-group sequence comparisons.
 
         Parameters
         ----------
+        group_pairs : list of (str, str) or None, optional
+            Explicit list of ``(query_group, target_group)`` pairs to compare.
+            If ``None`` (default):
+
+            * 2 groups → the single cross-group pair.
+            * 3+ groups → all non-self ordered pairs.
         merge : bool, optional
             Whether to merge consecutive co-linear k-mer runs before
             generating PAF lines.  Default is ``True``.
@@ -843,100 +1023,184 @@ class CrossIndexPaf:
         list[str]
             PAF-formatted lines (12 tab-separated columns each).
         """
-        if self._names_b:
+        if group_pairs is None:
+            group_pairs = self._get_default_group_pairs()
+
+        paf_lines: list[str] = []
+        for query_group, target_group in group_pairs:
             _log.info(
-                'CrossIndexPaf: computing %d x %d pairwise alignments '
-                'between group A (%d sequences) and group B (%d sequences)',
-                len(self._names_a),
-                len(self._names_b),
-                len(self._names_a),
-                len(self._names_b),
+                'CrossIdx: computing %d x %d pairwise alignments '
+                'between group %r (%d sequences) and group %r (%d sequences)',
+                len(self._groups.get(query_group, [])),
+                len(self._groups.get(target_group, [])),
+                query_group,
+                len(self._groups.get(query_group, [])),
+                target_group,
+                len(self._groups.get(target_group, [])),
             )
-            paf_lines: list[str] = []
-            for q_internal in self._names_a:
-                for t_internal in self._names_b:
-                    lines = self._index.get_paf(q_internal, t_internal, merge)
-                    # Replace internal prefixed names with original names
-                    q_orig = q_internal[len(self._PREFIX_A) :]
-                    t_orig = t_internal[len(self._PREFIX_B) :]
+            for q_orig in self._groups.get(query_group, []):
+                for t_orig in self._groups.get(target_group, []):
+                    q_int = self._make_internal(query_group, q_orig)
+                    t_int = self._make_internal(target_group, t_orig)
+                    lines = self._index.get_paf(q_int, t_int, merge)
                     for line in lines:
                         fields = line.split('\t')
                         fields[0] = q_orig
                         fields[5] = t_orig
                         paf_lines.append('\t'.join(fields))
-            return paf_lines
-        else:
-            _log.info(
-                'CrossIndexPaf: computing all-vs-all pairwise alignments '
-                'within group A (%d sequences)',
-                len(self._names_a),
-            )
-            paf_lines = []
-            for i, q_internal in enumerate(self._names_a):
-                for j, t_internal in enumerate(self._names_a):
-                    if i == j:
-                        continue
-                    lines = self._index.get_paf(q_internal, t_internal, merge)
-                    q_orig = q_internal[len(self._PREFIX_A) :]
-                    t_orig = t_internal[len(self._PREFIX_A) :]
-                    for line in lines:
-                        fields = line.split('\t')
-                        fields[0] = q_orig
-                        fields[5] = t_orig
-                        paf_lines.append('\t'.join(fields))
-            return paf_lines
+        return paf_lines
+
+    def run_merge(
+        self,
+        group_pairs: list[tuple[str, str]] | None = None,
+    ) -> None:
+        """Compute merged alignments and store the result as :attr:`_paf_records`.
+
+        Runs :meth:`get_paf` with ``merge=True`` and populates
+        ``self._paf_records`` so that the results can be inspected or passed
+        to a :class:`PafAlignment`.
+
+        Parameters
+        ----------
+        group_pairs : list of (str, str) or None, optional
+            Group pairs to compare (same semantics as :meth:`get_paf`).
+            Defaults to all cross-group pairs.
+        """
+        paf_lines = self.get_paf(group_pairs=group_pairs, merge=True)
+        self._paf_records = [PafRecord.from_line(line) for line in paf_lines]
+
+    # ------------------------------------------------------------------
+    # Backward-compatible API (two-group a/b model)
+    # ------------------------------------------------------------------
+
+    def get_paf_all(self, merge: bool = True) -> list[str]:
+        """Return PAF lines for all cross-group comparisons.
+
+        Backward-compatible wrapper around :meth:`get_paf`.  When a group
+        ``'b'`` is present, computes ``a`` vs ``b`` alignments; otherwise
+        performs all-vs-all within group ``'a'``.
+
+        Parameters
+        ----------
+        merge : bool, optional
+            Whether to merge consecutive co-linear k-mer runs.
+            Default is ``True``.
+
+        Returns
+        -------
+        list[str]
+            PAF-formatted lines.
+        """
+        if 'b' in self._groups and self._groups['b']:
+            return self.get_paf(group_pairs=[('a', 'b')], merge=merge)
+        # Single group or no group 'b': all-vs-all within group 'a'
+        names_a = self._groups.get('a', [])
+        _log.info(
+            'CrossIdx: computing all-vs-all pairwise alignments '
+            'within group a (%d sequences)',
+            len(names_a),
+        )
+        paf_lines: list[str] = []
+        for i, q_orig in enumerate(names_a):
+            for j, t_orig in enumerate(names_a):
+                if i == j:
+                    continue
+                q_int = self._make_internal('a', q_orig)
+                t_int = self._make_internal('a', t_orig)
+                lines = self._index.get_paf(q_int, t_int, merge)
+                for line in lines:
+                    fields = line.split('\t')
+                    fields[0] = q_orig
+                    fields[5] = t_orig
+                    paf_lines.append('\t'.join(fields))
+        return paf_lines
 
     def reorder_contigs(
         self,
         query_names: list[str] | None = None,
         target_names: list[str] | None = None,
     ) -> tuple[list[str], list[str]]:
-        """Sort query and target contig names for maximum collinearity.
-
-        Uses the gravity-centre algorithm via
-        :meth:`~rusty_dot.SequenceIndex.optimal_contig_order`.
-        Unmatched contigs are placed at the end, sorted by descending length.
+        """Sort contigs for maximum collinearity (backward-compatible, requires groups a and b).
 
         Parameters
         ----------
         query_names : list[str] or None, optional
-            Original (un-prefixed) names for group-A sequences to reorder.
-            Defaults to all group-A sequences.
+            Original (un-prefixed) names for group ``'a'`` to reorder.
+            Defaults to all group-a sequences.
         target_names : list[str] or None, optional
-            Original (un-prefixed) names for group-B sequences to reorder.
-            Defaults to all group-B sequences.
+            Original (un-prefixed) names for group ``'b'`` to reorder.
+            Defaults to all group-b sequences.
 
         Returns
         -------
         tuple[list[str], list[str]]
-            ``(sorted_query_names, sorted_target_names)`` — both lists use
-            the original un-prefixed names.
+            ``(sorted_query_names, sorted_target_names)`` — both using original
+            un-prefixed names.
 
         Raises
         ------
         ValueError
-            If group B is empty (use a single :class:`SequenceIndex` and
-            its :meth:`~rusty_dot.SequenceIndex.optimal_contig_order`
-            for single-group reordering).
+            If group ``'b'`` is empty.  Use :meth:`reorder_for_colinearity` for
+            explicit group names.
         """
-        if not self._names_b:
+        if 'b' not in self._groups or not self._groups['b']:
             raise ValueError(
-                'reorder_contigs requires group B sequences; '
-                'use SequenceIndex.optimal_contig_order for single-group reordering.'
+                "reorder_contigs requires group 'b' sequences; "
+                'use reorder_for_colinearity for explicit group names.'
             )
-        q_internal = (
-            self._names_a
-            if query_names is None
-            else [self._PREFIX_A + n for n in query_names]
+        q_names = (
+            query_names if query_names is not None else list(self._groups.get('a', []))
         )
-        t_internal = (
-            self._names_b
-            if target_names is None
-            else [self._PREFIX_B + n for n in target_names]
+        t_names = (
+            target_names
+            if target_names is not None
+            else list(self._groups.get('b', []))
         )
+        q_internal = [self._make_internal('a', n) for n in q_names]
+        t_internal = [self._make_internal('b', n) for n in t_names]
         sorted_q_int, sorted_t_int = self._index.optimal_contig_order(
             q_internal, t_internal
         )
-        sorted_q = [n[len(self._PREFIX_A) :] for n in sorted_q_int]
-        sorted_t = [n[len(self._PREFIX_B) :] for n in sorted_t_int]
+        sorted_q = [self._split_internal(n)[1] for n in sorted_q_int]
+        sorted_t = [self._split_internal(n)[1] for n in sorted_t_int]
         return sorted_q, sorted_t
+
+    # ------------------------------------------------------------------
+    # Dunder methods
+    # ------------------------------------------------------------------
+
+    def __repr__(self) -> str:
+        """Return a concise machine-readable representation.
+
+        Returns
+        -------
+        str
+            ``CrossIdx(k=<k>, groups={<label>=<n>, ...})``.
+        """
+        group_info = ', '.join(f'{g}={len(names)}' for g, names in self._groups.items())
+        return f'CrossIdx(k={self._k}, groups={{{group_info}}})'
+
+    def __str__(self) -> str:
+        """Return a human-readable stats summary.
+
+        Returns
+        -------
+        str
+            Multi-line summary of groups, sequence counts, and cached PAF
+            record count.
+        """
+        n_total = sum(len(v) for v in self._groups.values())
+        lines = [f'CrossIdx (k={self._k})']
+        lines.append(f'  Total sequences : {n_total}')
+        for g, names in self._groups.items():
+            lines.append(f'  Group {g!r:12s}: {len(names):>6d} sequences')
+        lines.append(f'  PAF records     : {len(self._paf_records)}')
+        return '\n'.join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible alias
+# ---------------------------------------------------------------------------
+
+#: Alias for :class:`CrossIdx` kept for backward compatibility.
+CrossIndexPaf = CrossIdx
