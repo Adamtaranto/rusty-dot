@@ -799,6 +799,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#how-multiple-sequences-are-stored" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How multiple sequences are stored
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#class" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1174,6 +1185,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#how-multiple-sequences-are-stored" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How multiple sequences are stored
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#class" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1445,6 +1467,46 @@
 <h1 id="sequenceindex">SequenceIndex<a class="headerlink" href="#sequenceindex" title="Permanent link">&para;</a></h1>
 <p>The <code>SequenceIndex</code> class is the primary interface for building and querying FM-index-backed sequence comparison data.
 It is implemented in Rust (via <a href="https://pyo3.rs">PyO3</a>) for maximum performance.</p>
+<h2 id="how-multiple-sequences-are-stored">How multiple sequences are stored<a class="headerlink" href="#how-multiple-sequences-are-stored" title="Permanent link">&para;</a></h2>
+<p>Each sequence added to a <code>SequenceIndex</code> receives its <strong>own independent FM-index</strong>, built by <a href="https://docs.rs/bio">rust-bio</a>.
+The rust-bio FM-index is a read-only data structure that is constructed once for a given sequence and cannot be extended or updated after construction.</p>
+<p>This means:</p>
+<ul>
+<li><strong>Adding sequences accumulates independent indexes.</strong> Calling <code>add_sequence</code> or <code>load_fasta</code> multiple times grows the collection — each call creates a new, isolated FM-index for that sequence only and does not affect any existing FM-index.</li>
+<li><strong><code>load_fasta</code> can be called multiple times.</strong> Each call parses a file and adds its sequences to the collection, preserving all sequences that were added previously. Two calls on two separate FASTA files will leave the index containing all sequences from both files.</li>
+<li><strong>Re-using a name emits a warning and overwrites.</strong> If <code>add_sequence</code> or a FASTA record uses a name that already exists in the index, a <code>UserWarning</code> is emitted and the existing entry (and its FM-index) is replaced with a new one for the new sequence.</li>
+<li><strong>Duplicate names within a FASTA file raise an error.</strong> If a FASTA file contains two records with the same sequence name, <code>load_fasta</code> raises a <code>ValueError</code> before adding any sequences from that file to the index.</li>
+<li><strong>Pairwise comparisons use two independent FM-indexes.</strong> <code>compare_sequences</code> and <code>compare_sequences_stranded</code> look up the two named sequences from the dictionary and compare their individual FM-indexes — no combined or merged FM-index is ever created.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot</span><span class="w"> </span><span class="kn">import</span> <span class="n">SequenceIndex</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">idx</span> <span class="o">=</span> <span class="n">SequenceIndex</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">15</span><span class="p">)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1"># Each call adds a new independent FM-index entry</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s2">&quot;contig1&quot;</span><span class="p">,</span> <span class="s2">&quot;ACGT&quot;</span> <span class="o">*</span> <span class="mi">100</span><span class="p">)</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s2">&quot;contig2&quot;</span><span class="p">,</span> <span class="s2">&quot;TTTT&quot;</span> <span class="o">*</span> <span class="mi">100</span><span class="p">)</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="nb">print</span><span class="p">(</span><span class="n">idx</span><span class="o">.</span><span class="n">sequence_names</span><span class="p">())</span>   <span class="c1"># [&#39;contig1&#39;, &#39;contig2&#39;]</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1"># load_fasta accumulates — sequences from both files are kept</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="n">idx</span><span class="o">.</span><span class="n">load_fasta</span><span class="p">(</span><span class="s2">&quot;assembly_a.fasta&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">idx</span><span class="o">.</span><span class="n">load_fasta</span><span class="p">(</span><span class="s2">&quot;assembly_b.fasta&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="nb">print</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">idx</span><span class="o">.</span><span class="n">sequence_names</span><span class="p">()))</span>  <span class="c1"># total from both files plus the two above</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="c1"># Re-using a name emits a UserWarning then replaces the entry</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="k">with</span> <span class="n">warnings</span><span class="o">.</span><span class="n">catch_warnings</span><span class="p">(</span><span class="n">record</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">w</span><span class="p">:</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="n">warnings</span><span class="o">.</span><span class="n">simplefilter</span><span class="p">(</span><span class="s2">&quot;always&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    <span class="n">idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s2">&quot;contig1&quot;</span><span class="p">,</span> <span class="s2">&quot;GGGG&quot;</span> <span class="o">*</span> <span class="mi">100</span><span class="p">)</span>   <span class="c1"># overwrites old contig1</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">w</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>                               <span class="c1"># exactly one warning emitted</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="k">assert</span> <span class="nb">issubclass</span><span class="p">(</span><span class="n">w</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">category</span><span class="p">,</span> <span class="ne">UserWarning</span><span class="p">)</span>    <span class="c1"># warned before overwriting</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="nb">print</span><span class="p">(</span><span class="n">idx</span><span class="o">.</span><span class="n">get_sequence_length</span><span class="p">(</span><span class="s2">&quot;contig1&quot;</span><span class="p">))</span>        <span class="c1"># 400 (the new sequence)</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="c1"># load_fasta raises ValueError if the FASTA file itself has duplicate names</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>    <span class="n">idx</span><span class="o">.</span><span class="n">load_fasta</span><span class="p">(</span><span class="s2">&quot;file_with_dup_names.fasta&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>   <span class="c1"># &quot;duplicate sequence name &#39;seq1&#39; in FASTA file &#39;...&#39;&quot;</span>
+</code></pre></div>
 <h2 id="class">Class<a class="headerlink" href="#class" title="Permanent link">&para;</a></h2>
 
 
@@ -1464,9 +1526,27 @@ It is implemented in Rust (via <a href="https://pyo3.rs">PyO3</a>) for maximum p
 
 
         <p>FM-index backed sequence comparison engine.</p>
-<p>Builds FM-indexes and k-mer sets for DNA sequences read from FASTA
-files or provided directly, then supports fast pairwise k-mer
-coordinate lookup with optional sequential run merging.</p>
+<p>Each sequence added to the index receives its <strong>own independent FM-index</strong>
+built by rust-bio.  The FM-index is constructed once per sequence and
+cannot be extended after construction, so adding more sequences never
+modifies an existing FM-index — it only creates a new one for the
+newly added sequence.</p>
+<p>The index behaves as a <strong>dictionary of per-sequence FM-indexes</strong>:</p>
+<ul>
+<li>:meth:<code>add_sequence</code> and :meth:<code>load_fasta</code> <strong>add</strong> new entries to
+  the collection; calling either method multiple times accumulates
+  sequences rather than replacing the collection.</li>
+<li>If a sequence name already exists in the index, a <code>UserWarning</code> is
+  emitted and the existing entry is <strong>overwritten</strong> with a new FM-index
+  for the new sequence.</li>
+<li>:meth:<code>load_fasta</code> raises <code>ValueError</code> if the FASTA file itself
+  contains duplicate sequence names.</li>
+<li>Pairwise comparisons (:meth:<code>compare_sequences</code>,
+  :meth:<code>compare_sequences_stranded</code>) always operate on exactly two
+  independent FM-indexes.</li>
+</ul>
+<p>The k-mer length <code>k</code> is fixed at construction time and applies to all
+sequences held in the index.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -1501,10 +1581,23 @@ coordinate lookup with optional sequential run merging.</p>
 
 
 <p><span class="doc-section-title">Examples:</span></p>
+    <p>Build an index from individual sequences:</p>
     <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">idx</span> <span class="o">=</span> <span class="n">SequenceIndex</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s2">&quot;seq1&quot;</span><span class="p">,</span> <span class="s2">&quot;ACGTACGTACGT&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s2">&quot;seq2&quot;</span><span class="p">,</span> <span class="s2">&quot;TACGTACGTACG&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">idx</span><span class="o">.</span><span class="n">sequence_names</span><span class="p">()</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="go">[&#39;seq1&#39;, &#39;seq2&#39;]</span>
+</code></pre></div>
+    <p>Accumulate sequences from multiple FASTA files:</p>
+    <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">idx</span> <span class="o">=</span> <span class="n">SequenceIndex</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">15</span><span class="p">)</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">idx</span><span class="o">.</span><span class="n">load_fasta</span><span class="p">(</span><span class="s2">&quot;assembly_a.fasta&quot;</span><span class="p">)</span>   <span class="c1"># adds seqs from file A</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">idx</span><span class="o">.</span><span class="n">load_fasta</span><span class="p">(</span><span class="s2">&quot;assembly_b.fasta&quot;</span><span class="p">)</span>   <span class="c1"># adds seqs from file B, keeps file A seqs</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">matches</span> <span class="o">=</span> <span class="n">idx</span><span class="o">.</span><span class="n">compare_sequences</span><span class="p">(</span><span class="s2">&quot;seq1&quot;</span><span class="p">,</span> <span class="s2">&quot;seq2&quot;</span><span class="p">)</span>
+</code></pre></div>
+    <p>Overwrite a sequence by re-using its name:</p>
+    <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">idx</span> <span class="o">=</span> <span class="n">SequenceIndex</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s2">&quot;seq1&quot;</span><span class="p">,</span> <span class="s2">&quot;ACGTACGT&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s2">&quot;seq1&quot;</span><span class="p">,</span> <span class="s2">&quot;GGGGGGGG&quot;</span><span class="p">)</span>  <span class="c1"># silently replaces the previous seq1</span>
 </code></pre></div>
 
 
@@ -1658,8 +1751,18 @@ Must be greater than zero.</p>
     <div class="doc doc-contents ">
 
         <p>Add a single sequence to the index.</p>
-<p>Builds an FM-index and collects the k-mer set for the given
-sequence, storing both for subsequent comparisons.</p>
+<p>Builds a <strong>new independent FM-index</strong> for <code>seq</code> using rust-bio and
+stores it alongside the k-mer set and raw sequence bytes.  Each call
+creates a separate FM-index for that sequence only — the rust-bio
+FM-index cannot be extended after construction, so adding sequences
+never modifies existing FM-indexes.</p>
+<p>Calling <code>add_sequence</code> does <strong>not</strong> affect any other sequence already
+in the index.  Sequences accumulate: calling this method <em>N</em> times with
+<em>N</em> distinct names results in an index holding <em>N</em> independent
+FM-indexes.</p>
+<p>If a sequence named <code>name</code> already exists in the index, a
+<code>UserWarning</code> is emitted and the existing entry is <strong>overwritten</strong>
+with a new FM-index for the new <code>seq</code>.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -1682,7 +1785,9 @@ sequence, storing both for subsequent comparisons.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Unique identifier for the sequence.</p>
+                <p>Unique identifier for the sequence.  Re-using an existing name
+emits a :class:<code>UserWarning</code> and replaces that sequence (and its
+FM-index).</p>
               </div>
             </td>
             <td>
@@ -1733,6 +1838,30 @@ input is accepted and treated as uppercase.</p>
     </table>
 
 
+<p><span class="doc-section-title">Warns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="UserWarning">UserWarning</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>name</code> already exists in the index (the existing entry is
+overwritten).</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
     </div>
 
 </div>
@@ -1750,7 +1879,16 @@ input is accepted and treated as uppercase.</p>
 
         <p>Load all sequences from a FASTA or gzipped FASTA file.</p>
 <p>Parses the file with needletail (automatic gzip detection) and
-calls <code>add_sequence</code> for every record found.</p>
+builds a fresh <strong>independent FM-index</strong> for each record.</p>
+<p>Sequences already in the index are <strong>preserved</strong> — <code>load_fasta</code>
+only adds new entries (or overwrites entries whose name already exists
+in the index).  Calling <code>load_fasta</code> on two separate files
+accumulates all sequences from both files in the same index.</p>
+<p>If the FASTA file contains <strong>duplicate sequence names</strong> (two records
+with the same identifier), a <code>ValueError</code> is raised before any
+sequences are added to the index.</p>
+<p>If a record's name <strong>already exists in the index</strong>, a <code>UserWarning</code>
+is emitted and the existing entry is overwritten with the new sequence.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -1824,7 +1962,32 @@ order they appear in the file.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If the file cannot be opened or parsed.</p>
+                <p>If the file cannot be opened or parsed, or if the file contains
+duplicate sequence names.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Warns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="UserWarning">UserWarning</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>For each record whose name already exists in the index (those
+entries are overwritten).</p>
               </div>
             </td>
           </tr>

@@ -1011,6 +1011,11 @@
 <td>All-vs-all dotplot visualisation</td>
 </tr>
 <tr>
+<td><a href="paf_io/#rusty_dot.paf_io.CrossIdx"><code>CrossIdx</code></a></td>
+<td><code>rusty_dot.paf_io</code></td>
+<td>Multi-group cross-index for cross-group pairwise comparisons; DotPlotter-compatible</td>
+</tr>
+<tr>
 <td><a href="paf_io/#rusty_dot.paf_io.PafRecord"><code>PafRecord</code></a></td>
 <td><code>rusty_dot.paf_io</code></td>
 <td>Single PAF alignment record</td>
@@ -1048,9 +1053,24 @@
 <td>Find k-mer positions in a sequence via FM-index</td>
 </tr>
 <tr>
+<td><a href="functions/#rusty_dot._rusty_dot.py_merge_runs"><code>py_merge_runs</code></a></td>
+<td><code>rusty_dot</code></td>
+<td>Unified strand-aware merge: forward and both RC patterns</td>
+</tr>
+<tr>
 <td><a href="functions/#rusty_dot._rusty_dot.py_merge_kmer_runs"><code>py_merge_kmer_runs</code></a></td>
 <td><code>rusty_dot</code></td>
-<td>Merge co-linear k-mer hits into blocks</td>
+<td>Merge forward-strand (<code>+</code>) co-linear k-mer hits into blocks</td>
+</tr>
+<tr>
+<td><a href="functions/#rusty_dot._rusty_dot.py_merge_rev_runs"><code>py_merge_rev_runs</code></a></td>
+<td><code>rusty_dot</code></td>
+<td>Merge RC anti-diagonal k-mer hits (standard inverted repeat)</td>
+</tr>
+<tr>
+<td><a href="functions/#rusty_dot._rusty_dot.py_merge_rev_fwd_runs"><code>py_merge_rev_fwd_runs</code></a></td>
+<td><code>rusty_dot</code></td>
+<td>Merge RC co-diagonal k-mer hits (both arms same direction)</td>
 </tr>
 <tr>
 <td><a href="functions/#rusty_dot._rusty_dot.py_coords_to_paf"><code>py_coords_to_paf</code></a></td>

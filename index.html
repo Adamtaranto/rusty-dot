@@ -1050,10 +1050,13 @@ At its core, it builds an <a href="https://en.wikipedia.org/wiki/FM-index">FM-in
 <li><strong>Read FASTA / gzipped FASTA files</strong> via <a href="https://docs.rs/needletail">needletail</a></li>
 <li><strong>Build FM-indexes</strong> per sequence using <a href="https://docs.rs/bio">rust-bio</a></li>
 <li><strong>K-mer set intersection</strong> for efficient shared k-mer lookup</li>
-<li><strong>Merge sequential k-mer runs</strong> into contiguous match blocks</li>
+<li><strong>Both-strand k-mer matching</strong>: forward (<code>+</code>) and reverse-complement (<code>-</code>) hits via <code>compare_sequences_stranded</code></li>
+<li><strong>Complete RC hit coverage</strong>: two patterns merged independently — anti-diagonal (standard inverted repeat) and co-diagonal (both arms same direction)</li>
+<li><strong>Unified merge API</strong> (<code>py_merge_runs</code>) handles all orientation cases with a single call</li>
 <li><strong>PAF format output</strong> for alignment records</li>
 <li><strong>FM-index serialization/deserialization</strong> with <a href="https://docs.rs/serde">serde</a> + bincode</li>
-<li><strong>All-vs-all dotplot visualization</strong> with matplotlib</li>
+<li><strong>All-vs-all dotplot visualization</strong> with matplotlib: forward hits in blue, RC hits in red; edge-only axis labels in grid plots; subpanels scaled by sequence length by default (<code>scale_sequences=True</code>)</li>
+<li><strong><code>CrossIdx</code></strong> multi-group cross-index: N arbitrary sequence groups, configurable group pairs for alignment, per-group contig ordering (insertion order, length, or collinearity), <code>run_merge</code> to update cached PAF records, compatible with <code>DotPlotter</code></li>
 <li><strong>Full Python bindings</strong> via <a href="https://pyo3.rs">PyO3</a></li>
 </ul>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
@@ -1065,13 +1068,18 @@ At its core, it builds an <a href="https://en.wikipedia.org/wiki/FM-index">FM-in
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">idx</span><span class="o">.</span><span class="n">load_fasta</span><span class="p">(</span><span class="s2">&quot;genome1.fasta&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">idx</span><span class="o">.</span><span class="n">load_fasta</span><span class="p">(</span><span class="s2">&quot;genome2.fasta&quot;</span><span class="p">)</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># Get PAF-format alignments</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># Get PAF-format alignments (forward strand only)</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">idx</span><span class="o">.</span><span class="n">get_paf</span><span class="p">(</span><span class="s2">&quot;seq1&quot;</span><span class="p">,</span> <span class="s2">&quot;seq2&quot;</span><span class="p">):</span>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="c1"># Generate dotplot</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">plotter</span> <span class="o">=</span> <span class="n">DotPlotter</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">output_path</span><span class="o">=</span><span class="s2">&quot;dotplot.png&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="c1"># Stranded comparison: forward (+) and reverse-complement (-) hits</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">hits</span> <span class="o">=</span> <span class="n">idx</span><span class="o">.</span><span class="n">compare_sequences_stranded</span><span class="p">(</span><span class="s2">&quot;seq1&quot;</span><span class="p">,</span> <span class="s2">&quot;seq2&quot;</span><span class="p">,</span> <span class="n">merge</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="k">for</span> <span class="n">qs</span><span class="p">,</span> <span class="n">qe</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">te</span><span class="p">,</span> <span class="n">strand</span> <span class="ow">in</span> <span class="n">hits</span><span class="p">:</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">strand</span><span class="si">}</span><span class="s2">  q[</span><span class="si">{</span><span class="n">qs</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">qe</span><span class="si">}</span><span class="s2">]  t[</span><span class="si">{</span><span class="n">ts</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">te</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="c1"># Generate dotplot — forward hits blue, RC hits red</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="n">plotter</span> <span class="o">=</span> <span class="n">DotPlotter</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">output_path</span><span class="o">=</span><span class="s2">&quot;dotplot.png&quot;</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="documentation-sections">Documentation Sections<a class="headerlink" href="#documentation-sections" title="Permanent link">&para;</a></h2>
 <ul>
