@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://adamtaranto.github.io/rusty-dot/installation/">
+        <link rel="canonical" href="https://adamtaranto.github.io/rusty-dot/development/">
       
       
-        <link rel="prev" href="..">
+        <link rel="prev" href="../installation/">
       
       
-        <link rel="next" href="../development/">
+        <link rel="next" href="../tutorials/quickstart/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Installation - rusty-dot</title>
+        <title>Development Guide - rusty-dot</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#installation" class="md-skip">
+        <a href="#development-guide" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Installation
+              Development Guide
             
           </span>
         </div>
@@ -244,11 +244,9 @@
   
   
   
-    
   
-  
-    <li class="md-tabs__item md-tabs__item--active">
-      <a href="./" class="md-tabs__link">
+    <li class="md-tabs__item">
+      <a href="../installation/" class="md-tabs__link">
         
   
   
@@ -265,9 +263,11 @@
   
   
   
+    
   
-    <li class="md-tabs__item">
-      <a href="../development/" class="md-tabs__link">
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
         
   
   
@@ -396,6 +396,33 @@
       
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
     
   
   
@@ -415,7 +442,7 @@
   <span class="md-ellipsis">
     
   
-    Installation
+    Development Guide
   
 
     
@@ -433,7 +460,7 @@
   <span class="md-ellipsis">
     
   
-    Installation
+    Development Guide
   
 
     
@@ -459,10 +486,49 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#requirements" class="md-nav__link">
+  <a href="#prerequisites" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Requirements
+        Prerequisites
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Prerequisites">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#install-rust" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install Rust
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#create-a-conda-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Create a conda environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fork-and-clone-the-repository" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fork and clone the repository
       
     </span>
   </a>
@@ -470,10 +536,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#install-from-source" class="md-nav__link">
+  <a href="#install-in-development-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install from source
+        Install in development mode
       
     </span>
   </a>
@@ -481,10 +547,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#install-python-dependencies" class="md-nav__link">
+  <a href="#installing-pre-commit-hooks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install Python dependencies
+        Installing pre-commit hooks
       
     </span>
   </a>
@@ -492,10 +558,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#optional-documentation-dependencies" class="md-nav__link">
+  <a href="#running-python-tests" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Optional: documentation dependencies
+        Running Python tests
       
     </span>
   </a>
@@ -503,10 +569,82 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#verify-the-installation" class="md-nav__link">
+  <a href="#python-code-style-ruff" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Verify the installation
+        Python code style — ruff
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rust-code-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rust code quality
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rust code quality">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lint-clippy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lint (Clippy)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#compile-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compile check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rust-unit-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rust unit tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-the-documentation-locally" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the documentation locally
       
     </span>
   </a>
@@ -517,33 +655,6 @@
   
 </nav>
       
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../development/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Development Guide
-  
-
-    
-  </span>
-  
-  
-
-      </a>
     </li>
   
 
@@ -977,10 +1088,49 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#requirements" class="md-nav__link">
+  <a href="#prerequisites" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Requirements
+        Prerequisites
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Prerequisites">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#install-rust" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install Rust
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#create-a-conda-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Create a conda environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fork-and-clone-the-repository" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fork and clone the repository
       
     </span>
   </a>
@@ -988,10 +1138,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#install-from-source" class="md-nav__link">
+  <a href="#install-in-development-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install from source
+        Install in development mode
       
     </span>
   </a>
@@ -999,10 +1149,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#install-python-dependencies" class="md-nav__link">
+  <a href="#installing-pre-commit-hooks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install Python dependencies
+        Installing pre-commit hooks
       
     </span>
   </a>
@@ -1010,10 +1160,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#optional-documentation-dependencies" class="md-nav__link">
+  <a href="#running-python-tests" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Optional: documentation dependencies
+        Running Python tests
       
     </span>
   </a>
@@ -1021,10 +1171,82 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#verify-the-installation" class="md-nav__link">
+  <a href="#python-code-style-ruff" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Verify the installation
+        Python code style — ruff
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rust-code-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rust code quality
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rust code quality">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lint-clippy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lint (Clippy)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#compile-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compile check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rust-unit-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rust unit tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-the-documentation-locally" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the documentation locally
       
     </span>
   </a>
@@ -1051,55 +1273,170 @@
   
 
 
-<h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
-<h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Python 3.9 or later</li>
-<li>A working Rust toolchain (for building from source)</li>
-<li><a href="https://www.maturin.rs/">maturin</a> ≥ 1.0</li>
-</ul>
-<h2 id="install-from-source">Install from source<a class="headerlink" href="#install-from-source" title="Permanent link">&para;</a></h2>
-<p>Clone the repository and build the Rust extension with <a href="https://www.maturin.rs/">maturin</a>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Adamtaranto/rusty-dot.git
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>rusty-dot
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>pip<span class="w"> </span>install<span class="w"> </span>maturin
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>maturin<span class="w"> </span>develop<span class="w"> </span>--release
+<h1 id="development-guide">Development Guide<a class="headerlink" href="#development-guide" title="Permanent link">&para;</a></h1>
+<p>This page explains how to set up a local development environment for rusty-dot so you can edit both the Rust extension and the Python package and run the full test suite.</p>
+<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
+<h3 id="install-rust">Install Rust<a class="headerlink" href="#install-rust" title="Permanent link">&para;</a></h3>
+<p>rusty-dot requires a working Rust toolchain (stable channel).
+Install it with <a href="https://rustup.rs/">rustup</a>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>curl<span class="w"> </span>--proto<span class="w"> </span><span class="s1">&#39;=https&#39;</span><span class="w"> </span>--tlsv1.2<span class="w"> </span>-sSf<span class="w"> </span>https://sh.rustup.rs<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">source</span><span class="w"> </span><span class="nv">$HOME</span>/.cargo/env
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>rustup<span class="w"> </span>update<span class="w"> </span>stable
 </code></pre></div>
-<p>The <code>--release</code> flag enables full Rust compiler optimisations, which is strongly recommended for any non-trivial dataset.</p>
-<h2 id="install-python-dependencies">Install Python dependencies<a class="headerlink" href="#install-python-dependencies" title="Permanent link">&para;</a></h2>
-<p>rusty-dot depends on:</p>
+<p>Verify the installation:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>rustc<span class="w"> </span>--version
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>cargo<span class="w"> </span>--version
+</code></pre></div>
+<h3 id="create-a-conda-environment">Create a conda environment<a class="headerlink" href="#create-a-conda-environment" title="Permanent link">&para;</a></h3>
+<p>A minimal conda environment file is provided at <code>environment.yml</code>.
+It pins Python to 3.13 and installs the key Python dependencies.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>conda<span class="w"> </span>env<span class="w"> </span>create<span class="w"> </span>-f<span class="w"> </span>environment.yml
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>conda<span class="w"> </span>activate<span class="w"> </span>rustydot
+</code></pre></div>
+<p>Alternatively, use any Python ≥ 3.9 virtual environment:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nb">source</span><span class="w"> </span>.venv/bin/activate<span class="w">   </span><span class="c1"># Windows: .venv\Scripts\activate</span>
+</code></pre></div>
+<h2 id="fork-and-clone-the-repository">Fork and clone the repository<a class="headerlink" href="#fork-and-clone-the-repository" title="Permanent link">&para;</a></h2>
+<p><a href="https://github.com/Adamtaranto/rusty-dot/fork">Fork rusty-dot</a> on GitHub, then clone your fork:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/&lt;your-username&gt;/rusty-dot.git
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">cd</span><span class="w"> </span>rusty-dot
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>git<span class="w"> </span>remote<span class="w"> </span>add<span class="w"> </span>upstream<span class="w"> </span>https://github.com/Adamtaranto/rusty-dot.git
+</code></pre></div>
+<h2 id="install-in-development-mode">Install in development mode<a class="headerlink" href="#install-in-development-mode" title="Permanent link">&para;</a></h2>
+<p><a href="https://www.maturin.rs/">maturin</a> is the build backend for the Rust extension.
+Install it and then build the package in editable mode:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>pip<span class="w"> </span>install<span class="w"> </span>maturin
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># Build Rust extension + install package in editable mode</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>maturin<span class="w"> </span>develop<span class="w"> </span>--extras<span class="w"> </span>dev,docs
+</code></pre></div>
+<p>The <code>--extras dev,docs</code> flag installs all optional development and documentation
+dependencies declared in <code>pyproject.toml</code>.</p>
+<p>Verify the install:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">rusty_dot</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">rusty_dot</span><span class="o">.</span><span class="n">__version__</span><span class="p">)</span>
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Always re-run <code>maturin develop</code> after modifying any Rust source files
+(<code>src/*.rs</code>).  Pure Python changes in <code>python/rusty_dot/</code> take effect
+immediately without a rebuild.</p>
+</div>
+<h2 id="installing-pre-commit-hooks">Installing pre-commit hooks<a class="headerlink" href="#installing-pre-commit-hooks" title="Permanent link">&para;</a></h2>
+<p>rusty-dot uses <a href="https://pre-commit.com/">pre-commit</a> to enforce code quality
+on every commit.  Install the hooks once after cloning:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>pip<span class="w"> </span>install<span class="w"> </span>pre-commit<span class="w">   </span><span class="c1"># already included in the dev extras</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>pre-commit<span class="w"> </span>install<span class="w">                 </span><span class="c1"># install commit-stage hooks</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>pre-commit<span class="w"> </span>install<span class="w"> </span>--hook-type<span class="w"> </span>pre-push<span class="w">   </span><span class="c1"># install push-stage hooks</span>
+</code></pre></div>
+<p>The hooks include:</p>
 <table>
 <thead>
 <tr>
-<th>Package</th>
-<th>Purpose</th>
+<th>Hook</th>
+<th>Stage</th>
+<th>What it checks</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>matplotlib ≥ 3.5</code></td>
-<td>Dotplot visualisation</td>
+<td><code>check-ast</code> / <code>check-yaml</code> / <code>check-toml</code></td>
+<td>commit</td>
+<td>File syntax</td>
 </tr>
 <tr>
-<td><code>numpy ≥ 1.21</code></td>
-<td>Array operations used by matplotlib</td>
+<td><code>trailing-whitespace</code> / <code>end-of-file-fixer</code></td>
+<td>commit</td>
+<td>Whitespace</td>
+</tr>
+<tr>
+<td><code>cargo fmt --check</code></td>
+<td>commit</td>
+<td>Rust formatting</td>
+</tr>
+<tr>
+<td><code>cargo check</code></td>
+<td>commit</td>
+<td>Rust compilation</td>
+</tr>
+<tr>
+<td><code>cargo clippy -- -D warnings</code></td>
+<td>commit</td>
+<td>Rust linting</td>
+</tr>
+<tr>
+<td><code>ruff format</code> / <code>ruff check</code></td>
+<td>commit</td>
+<td>Python formatting &amp; linting</td>
+</tr>
+<tr>
+<td><code>pydocstyle</code> (<code>.pyi</code> stubs only)</td>
+<td>commit</td>
+<td>Docstring style</td>
+</tr>
+<tr>
+<td><code>cargo test --lib</code></td>
+<td>push</td>
+<td>Rust unit tests</td>
+</tr>
+<tr>
+<td><code>pytest tests/ -x -q</code></td>
+<td>push</td>
+<td>Python test suite</td>
 </tr>
 </tbody>
 </table>
-<p>These are declared as package dependencies and will be installed automatically by pip.</p>
-<h2 id="optional-documentation-dependencies">Optional: documentation dependencies<a class="headerlink" href="#optional-documentation-dependencies" title="Permanent link">&para;</a></h2>
-<p>To build the documentation locally:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span>rusty-dot<span class="o">[</span>docs<span class="o">]</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>mkdocs<span class="w"> </span>serve
+<p>Run all hooks manually at any time:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files
 </code></pre></div>
-<h2 id="verify-the-installation">Verify the installation<a class="headerlink" href="#verify-the-installation" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">rusty_dot</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">rusty_dot</span><span class="o">.</span><span class="n">__version__</span><span class="p">)</span>  <span class="c1"># 0.1.0</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot</span><span class="w"> </span><span class="kn">import</span> <span class="n">SequenceIndex</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">idx</span> <span class="o">=</span> <span class="n">SequenceIndex</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s2">&quot;test&quot;</span><span class="p">,</span> <span class="s2">&quot;ACGTACGTACGT&quot;</span><span class="p">)</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="nb">print</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>  <span class="c1"># SequenceIndex(k=10, sequences=1)</span>
+<h2 id="running-python-tests">Running Python tests<a class="headerlink" href="#running-python-tests" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-v
+</code></pre></div>
+<p>To run a specific test file or test function:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>pytest<span class="w"> </span>tests/test_index.py<span class="w"> </span>-v
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>pytest<span class="w"> </span>tests/test_index.py::test_get_paf_all_returns_paf_lines<span class="w"> </span>-v
+</code></pre></div>
+<h2 id="python-code-style-ruff">Python code style — ruff<a class="headerlink" href="#python-code-style-ruff" title="Permanent link">&para;</a></h2>
+<p>rusty-dot uses <a href="https://docs.astral.sh/ruff/">ruff</a> for Python linting and
+formatting (configured in <code>pyproject.toml</code>).</p>
+<p><strong>Check for issues:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>ruff<span class="w"> </span>check<span class="w"> </span>python/<span class="w"> </span>tests/
+</code></pre></div>
+<p><strong>Auto-fix fixable issues:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>ruff<span class="w"> </span>check<span class="w"> </span>--fix<span class="w"> </span>python/<span class="w"> </span>tests/
+</code></pre></div>
+<p><strong>Format code:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>ruff<span class="w"> </span>format<span class="w"> </span>python/<span class="w"> </span>tests/
+</code></pre></div>
+<h2 id="rust-code-quality">Rust code quality<a class="headerlink" href="#rust-code-quality" title="Permanent link">&para;</a></h2>
+<h3 id="format">Format<a class="headerlink" href="#format" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>cargo<span class="w"> </span>fmt
+</code></pre></div>
+<p>Check formatting without modifying files (also used by the pre-commit hook):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>cargo<span class="w"> </span>fmt<span class="w"> </span>--all<span class="w"> </span>--<span class="w"> </span>--check
+</code></pre></div>
+<h3 id="lint-clippy">Lint (Clippy)<a class="headerlink" href="#lint-clippy" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>cargo<span class="w"> </span>clippy<span class="w"> </span>--<span class="w"> </span>-D<span class="w"> </span>warnings
+</code></pre></div>
+<h3 id="compile-check">Compile check<a class="headerlink" href="#compile-check" title="Permanent link">&para;</a></h3>
+<p>Quickly verify the crate compiles without producing a binary:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>cargo<span class="w"> </span>check
+</code></pre></div>
+<h3 id="rust-unit-tests">Rust unit tests<a class="headerlink" href="#rust-unit-tests" title="Permanent link">&para;</a></h3>
+<p>Run the Rust-side library tests:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>cargo<span class="w"> </span><span class="nb">test</span><span class="w"> </span>--lib
+</code></pre></div>
+<p>Run all Rust tests (including integration tests, if any):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>cargo<span class="w"> </span><span class="nb">test</span>
+</code></pre></div>
+<h2 id="building-the-documentation-locally">Building the documentation locally<a class="headerlink" href="#building-the-documentation-locally" title="Permanent link">&para;</a></h2>
+<p>Install the docs dependencies (included in <code>pip install maturin --extras dev,docs</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>mkdocs<span class="w"> </span>serve
+</code></pre></div>
+<p>Open <a href="http://127.0.0.1:8000">http://127.0.0.1:8000</a> in your browser.  The site rebuilds automatically
+when you save a documentation file.</p>
+<p>To build a static site:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>mkdocs<span class="w"> </span>build
 </code></pre></div>
 
 

@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://adamtaranto.github.io/rusty-dot/tutorials/dotplot_tutorial/">
+        <link rel="canonical" href="https://adamtaranto.github.io/rusty-dot/tutorials/all_vs_all_two_indices/">
       
       
-        <link rel="prev" href="../quickstart/">
+        <link rel="prev" href="../paf_workflow/">
       
       
-        <link rel="next" href="../paf_workflow/">
+        <link rel="next" href="../minimap2_paf_tutorial/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Dotplot Visualization Tutorial - rusty-dot</title>
+        <title>All-vs-All Dotplot Between Two Sequence Indices - rusty-dot</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#dotplot-visualization-tutorial" class="md-skip">
+        <a href="#all-vs-all-dotplot-between-two-sequence-indices" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Dotplot Visualization Tutorial
+              All-vs-All Dotplot Between Two Sequence Indices
             
           </span>
         </div>
@@ -535,37 +535,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Dotplot Visualization Tutorial
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../dotplot_tutorial/" class="md-nav__link">
         
   
   
@@ -581,125 +554,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#1-build-a-test-index" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. Build a test index
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#2-all-vs-all-dotplot-default-settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. All-vs-all dotplot (default settings)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#3-subset-specific-query-and-target-sets" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Subset: specific query and target sets
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#4-single-pair-dotplot" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        4. Single-pair dotplot
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#5-customising-dot-appearance" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        5. Customising dot appearance
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#6-controlling-merge-behaviour" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        6. Controlling merge behaviour
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#7-output-resolution" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        7. Output resolution
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#8-panel-size-control" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        8. Panel size control
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#summary-of-dotplotter-parameters" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Summary of DotPlotter parameters
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -737,10 +591,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../all_vs_all_two_indices/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    All-vs-All Dotplot Between Two Sequence Indices
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -756,6 +637,114 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-create-example-sequences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Create example sequences
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-build-a-crossindexpaf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Build a CrossIndexPaf
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-retrieve-all-cross-group-paf-alignments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Retrieve all cross-group PAF alignments
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-build-a-pafalignment-for-contig-reordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Build a PafAlignment for contig reordering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-build-a-combined-index-for-plotting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Build a combined index for plotting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-plot-the-all-vs-all-dotplot-with-relative-scaling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Plot the all-vs-all dotplot with relative scaling
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-directly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using directly
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1024,10 +1013,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-build-a-test-index" class="md-nav__link">
+  <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Build a test index
+        Overview
       
     </span>
   </a>
@@ -1035,10 +1024,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-all-vs-all-dotplot-default-settings" class="md-nav__link">
+  <a href="#1-create-example-sequences" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. All-vs-all dotplot (default settings)
+        1. Create example sequences
       
     </span>
   </a>
@@ -1046,10 +1035,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-subset-specific-query-and-target-sets" class="md-nav__link">
+  <a href="#2-build-a-crossindexpaf" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Subset: specific query and target sets
+        2. Build a CrossIndexPaf
       
     </span>
   </a>
@@ -1057,10 +1046,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-single-pair-dotplot" class="md-nav__link">
+  <a href="#3-retrieve-all-cross-group-paf-alignments" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Single-pair dotplot
+        3. Retrieve all cross-group PAF alignments
       
     </span>
   </a>
@@ -1068,10 +1057,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-customising-dot-appearance" class="md-nav__link">
+  <a href="#4-build-a-pafalignment-for-contig-reordering" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Customising dot appearance
+        4. Build a PafAlignment for contig reordering
       
     </span>
   </a>
@@ -1079,10 +1068,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-controlling-merge-behaviour" class="md-nav__link">
+  <a href="#5-build-a-combined-index-for-plotting" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Controlling merge behaviour
+        5. Build a combined index for plotting
       
     </span>
   </a>
@@ -1090,10 +1079,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#7-output-resolution" class="md-nav__link">
+  <a href="#6-plot-the-all-vs-all-dotplot-with-relative-scaling" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Output resolution
+        6. Plot the all-vs-all dotplot with relative scaling
       
     </span>
   </a>
@@ -1101,21 +1090,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#8-panel-size-control" class="md-nav__link">
+  <a href="#using-directly" class="md-nav__link">
     <span class="md-ellipsis">
       
-        8. Panel size control
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#summary-of-dotplotter-parameters" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Summary of DotPlotter parameters
+        Using directly
       
     </span>
   </a>
@@ -1869,10 +1847,13 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h1 id="dotplot-visualization-tutorial">Dotplot Visualization Tutorial<a class="anchor-link" href="#dotplot-visualization-tutorial">¶</a></h1><p>This notebook explores all visualisation options provided by the <code>DotPlotter</code> class.</p>
-<p>A <em>dot plot</em> (or <em>dotplot</em>) is a classic bioinformatics visualisation that displays all shared
-subsequences between two sequences.  Each dot represents a shared k-mer; diagonal runs of
-dots indicate conserved regions.  Inversions appear as anti-diagonal lines.</p>
+<h1 id="all-vs-all-dotplot-between-two-sequence-indices">All-vs-All Dotplot Between Two Sequence Indices<a class="anchor-link" href="#all-vs-all-dotplot-between-two-sequence-indices">¶</a></h1><p>This tutorial demonstrates how to compare sequences from <strong>two separate FASTA files</strong> (e.g. two genome assemblies) using <code>CrossIndexPaf</code>.  Each FASTA file is assigned to its own group, and pairwise alignments are computed between all sequences in group A and all sequences in group B.</p>
+<h2 id="overview">Overview<a class="anchor-link" href="#overview">¶</a></h2><ol>
+<li>Create a <code>CrossIndexPaf</code> and load two FASTA files into groups A and B.</li>
+<li>Retrieve all cross-group PAF alignments with <code>get_paf_all()</code>.</li>
+<li>Build a <code>PafAlignment</code> from those records for contig reordering.</li>
+<li>Plot the sorted all-vs-all dotplot with <code>DotPlotter</code>.</li>
+</ol>
 </div>
 </div>
 </div>
@@ -1895,17 +1876,13 @@ dots indicate conserved regions.  Inversions appear as anti-diagonal lines.</p>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-
-<span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot</span><span class="w"> </span><span class="kn">import</span> <span class="n">SequenceIndex</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot</span><span class="w"> </span><span class="kn">import</span> <span class="n">SequenceIndex</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.dotplot</span><span class="w"> </span><span class="kn">import</span> <span class="n">DotPlotter</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.paf_io</span><span class="w"> </span><span class="kn">import</span> <span class="n">CrossIndexPaf</span><span class="p">,</span> <span class="n">PafAlignment</span><span class="p">,</span> <span class="n">PafRecord</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-1">import tempfile
-import os
-
-from rusty_dot import SequenceIndex
-from rusty_dot.dotplot import DotPlotter</div>
+<div class="clipboard-copy-txt" id="cell-1">from rusty_dot import SequenceIndex
+from rusty_dot.dotplot import DotPlotter
+from rusty_dot.paf_io import CrossIndexPaf, PafAlignment, PafRecord</div>
 </div>
 </div>
 </div>
@@ -1918,7 +1895,7 @@ from rusty_dot.dotplot import DotPlotter</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="1-build-a-test-index">1. Build a test index<a class="anchor-link" href="#1-build-a-test-index">¶</a></h2><p>We create three artificial sequences with different overlap patterns:</p>
+<h2 id="1-create-example-sequences">1. Create example sequences<a class="anchor-link" href="#1-create-example-sequences">¶</a></h2><p>For demonstration we build two small sets of sequences in memory.  In real usage you would call <code>cross.load_fasta('genome_a.fasta', group='a')</code> and <code>cross.load_fasta('genome_b.fasta', group='b')</code>.</p>
 </div>
 </div>
 </div>
@@ -1941,41 +1918,33 @@ from rusty_dot.dotplot import DotPlotter</div>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="c1"># Helper to create a reverse complement</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">revcomp</span><span class="p">(</span><span class="n">seq</span><span class="p">):</span>
-    <span class="n">table</span> <span class="o">=</span> <span class="nb">str</span><span class="o">.</span><span class="n">maketrans</span><span class="p">(</span><span class="s1">'ACGTacgt'</span><span class="p">,</span> <span class="s1">'TGCAtgca'</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">seq</span><span class="o">.</span><span class="n">translate</span><span class="p">(</span><span class="n">table</span><span class="p">)[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="c1"># Sequences for "genome A" — three contigs of different lengths</span>
+<span class="n">genome_a</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s1">'contigA1'</span><span class="p">:</span> <span class="s1">'ACGTACGTACGTACGTACGT'</span> <span class="o">*</span> <span class="mi">10</span><span class="p">,</span>   <span class="c1"># 200 bp</span>
+    <span class="s1">'contigA2'</span><span class="p">:</span> <span class="s1">'TACGTACGTACGTACGTACG'</span> <span class="o">*</span> <span class="mi">5</span><span class="p">,</span>    <span class="c1"># 100 bp</span>
+    <span class="s1">'contigA3'</span><span class="p">:</span> <span class="s1">'GCGCGCGCGCGCGCGCGCGC'</span> <span class="o">*</span> <span class="mi">3</span><span class="p">,</span>   <span class="c1"># 60 bp</span>
+<span class="p">}</span>
 
-
-<span class="n">unit</span> <span class="o">=</span> <span class="s1">'ACGTACGTACGT'</span>  <span class="c1"># 12 bp repeat unit</span>
-<span class="n">seq_a</span> <span class="o">=</span> <span class="n">unit</span> <span class="o">*</span> <span class="mi">10</span>  <span class="c1"># 120 bp  — the reference</span>
-<span class="n">seq_b</span> <span class="o">=</span> <span class="s1">'T'</span> <span class="o">+</span> <span class="n">unit</span> <span class="o">*</span> <span class="mi">9</span> <span class="o">+</span> <span class="s1">'T'</span>  <span class="c1"># 120 bp  — shifted by 1</span>
-<span class="n">seq_c</span> <span class="o">=</span> <span class="n">revcomp</span><span class="p">(</span><span class="n">unit</span> <span class="o">*</span> <span class="mi">5</span><span class="p">)</span> <span class="o">+</span> <span class="n">unit</span> <span class="o">*</span> <span class="mi">5</span>  <span class="c1"># 120 bp  — half inverted</span>
-
-<span class="n">idx</span> <span class="o">=</span> <span class="n">SequenceIndex</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
-<span class="n">idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s1">'reference'</span><span class="p">,</span> <span class="n">seq_a</span><span class="p">)</span>
-<span class="n">idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s1">'shifted'</span><span class="p">,</span> <span class="n">seq_b</span><span class="p">)</span>
-<span class="n">idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s1">'partial_inv'</span><span class="p">,</span> <span class="n">seq_c</span><span class="p">)</span>
-
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Index: </span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+<span class="c1"># Sequences for "genome B" — three contigs</span>
+<span class="n">genome_b</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s1">'contigB1'</span><span class="p">:</span> <span class="s1">'ACGTACGTACGTACGTACGT'</span> <span class="o">*</span> <span class="mi">8</span><span class="p">,</span>   <span class="c1"># 160 bp  (similar to contigA1)</span>
+    <span class="s1">'contigB2'</span><span class="p">:</span> <span class="s1">'GCGCGCGCGCGCGCGCGCGC'</span> <span class="o">*</span> <span class="mi">4</span><span class="p">,</span>  <span class="c1"># 80 bp   (similar to contigA3)</span>
+    <span class="s1">'contigB3'</span><span class="p">:</span> <span class="s1">'TTTTAAAAAGGGGCCCCTTTT'</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span>  <span class="c1"># 42 bp   (no matches)</span>
+<span class="p">}</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-2"># Helper to create a reverse complement
-def revcomp(seq):
-    table = str.maketrans('ACGTacgt', 'TGCAtgca')
-    return seq.translate(table)[::-1]
+<div class="clipboard-copy-txt" id="cell-2"># Sequences for "genome A" — three contigs of different lengths
+genome_a = {
+    'contigA1': 'ACGTACGTACGTACGTACGT' * 10,   # 200 bp
+    'contigA2': 'TACGTACGTACGTACGTACG' * 5,    # 100 bp
+    'contigA3': 'GCGCGCGCGCGCGCGCGCGC' * 3,   # 60 bp
+}
 
-
-unit = 'ACGTACGTACGT'  # 12 bp repeat unit
-seq_a = unit * 10  # 120 bp  — the reference
-seq_b = 'T' + unit * 9 + 'T'  # 120 bp  — shifted by 1
-seq_c = revcomp(unit * 5) + unit * 5  # 120 bp  — half inverted
-
-idx = SequenceIndex(k=8)
-idx.add_sequence('reference', seq_a)
-idx.add_sequence('shifted', seq_b)
-idx.add_sequence('partial_inv', seq_c)
-
-print(f'Index: {idx}')</div>
+# Sequences for "genome B" — three contigs
+genome_b = {
+    'contigB1': 'ACGTACGTACGTACGTACGT' * 8,   # 160 bp  (similar to contigA1)
+    'contigB2': 'GCGCGCGCGCGCGCGCGCGC' * 4,  # 80 bp   (similar to contigA3)
+    'contigB3': 'TTTTAAAAAGGGGCCCCTTTT' * 2,  # 42 bp   (no matches)
+}</div>
 </div>
 </div>
 </div>
@@ -1988,8 +1957,7 @@ print(f'Index: {idx}')</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="2-all-vs-all-dotplot-default-settings">2. All-vs-all dotplot (default settings)<a class="anchor-link" href="#2-all-vs-all-dotplot-default-settings">¶</a></h2><p><code>DotPlotter.plot()</code> without arguments produces an all-vs-all grid using all sequences
-in the index.</p>
+<h2 id="2-build-a-crossindexpaf">2. Build a CrossIndexPaf<a class="anchor-link" href="#2-build-a-crossindexpaf">¶</a></h2><p><code>CrossIndexPaf</code> holds one internal <code>SequenceIndex</code> that contains sequences from <em>both</em> groups, using internal prefixes (<code>a:</code> / <code>b:</code>) to prevent name collisions.</p>
 </div>
 </div>
 </div>
@@ -2012,27 +1980,25 @@ in the index.</p>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">plotter</span> <span class="o">=</span> <span class="n">DotPlotter</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">cross</span> <span class="o">=</span> <span class="n">CrossIndexPaf</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 
-<span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
-    <span class="n">all_vs_all_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">seq</span> <span class="ow">in</span> <span class="n">genome_a</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">cross</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">seq</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="s1">'a'</span><span class="p">)</span>
 
-<span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
-    <span class="n">output_path</span><span class="o">=</span><span class="n">all_vs_all_path</span><span class="p">,</span>
-    <span class="n">title</span><span class="o">=</span><span class="s1">'All vs All'</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Saved: </span><span class="si">{</span><span class="n">all_vs_all_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">all_vs_all_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">seq</span> <span class="ow">in</span> <span class="n">genome_b</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">cross</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">seq</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="s1">'b'</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">cross</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-3">plotter = DotPlotter(idx)
+<div class="clipboard-copy-txt" id="cell-3">cross = CrossIndexPaf(k=10)
 
-with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as fh:
-    all_vs_all_path = fh.name
+for name, seq in genome_a.items():
+    cross.add_sequence(name, seq, group='a')
 
-plotter.plot(
-    output_path=all_vs_all_path,
-    title='All vs All',
-)
-print(f'Saved: {all_vs_all_path}  ({os.path.getsize(all_vs_all_path)} bytes)')</div>
+for name, seq in genome_b.items():
+    cross.add_sequence(name, seq, group='b')
+
+print(cross)</div>
 </div>
 </div>
 </div>
@@ -2045,7 +2011,7 @@ print(f'Saved: {all_vs_all_path}  ({os.path.getsize(all_vs_all_path)} bytes)')</
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="3-subset-specific-query-and-target-sets">3. Subset: specific query and target sets<a class="anchor-link" href="#3-subset-specific-query-and-target-sets">¶</a></h2><p>Pass <code>query_names</code> and <code>target_names</code> to restrict the grid to a subset of sequences.</p>
+<h2 id="3-retrieve-all-cross-group-paf-alignments">3. Retrieve all cross-group PAF alignments<a class="anchor-link" href="#3-retrieve-all-cross-group-paf-alignments">¶</a></h2>
 </div>
 </div>
 </div>
@@ -2068,27 +2034,17 @@ print(f'Saved: {all_vs_all_path}  ({os.path.getsize(all_vs_all_path)} bytes)')</
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
-    <span class="n">subset_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">paf_lines</span> <span class="o">=</span> <span class="n">cross</span><span class="o">.</span><span class="n">get_paf_all</span><span class="p">(</span><span class="n">merge</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-<span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
-    <span class="n">query_names</span><span class="o">=</span><span class="p">[</span><span class="s1">'reference'</span><span class="p">,</span> <span class="s1">'shifted'</span><span class="p">],</span>
-    <span class="n">target_names</span><span class="o">=</span><span class="p">[</span><span class="s1">'partial_inv'</span><span class="p">],</span>
-    <span class="n">output_path</span><span class="o">=</span><span class="n">subset_path</span><span class="p">,</span>
-    <span class="n">title</span><span class="o">=</span><span class="s1">'Reference &amp; Shifted vs Partial Inversion'</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Subset plot saved: </span><span class="si">{</span><span class="n">subset_path</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Total PAF lines: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">paf_lines</span><span class="p">)</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">paf_lines</span><span class="p">[:</span><span class="mi">5</span><span class="p">]:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-4">with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as fh:
-    subset_path = fh.name
+<div class="clipboard-copy-txt" id="cell-4">paf_lines = cross.get_paf_all(merge=True)
 
-plotter.plot(
-    query_names=['reference', 'shifted'],
-    target_names=['partial_inv'],
-    output_path=subset_path,
-    title='Reference &amp; Shifted vs Partial Inversion',
-)
-print(f'Subset plot saved: {subset_path}')</div>
+print(f'Total PAF lines: {len(paf_lines)}')
+for line in paf_lines[:5]:
+    print(line)</div>
 </div>
 </div>
 </div>
@@ -2101,7 +2057,7 @@ print(f'Subset plot saved: {subset_path}')</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="4-single-pair-dotplot">4. Single-pair dotplot<a class="anchor-link" href="#4-single-pair-dotplot">¶</a></h2><p><code>plot_single</code> renders one comparison panel with its own figure size and title.</p>
+<h2 id="4-build-a-pafalignment-for-contig-reordering">4. Build a PafAlignment for contig reordering<a class="anchor-link" href="#4-build-a-pafalignment-for-contig-reordering">¶</a></h2><p>Parse the raw PAF strings into <code>PafRecord</code> objects so we can use the <code>reorder_contigs</code> method to maximise collinearity.</p>
 </div>
 </div>
 </div>
@@ -2124,29 +2080,27 @@ print(f'Subset plot saved: {subset_path}')</div>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
-    <span class="n">single_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">records</span> <span class="o">=</span> <span class="p">[</span><span class="n">PafRecord</span><span class="o">.</span><span class="n">from_line</span><span class="p">(</span><span class="n">line</span><span class="p">)</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">paf_lines</span><span class="p">]</span>
+<span class="n">aln</span> <span class="o">=</span> <span class="n">PafAlignment</span><span class="o">.</span><span class="n">from_records</span><span class="p">(</span><span class="n">records</span><span class="p">)</span>
 
-<span class="n">plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span>
-    <span class="n">query_name</span><span class="o">=</span><span class="s1">'reference'</span><span class="p">,</span>
-    <span class="n">target_name</span><span class="o">=</span><span class="s1">'shifted'</span><span class="p">,</span>
-    <span class="n">output_path</span><span class="o">=</span><span class="n">single_path</span><span class="p">,</span>
-    <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span>
-    <span class="n">title</span><span class="o">=</span><span class="s1">'reference vs shifted'</span><span class="p">,</span>
+<span class="n">q_sorted</span><span class="p">,</span> <span class="n">t_sorted</span> <span class="o">=</span> <span class="n">aln</span><span class="o">.</span><span class="n">reorder_contigs</span><span class="p">(</span>
+    <span class="n">query_names</span><span class="o">=</span><span class="n">cross</span><span class="o">.</span><span class="n">query_names</span><span class="p">,</span>
+    <span class="n">target_names</span><span class="o">=</span><span class="n">cross</span><span class="o">.</span><span class="n">target_names</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Single-pair plot saved: </span><span class="si">{</span><span class="n">single_path</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
-</pre></div>
-<div class="clipboard-copy-txt" id="cell-5">with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as fh:
-    single_path = fh.name
 
-plotter.plot_single(
-    query_name='reference',
-    target_name='shifted',
-    output_path=single_path,
-    figsize=(5, 5),
-    title='reference vs shifted',
+<span class="nb">print</span><span class="p">(</span><span class="s1">'Sorted query (genome A) contigs:'</span><span class="p">,</span> <span class="n">q_sorted</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s1">'Sorted target (genome B) contigs:'</span><span class="p">,</span> <span class="n">t_sorted</span><span class="p">)</span>
+</pre></div>
+<div class="clipboard-copy-txt" id="cell-5">records = [PafRecord.from_line(line) for line in paf_lines]
+aln = PafAlignment.from_records(records)
+
+q_sorted, t_sorted = aln.reorder_contigs(
+    query_names=cross.query_names,
+    target_names=cross.target_names,
 )
-print(f'Single-pair plot saved: {single_path}')</div>
+
+print('Sorted query (genome A) contigs:', q_sorted)
+print('Sorted target (genome B) contigs:', t_sorted)</div>
 </div>
 </div>
 </div>
@@ -2159,7 +2113,20 @@ print(f'Single-pair plot saved: {single_path}')</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="5-customising-dot-appearance">5. Customising dot appearance<a class="anchor-link" href="#5-customising-dot-appearance">¶</a></h2><p>All plotting methods accept <code>dot_size</code> and <code>dot_color</code> to control the appearance of match lines.</p>
+<blockquote>
+<p><strong>Note:</strong> Contigs with no cross-group matches (e.g. <code>contigB3</code>) are placed at the end, sorted by descending length.</p>
+</blockquote>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h2 id="5-build-a-combined-index-for-plotting">5. Build a combined index for plotting<a class="anchor-link" href="#5-build-a-combined-index-for-plotting">¶</a></h2><p><code>DotPlotter</code> requires a single <code>SequenceIndex</code> containing all sequences to be plotted.  We create one by adding sequences from both genomes.</p>
 </div>
 </div>
 </div>
@@ -2182,29 +2149,25 @@ print(f'Single-pair plot saved: {single_path}')</div>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
-    <span class="n">styled_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">combined_idx</span> <span class="o">=</span> <span class="n">SequenceIndex</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 
-<span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
-    <span class="n">output_path</span><span class="o">=</span><span class="n">styled_path</span><span class="p">,</span>
-    <span class="n">dot_size</span><span class="o">=</span><span class="mf">1.5</span><span class="p">,</span>
-    <span class="n">dot_color</span><span class="o">=</span><span class="s1">'crimson'</span><span class="p">,</span>
-    <span class="n">dpi</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span>
-    <span class="n">title</span><span class="o">=</span><span class="s1">'Custom style: crimson, dpi=200'</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Styled plot saved: </span><span class="si">{</span><span class="n">styled_path</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">seq</span> <span class="ow">in</span> <span class="n">genome_a</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">combined_idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">seq</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">seq</span> <span class="ow">in</span> <span class="n">genome_b</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">combined_idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">seq</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">combined_idx</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-6">with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as fh:
-    styled_path = fh.name
+<div class="clipboard-copy-txt" id="cell-6">combined_idx = SequenceIndex(k=10)
 
-plotter.plot(
-    output_path=styled_path,
-    dot_size=1.5,
-    dot_color='crimson',
-    dpi=200,
-    title='Custom style: crimson, dpi=200',
-)
-print(f'Styled plot saved: {styled_path}')</div>
+for name, seq in genome_a.items():
+    combined_idx.add_sequence(name, seq)
+
+for name, seq in genome_b.items():
+    combined_idx.add_sequence(name, seq)
+
+print(combined_idx)</div>
 </div>
 </div>
 </div>
@@ -2217,9 +2180,7 @@ print(f'Styled plot saved: {styled_path}')</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="6-controlling-merge-behaviour">6. Controlling merge behaviour<a class="anchor-link" href="#6-controlling-merge-behaviour">¶</a></h2><p>When <code>merge=True</code> (default), consecutive co-linear k-mer hits are merged into single lines.
-Set <code>merge=False</code> to display every individual k-mer hit as its own point — useful for
-inspecting raw k-mer density.</p>
+<h2 id="6-plot-the-all-vs-all-dotplot-with-relative-scaling">6. Plot the all-vs-all dotplot with relative scaling<a class="anchor-link" href="#6-plot-the-all-vs-all-dotplot-with-relative-scaling">¶</a></h2><p>Pass <code>scale_sequences=True</code> so that each subplot's width and height are proportional to the lengths of the compared sequences.</p>
 </div>
 </div>
 </div>
@@ -2242,29 +2203,35 @@ inspecting raw k-mer density.</p>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
-    <span class="n">unmerged_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">plotter</span> <span class="o">=</span> <span class="n">DotPlotter</span><span class="p">(</span><span class="n">combined_idx</span><span class="p">)</span>
 
-<span class="n">plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span>
-    <span class="n">query_name</span><span class="o">=</span><span class="s1">'reference'</span><span class="p">,</span>
-    <span class="n">target_name</span><span class="o">=</span><span class="s1">'shifted'</span><span class="p">,</span>
-    <span class="n">output_path</span><span class="o">=</span><span class="n">unmerged_path</span><span class="p">,</span>
-    <span class="n">merge</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-    <span class="n">title</span><span class="o">=</span><span class="s1">'reference vs shifted (unmerged k-mer hits)'</span><span class="p">,</span>
+<span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+    <span class="n">query_names</span><span class="o">=</span><span class="n">q_sorted</span><span class="p">,</span>
+    <span class="n">target_names</span><span class="o">=</span><span class="n">t_sorted</span><span class="p">,</span>
+    <span class="n">output_path</span><span class="o">=</span><span class="s1">'/tmp/cross_index_dotplot.png'</span><span class="p">,</span>
+    <span class="n">figsize_per_panel</span><span class="o">=</span><span class="mf">4.0</span><span class="p">,</span>
+    <span class="n">scale_sequences</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">title</span><span class="o">=</span><span class="s1">'Genome A vs Genome B — collinearity-sorted contigs'</span><span class="p">,</span>
+    <span class="n">dpi</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Unmerged plot saved: </span><span class="si">{</span><span class="n">unmerged_path</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
-</pre></div>
-<div class="clipboard-copy-txt" id="cell-7">with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as fh:
-    unmerged_path = fh.name
 
-plotter.plot_single(
-    query_name='reference',
-    target_name='shifted',
-    output_path=unmerged_path,
-    merge=False,
-    title='reference vs shifted (unmerged k-mer hits)',
+<span class="kn">from</span><span class="w"> </span><span class="nn">IPython.display</span><span class="w"> </span><span class="kn">import</span> <span class="n">Image</span>
+<span class="n">Image</span><span class="p">(</span><span class="s1">'/tmp/cross_index_dotplot.png'</span><span class="p">)</span>
+</pre></div>
+<div class="clipboard-copy-txt" id="cell-7">plotter = DotPlotter(combined_idx)
+
+plotter.plot(
+    query_names=q_sorted,
+    target_names=t_sorted,
+    output_path='/tmp/cross_index_dotplot.png',
+    figsize_per_panel=4.0,
+    scale_sequences=True,
+    title='Genome A vs Genome B — collinearity-sorted contigs',
+    dpi=100,
 )
-print(f'Unmerged plot saved: {unmerged_path}')</div>
+
+from IPython.display import Image
+Image('/tmp/cross_index_dotplot.png')</div>
 </div>
 </div>
 </div>
@@ -2277,8 +2244,7 @@ print(f'Unmerged plot saved: {unmerged_path}')</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="7-output-resolution">7. Output resolution<a class="anchor-link" href="#7-output-resolution">¶</a></h2><p>Use the <code>dpi</code> parameter to control the resolution of the saved image.
-Higher DPI is better for print-quality figures.</p>
+<h2 id="using-crossindexpafreorder_contigs-directly">Using <code>CrossIndexPaf.reorder_contigs</code> directly<a class="anchor-link" href="#using-crossindexpafreorder_contigs-directly">¶</a></h2><p>A convenience wrapper is also available on the <code>CrossIndexPaf</code> object itself, which internally calls <code>SequenceIndex.optimal_contig_order</code>.</p>
 </div>
 </div>
 </div>
@@ -2301,158 +2267,15 @@ Higher DPI is better for print-quality figures.</p>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="k">for</span> <span class="n">dpi</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">72</span><span class="p">,</span> <span class="mi">150</span><span class="p">,</span> <span class="mi">300</span><span class="p">]:</span>
-    <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="sa">f</span><span class="s1">'_dpi</span><span class="si">{</span><span class="n">dpi</span><span class="si">}</span><span class="s1">.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
-        <span class="n">path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
-    <span class="n">plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span>
-        <span class="s1">'reference'</span><span class="p">,</span>
-        <span class="s1">'shifted'</span><span class="p">,</span>
-        <span class="n">output_path</span><span class="o">=</span><span class="n">path</span><span class="p">,</span>
-        <span class="n">dpi</span><span class="o">=</span><span class="n">dpi</span><span class="p">,</span>
-        <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s1">'DPI = </span><span class="si">{</span><span class="n">dpi</span><span class="si">}</span><span class="s1">'</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="n">size_kb</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">/</span> <span class="mi">1024</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'DPI=</span><span class="si">{</span><span class="n">dpi</span><span class="si">:</span><span class="s1">4d</span><span class="si">}</span><span class="s1">  file size=</span><span class="si">{</span><span class="n">size_kb</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1"> kB  path=</span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">q_opt</span><span class="p">,</span> <span class="n">t_opt</span> <span class="o">=</span> <span class="n">cross</span><span class="o">.</span><span class="n">reorder_contigs</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="s1">'Optimal query order:'</span><span class="p">,</span> <span class="n">q_opt</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s1">'Optimal target order:'</span><span class="p">,</span> <span class="n">t_opt</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-8">for dpi in [72, 150, 300]:
-    with tempfile.NamedTemporaryFile(suffix=f'_dpi{dpi}.png', delete=False) as fh:
-        path = fh.name
-    plotter.plot_single(
-        'reference',
-        'shifted',
-        output_path=path,
-        dpi=dpi,
-        title=f'DPI = {dpi}',
-    )
-    size_kb = os.path.getsize(path) / 1024
-    print(f'DPI={dpi:4d}  file size={size_kb:.1f} kB  path={path}')</div>
+<div class="clipboard-copy-txt" id="cell-8">q_opt, t_opt = cross.reorder_contigs()
+print('Optimal query order:', q_opt)
+print('Optimal target order:', t_opt)</div>
 </div>
 </div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="8-panel-size-control">8. Panel size control<a class="anchor-link" href="#8-panel-size-control">¶</a></h2><p>For all-vs-all grids, <code>figsize_per_panel</code> controls the size (in inches) of each subplot panel.</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
-<div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="CodeMirror cm-s-jupyter">
-<div class="zeroclipboard-container">
-<clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-9">
-<div>
-<span class="notice" hidden="">Copied!</span>
-<svg aria-hidden="true" class="clipboard-copy-icon" data-view-component="true" height="20" version="1.1" viewbox="0 0 16 16" width="20">
-<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill="currentColor" fill-rule="evenodd"></path>
-<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill="currentColor" fill-rule="evenodd"></path>
-</svg>
-</div>
-</clipboard-copy>
-</div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
-    <span class="n">large_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
-
-<span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
-    <span class="n">output_path</span><span class="o">=</span><span class="n">large_path</span><span class="p">,</span>
-    <span class="n">figsize_per_panel</span><span class="o">=</span><span class="mf">6.0</span><span class="p">,</span>  <span class="c1"># each panel is 6×6 inches</span>
-    <span class="n">title</span><span class="o">=</span><span class="s1">'Large panels (6 inches each)'</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Large-panel plot saved: </span><span class="si">{</span><span class="n">large_path</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
-</pre></div>
-<div class="clipboard-copy-txt" id="cell-9">with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as fh:
-    large_path = fh.name
-
-plotter.plot(
-    output_path=large_path,
-    figsize_per_panel=6.0,  # each panel is 6×6 inches
-    title='Large panels (6 inches each)',
-)
-print(f'Large-panel plot saved: {large_path}')</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="summary-of-dotplotter-parameters">Summary of DotPlotter parameters<a class="anchor-link" href="#summary-of-dotplotter-parameters">¶</a></h2><table>
-<thead>
-<tr>
-<th>Parameter</th>
-<th>Default</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>query_names</code></td>
-<td><code>None</code></td>
-<td>List of query sequence names (rows); <code>None</code> = all</td>
-</tr>
-<tr>
-<td><code>target_names</code></td>
-<td><code>None</code></td>
-<td>List of target sequence names (columns); <code>None</code> = all</td>
-</tr>
-<tr>
-<td><code>output_path</code></td>
-<td><code>"dotplot.png"</code></td>
-<td>Output file path</td>
-</tr>
-<tr>
-<td><code>figsize_per_panel</code></td>
-<td><code>4.0</code></td>
-<td>Inches per subplot panel (all-vs-all only)</td>
-</tr>
-<tr>
-<td><code>figsize</code></td>
-<td><code>(6, 6)</code></td>
-<td>Total figure size for <code>plot_single</code></td>
-</tr>
-<tr>
-<td><code>dot_size</code></td>
-<td><code>0.5</code></td>
-<td>Line/marker size for each match</td>
-</tr>
-<tr>
-<td><code>dot_color</code></td>
-<td><code>"blue"</code></td>
-<td>Colour of match lines</td>
-</tr>
-<tr>
-<td><code>merge</code></td>
-<td><code>True</code></td>
-<td>Merge co-linear k-mer runs into blocks</td>
-</tr>
-<tr>
-<td><code>title</code></td>
-<td><code>None</code></td>
-<td>Figure title</td>
-</tr>
-<tr>
-<td><code>dpi</code></td>
-<td><code>150</code></td>
-<td>Output image resolution</td>
-</tr>
-</tbody>
-</table>
 </div>
 </div>
 </div>
