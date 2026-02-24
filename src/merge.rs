@@ -280,6 +280,79 @@ pub fn py_merge_rev_runs(
         .collect())
 }
 
+/// Python binding: unified merge for both strand orientations.
+///
+/// A single entry-point for merging k-mer coordinate runs on either the
+/// forward (``"+"```) or reverse-complement (``"-"``) strand.  The function
+/// dispatches to :func:`merge_fwd_runs` for the forward strand and to
+/// :func:`merge_rev_runs` for the reverse strand.
+///
+/// For the **forward** strand, ``kmer_coords`` contains the positions of each
+/// k-mer in the *target* sequence and ``query_kmer_positions`` contains the
+/// positions of the same k-mers in the *query* sequence.
+///
+/// For the **reverse** strand, ``kmer_coords`` should contain the positions
+/// of the **reverse complement** of each query k-mer in the target (as
+/// returned by ``find_rev_coords_in_index``), and ``query_kmer_positions``
+/// contains the positions of the original k-mers in the query.
+///
+/// Parameters
+/// ----------
+/// kmer_coords : dict[str, list[int]]
+///     Mapping of k-mer to 0-based target positions.  For ``strand="-"``,
+///     these are the positions of the RC of each k-mer in the target.
+/// query_kmer_positions : dict[str, list[int]]
+///     Mapping of k-mer to 0-based query positions.
+/// k : int
+///     The k-mer length.
+/// strand : str
+///     Orientation of the match: ``"+"`` for forward (co-linear diagonal)
+///     or ``"-"`` for reverse-complement (anti-diagonal).
+///
+/// Returns
+/// -------
+/// list[tuple[int, int, int, int, str]]
+///     List of ``(query_start, query_end, target_start, target_end, strand)``
+///     5-tuples.  Coordinates are 0-based; end positions are exclusive.
+///     ``strand`` echoes the input argument so callers can mix results from
+///     multiple calls without losing orientation information.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``strand`` is neither ``"+"`` nor ``"-"``.
+#[pyfunction]
+pub fn py_merge_runs(
+    kmer_coords: HashMap<String, Vec<usize>>,
+    query_kmer_positions: HashMap<String, Vec<usize>>,
+    k: usize,
+    strand: &str,
+) -> PyResult<Vec<(usize, usize, usize, usize, String)>> {
+    let merged = match strand {
+        "+" => merge_fwd_runs(&kmer_coords, &query_kmer_positions, k),
+        "-" => merge_rev_runs(&kmer_coords, &query_kmer_positions, k),
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "strand must be '+' or '-', got {:?}",
+                other
+            )))
+        }
+    };
+    Ok(merged
+        .into_iter()
+        .map(|c| {
+            (
+                c.query_start,
+                c.query_end,
+                c.target_start,
+                c.target_end,
+                (c.strand as char).to_string(),
+            )
+        })
+        .collect())
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

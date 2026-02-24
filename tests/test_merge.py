@@ -1,6 +1,6 @@
 """Tests for k-mer run merging."""
 
-from rusty_dot._rusty_dot import py_merge_kmer_runs, py_merge_rev_runs
+from rusty_dot._rusty_dot import py_merge_kmer_runs, py_merge_rev_runs, py_merge_runs
 
 
 def test_merge_consecutive_runs():
@@ -241,3 +241,83 @@ def test_merge_rev_does_not_merge_diagonal_pairs():
     assert len(merged) == 2, (
         f'reverse merge must not merge forward-diagonal (+ strand) pairs, got {merged}'
     )
+
+
+# ---------------------------------------------------------------------------
+# py_merge_runs — unified strand-aware merge
+# ---------------------------------------------------------------------------
+
+
+def test_merge_runs_fwd_consecutive():
+    """py_merge_runs with strand='+' merges forward co-linear hits."""
+    k = 4
+    merged = py_merge_runs({'ACGT': [10], 'CGTA': [11]}, {'ACGT': [0], 'CGTA': [1]}, k, '+')
+    assert len(merged) == 1
+    qs, qe, ts, te, strand = merged[0]
+    assert qs == 0
+    assert qe == 1 + k  # = 5
+    assert ts == 10
+    assert te == 11 + k  # = 15
+    assert strand == '+'
+
+
+def test_merge_runs_rev_consecutive():
+    """py_merge_runs with strand='-' merges reverse-complement anti-diagonal hits.
+
+    query='AAACCC' (k=3), target='GGGTTT' (RC of query).
+    All k-mers share anti-diagonal q+t=3 → single merged block (0, 6, 0, 6, '-').
+    """
+    k = 3
+    target_rev = {'AAA': [3], 'AAC': [2], 'ACC': [1], 'CCC': [0]}
+    query_pos = {'AAA': [0], 'AAC': [1], 'ACC': [2], 'CCC': [3]}
+    merged = py_merge_runs(target_rev, query_pos, k, '-')
+    assert len(merged) == 1, f'expected 1 block, got {merged}'
+    qs, qe, ts, te, strand = merged[0]
+    assert qs == 0
+    assert qe == 6
+    assert ts == 0
+    assert te == 6
+    assert strand == '-'
+
+
+def test_merge_runs_fwd_empty():
+    """py_merge_runs with strand='+' returns empty list for empty input."""
+    assert py_merge_runs({}, {}, 4, '+') == []
+
+
+def test_merge_runs_rev_empty():
+    """py_merge_runs with strand='-' returns empty list for empty input."""
+    assert py_merge_runs({}, {}, 4, '-') == []
+
+
+def test_merge_runs_invalid_strand_raises():
+    """py_merge_runs raises ValueError for an unrecognised strand value."""
+    import pytest
+    with pytest.raises(ValueError, match="strand must be"):
+        py_merge_runs({'ACGT': [0]}, {'ACGT': [0]}, 4, 'x')
+
+
+def test_merge_runs_returns_strand_label():
+    """Each tuple returned by py_merge_runs includes the strand as 5th element."""
+    k = 4
+    fwd = py_merge_runs({'ACGT': [5]}, {'ACGT': [0]}, k, '+')
+    assert all(row[4] == '+' for row in fwd)
+
+    rev = py_merge_runs({'AAAC': [0]}, {'AAAC': [0]}, k, '-')
+    assert all(row[4] == '-' for row in rev)
+
+
+def test_merge_runs_fwd_non_consecutive_stays_separate():
+    """Forward non-consecutive k-mer hits remain separate blocks."""
+    k = 4
+    merged = py_merge_runs({'ACGT': [0], 'TTTT': [20]}, {'ACGT': [0], 'TTTT': [5]}, k, '+')
+    assert len(merged) == 2
+    assert all(row[4] == '+' for row in merged)
+
+
+def test_merge_runs_rev_non_consecutive_stays_separate():
+    """Reverse non-consecutive RC k-mer hits remain separate blocks."""
+    k = 4
+    merged = py_merge_runs({'AAAC': [0], 'CCCC': [5]}, {'AAAC': [0], 'CCCC': [0]}, k, '-')
+    assert len(merged) == 2
+    assert all(row[4] == '-' for row in merged)

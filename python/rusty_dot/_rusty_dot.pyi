@@ -517,6 +517,91 @@ def py_merge_kmer_runs(
     """
     ...
 
+def py_merge_rev_runs(
+    target_rev_coords: dict[str, list[int]],
+    query_kmer_positions: dict[str, list[int]],
+    k: int,
+) -> list[tuple[int, int, int, int]]:
+    """Merge reverse-complement k-mer hits into contiguous anti-diagonal blocks.
+
+    For every ``(query_pos, target_rev_pos)`` pair derived from the two
+    mappings, this function groups hits by anti-diagonal
+    (``query_pos + target_rev_pos``) and, within each anti-diagonal, merges
+    consecutive hits where ``query_pos`` increments by 1 and
+    ``target_rev_pos`` decrements by 1.
+
+    Parameters
+    ----------
+    target_rev_coords : dict[str, list[int]]
+        Mapping of k-mer string to the 0-based start positions of its
+        **reverse complement** in the target sequence (as returned by
+        ``find_rev_coords_in_index``).
+    query_kmer_positions : dict[str, list[int]]
+        Mapping of k-mer string to list of 0-based start positions in the
+        query sequence.
+    k : int
+        The k-mer length, used to compute the (exclusive) end coordinates
+        of each merged block.
+
+    Returns
+    -------
+    list[tuple[int, int, int, int]]
+        List of ``(query_start, query_end, target_start, target_end)``
+        tuples representing merged ``-``-strand match regions.  Coordinates
+        are 0-based; end positions are exclusive.  ``target_start`` and
+        ``target_end`` are the forward-strand boundaries of the RC region
+        on the target.
+    """
+    ...
+
+def py_merge_runs(
+    kmer_coords: dict[str, list[int]],
+    query_kmer_positions: dict[str, list[int]],
+    k: int,
+    strand: str,
+) -> list[tuple[int, int, int, int, str]]:
+    """Merge k-mer hits into contiguous blocks for either strand orientation.
+
+    A unified entry-point that dispatches to the forward or reverse-complement
+    merge algorithm based on ``strand``.
+
+    For ``strand="+"`` the forward (co-linear diagonal) algorithm is used:
+    ``kmer_coords`` holds positions of each k-mer in the target and
+    ``query_kmer_positions`` holds positions of the same k-mer in the query.
+
+    For ``strand="-"`` the reverse-complement (anti-diagonal) algorithm is
+    used: ``kmer_coords`` must hold positions of the **reverse complement**
+    of each query k-mer in the target (as returned by
+    ``find_rev_coords_in_index``), and ``query_kmer_positions`` holds the
+    positions of the original k-mers in the query.
+
+    Parameters
+    ----------
+    kmer_coords : dict[str, list[int]]
+        Mapping of k-mer to 0-based target positions.  For ``strand="-"``,
+        these are the positions of the RC of each k-mer in the target.
+    query_kmer_positions : dict[str, list[int]]
+        Mapping of k-mer to 0-based query positions.
+    k : int
+        The k-mer length, used to compute (exclusive) end coordinates.
+    strand : str
+        Orientation of the match: ``"+"`` for forward (co-linear diagonal)
+        or ``"-"`` for reverse-complement (anti-diagonal).
+
+    Returns
+    -------
+    list[tuple[int, int, int, int, str]]
+        List of ``(query_start, query_end, target_start, target_end, strand)``
+        5-tuples.  Coordinates are 0-based; end positions are exclusive.
+        ``strand`` echoes the input argument.
+
+    Raises
+    ------
+    ValueError
+        If ``strand`` is neither ``"+"`` nor ``"-"``.
+    """
+    ...
+
 def py_coords_to_paf(
     matches: list[tuple[int, int, int, int]],
     query_name: str,
