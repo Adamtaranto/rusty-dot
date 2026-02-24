@@ -19,8 +19,11 @@ class SequenceIndex:
     * :meth:`add_sequence` and :meth:`load_fasta` **add** new entries to
       the collection; calling either method multiple times accumulates
       sequences rather than replacing the collection.
-    * If a sequence name already exists in the index, the existing entry
-      is **silently overwritten** with a new FM-index for the new sequence.
+    * If a sequence name already exists in the index, a ``UserWarning`` is
+      emitted and the existing entry is **overwritten** with a new FM-index
+      for the new sequence.
+    * :meth:`load_fasta` raises ``ValueError`` if the FASTA file itself
+      contains duplicate sequence names.
     * Pairwise comparisons (:meth:`compare_sequences`,
       :meth:`compare_sequences_stranded`) always operate on exactly two
       independent FM-indexes.
@@ -87,14 +90,16 @@ class SequenceIndex:
         *N* distinct names results in an index holding *N* independent
         FM-indexes.
 
-        If a sequence named ``name`` already exists in the index, it is
-        **silently overwritten** with a new FM-index for the new ``seq``.
+        If a sequence named ``name`` already exists in the index, a
+        ``UserWarning`` is emitted and the existing entry is **overwritten**
+        with a new FM-index for the new ``seq``.
 
         Parameters
         ----------
         name : str
             Unique identifier for the sequence.  Re-using an existing name
-            replaces that sequence (and its FM-index) silently.
+            emits a :class:`UserWarning` and replaces that sequence (and its
+            FM-index).
         seq : str
             DNA sequence string. Uppercase is recommended; lowercase
             input is accepted and treated as uppercase.
@@ -103,6 +108,12 @@ class SequenceIndex:
         ------
         ValueError
             If the FM-index cannot be built (e.g., invalid characters).
+
+        Warns
+        -----
+        UserWarning
+            If ``name`` already exists in the index (the existing entry is
+            overwritten).
         """
         ...
 
@@ -110,16 +121,19 @@ class SequenceIndex:
         """Load all sequences from a FASTA or gzipped FASTA file.
 
         Parses the file with needletail (automatic gzip detection) and
-        calls :meth:`add_sequence` for every record found, building a fresh
-        **independent FM-index** for each one.
+        builds a fresh **independent FM-index** for each record.
 
         Sequences already in the index are **preserved** — ``load_fasta``
         only adds new entries (or overwrites entries whose name already exists
         in the index).  Calling ``load_fasta`` on two separate files
         accumulates all sequences from both files in the same index.
 
-        If any record in the FASTA file shares a name with a sequence already
-        held in the index, that entry is **silently overwritten**.
+        If the FASTA file contains **duplicate sequence names** (two records
+        with the same identifier), a ``ValueError`` is raised before any
+        sequences are added to the index.
+
+        If a record's name **already exists in the index**, a ``UserWarning``
+        is emitted and the existing entry is overwritten with the new sequence.
 
         Parameters
         ----------
@@ -136,7 +150,14 @@ class SequenceIndex:
         Raises
         ------
         ValueError
-            If the file cannot be opened or parsed.
+            If the file cannot be opened or parsed, or if the file contains
+            duplicate sequence names.
+
+        Warns
+        -----
+        UserWarning
+            For each record whose name already exists in the index (those
+            entries are overwritten).
         """
         ...
 

@@ -102,14 +102,15 @@ impl SequenceIndex {
     /// Calling `add_sequence` does **not** affect any other sequence already
     /// in the index — each sequence has its own isolated FM-index.
     ///
-    /// If a sequence with `name` already exists in the index, it is
-    /// **silently overwritten** with a new FM-index for the new `seq`.
+    /// If a sequence with `name` already exists in the index, a
+    /// `UserWarning` is emitted and the existing entry is **overwritten**
+    /// with a new FM-index for the new `seq`.
     ///
     /// Parameters
     /// ----------
     /// name : str
     ///     A unique identifier for the sequence. Re-using an existing name
-    ///     replaces that sequence.
+    ///     emits a warning and replaces the previous entry.
     /// seq : str
     ///     The DNA sequence string (uppercase recommended; lowercase is
     ///     accepted and treated as uppercase).
@@ -118,7 +119,19 @@ impl SequenceIndex {
     /// ------
     /// ValueError
     ///     If the FM-index cannot be built (e.g., invalid characters).
-    pub fn add_sequence(&mut self, name: &str, seq: &str) -> PyResult<()> {
+    pub fn add_sequence(&mut self, py: Python<'_>, name: &str, seq: &str) -> PyResult<()> {
+        if self.sequences.contains_key(name) {
+            let warnings = py.import_bound("warnings")?;
+            warnings.call_method1(
+                "warn",
+                (
+                    format!(
+                        "Sequence name '{name}' already exists in the index and will be overwritten."
+                    ),
+                    py.get_type_bound::<pyo3::exceptions::PyUserWarning>(),
+                ),
+            )?;
+        }
         let text = sequence_to_index_text(seq);
         let fm = FmIdx::new(text).map_err(|e| -> pyo3::PyErr { e.into() })?;
         let kmer_set = build_kmer_set(seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
@@ -139,16 +152,19 @@ impl SequenceIndex {
     /// Load all sequences from a FASTA or gzipped FASTA file and add them to the index.
     ///
     /// Parses the file with needletail (automatic gzip detection) and
-    /// calls `add_sequence` for every record found, building a fresh
-    /// **independent FM-index** for each one.
+    /// builds a fresh **independent FM-index** for each record.
     ///
     /// Sequences already in the index are **preserved** — `load_fasta` only
     /// adds new entries (or overwrites entries whose name already exists).
     /// Calling `load_fasta` twice on two different files accumulates all
     /// sequences from both files in the same index.
     ///
-    /// If any record in the FASTA file has the same name as a sequence
-    /// already held in the index, that entry is **silently overwritten**.
+    /// If the FASTA file contains **duplicate sequence names** (two records
+    /// with the same identifier), a `ValueError` is raised before any sequences
+    /// are added to the index.
+    ///
+    /// If a record's name **already exists in the index**, a `UserWarning` is
+    /// emitted and the existing entry is overwritten.
     ///
     /// Parameters
     /// ----------
@@ -163,13 +179,27 @@ impl SequenceIndex {
     /// Raises
     /// ------
     /// ValueError
-    ///     If the file cannot be read or parsed.
+    ///     If the file cannot be read or parsed, or if it contains duplicate
+    ///     sequence names.
     #[cfg(feature = "fasta")]
-    pub fn load_fasta(&mut self, path: &str) -> PyResult<Vec<String>> {
+    pub fn load_fasta(&mut self, py: Python<'_>, path: &str) -> PyResult<Vec<String>> {
         use crate::fasta::read_fasta;
+        // read_fasta now errors on internal FASTA duplicates and returns Vec in file order
         let seqs = read_fasta(path).map_err(|e| -> pyo3::PyErr { e.into() })?;
+        let warnings = py.import_bound("warnings")?;
         let mut names = Vec::new();
         for (name, seq) in &seqs {
+            if self.sequences.contains_key(name.as_str()) {
+                warnings.call_method1(
+                    "warn",
+                    (
+                        format!(
+                            "Sequence name '{name}' already exists in the index and will be overwritten."
+                        ),
+                        py.get_type_bound::<pyo3::exceptions::PyUserWarning>(),
+                    ),
+                )?;
+            }
             let text = sequence_to_index_text(seq);
             let fm = FmIdx::new(text).map_err(|e| -> pyo3::PyErr { e.into() })?;
             let kmer_set = build_kmer_set(seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;

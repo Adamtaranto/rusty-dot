@@ -253,11 +253,18 @@ def test_add_sequence_accumulates():
     assert set(idx.sequence_names()) == {'seq1', 'seq2', 'seq3'}
 
 
-def test_add_sequence_overwrite_silently_replaces():
-    """Re-using an existing name silently overwrites that entry and its FM-index."""
+def test_add_sequence_overwrite_warns_and_replaces():
+    """Re-using an existing name emits UserWarning and replaces the entry."""
+    import warnings
+
     idx = SequenceIndex(k=4)
     idx.add_sequence('seq1', 'ACGTACGT')  # 8 bp
-    idx.add_sequence('seq1', 'GGGGGGGGGGGGGG')  # 14 bp — same name
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter('always')
+        idx.add_sequence('seq1', 'GGGGGGGGGGGGGG')  # 14 bp — same name
+    assert len(w) == 1
+    assert issubclass(w[0].category, UserWarning)
+    assert 'seq1' in str(w[0].message)
     # Only one entry with that name
     assert len(idx) == 1
     # Length reflects the new sequence
@@ -295,15 +302,21 @@ def test_load_fasta_accumulates(tmp_path):
     assert set(idx.sequence_names()) == {'seqA', 'seqB'}
 
 
-def test_load_fasta_overwrites_duplicate_name(tmp_path):
-    """A FASTA record whose name already exists in the index overwrites that entry."""
+def test_load_fasta_overwrites_warns_and_replaces(tmp_path):
+    """A FASTA record whose name already exists in the index emits UserWarning and overwrites."""
+    import warnings
+
     fasta = tmp_path / 'dup.fasta'
     fasta.write_text('>seq1\nACGTACGT\n')
 
     idx = SequenceIndex(k=4)
     idx.add_sequence('seq1', 'GGGGGGGGGGGGGG')  # 14 bp
-    idx.load_fasta(str(fasta))  # 8 bp, same name
-
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter('always')
+        idx.load_fasta(str(fasta))  # 8 bp, same name
+    assert len(w) == 1
+    assert issubclass(w[0].category, UserWarning)
+    assert 'seq1' in str(w[0].message)
     assert idx.get_sequence_length('seq1') == 8  # FASTA version wins
 
 
@@ -316,3 +329,40 @@ def test_add_sequence_does_not_affect_other_sequences():
     idx.add_sequence('second', 'TTTTTTTT')
 
     assert idx.get_sequence_length('first') == original_len
+
+
+def test_add_sequence_no_warning_for_new_name():
+    """add_sequence does NOT emit a warning when the name is new."""
+    import warnings
+
+    idx = SequenceIndex(k=4)
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter('always')
+        idx.add_sequence('brand_new', 'ACGTACGT')
+    assert len(w) == 0, f'unexpected warnings: {[str(x.message) for x in w]}'
+
+
+def test_load_fasta_raises_on_internal_duplicate(tmp_path):
+    """load_fasta raises ValueError when the FASTA file contains duplicate names."""
+    fasta = tmp_path / 'dup_internal.fasta'
+    fasta.write_text('>seq1\nACGT\n>seq1\nTTTT\n')
+
+    idx = SequenceIndex(k=4)
+    with pytest.raises(ValueError, match='seq1'):
+        idx.load_fasta(str(fasta))
+    # Index must remain empty (no partial state)
+    assert len(idx) == 0
+
+
+def test_load_fasta_no_warning_for_new_names(tmp_path):
+    """load_fasta does NOT emit a warning when all names are new."""
+    import warnings
+
+    fasta = tmp_path / 'new.fasta'
+    fasta.write_text('>seqA\nACGT\n>seqB\nTTTT\n')
+
+    idx = SequenceIndex(k=4)
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter('always')
+        idx.load_fasta(str(fasta))
+    assert len(w) == 0, f'unexpected warnings: {[str(x.message) for x in w]}'

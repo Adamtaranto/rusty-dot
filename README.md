@@ -49,7 +49,8 @@ maturin develop --release
 
 Each sequence added to a `SequenceIndex` gets its **own independent FM-index** (rust-bio FM-indexes are read-only once built and cannot be extended).
 Calling `add_sequence` or `load_fasta` multiple times **accumulates** sequences — it never merges or replaces the existing collection.
-Re-using an existing sequence name **silently overwrites** that entry.
+Re-using an existing sequence name emits a `UserWarning` and **overwrites** that entry.
+If a FASTA file contains duplicate sequence names, `load_fasta` raises a `ValueError` before adding any sequences.
 
 ```python
 from rusty_dot import SequenceIndex
