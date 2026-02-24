@@ -44,7 +44,7 @@ pub fn complement(b: u8) -> u8 {
 /// # Examples
 ///
 /// ```
-/// use rusty_dot::strand::revcomp;
+/// use _rusty_dot::strand::revcomp;
 /// assert_eq!(revcomp(b"ACGT"), b"ACGT");  // palindrome
 /// assert_eq!(revcomp(b"AAAC"), b"GTTT");
 /// ```

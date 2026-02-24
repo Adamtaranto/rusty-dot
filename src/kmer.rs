@@ -1,4 +1,6 @@
 //! K-mer set building and coordinate lookup using the FM-index.
+// pyo3 pyfunction return types trigger a false-positive useless_conversion lint.
+#![allow(clippy::useless_conversion)]
 
 use crate::error::RustyDotError;
 use crate::strand::revcomp;
