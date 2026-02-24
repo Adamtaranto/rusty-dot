@@ -18,8 +18,19 @@ Written in Rust with PyO3 python bindings.
 
 ## Installation
 
+Requirements:
+
+- Rust: See [rust-lang.org](https://rust-lang.org/tools/install/)
+- Python >=3.9 <3.14
+
 ```bash
+# Clone this project repo
+git clone https://github.com/Adamtaranto/rusty-dot.git && cd rusty-dot
+
+# Install maturin build tool
 pip install maturin
+
+# Build and install the python package
 maturin develop --release
 ```
 
@@ -53,7 +64,7 @@ seqs = py_read_fasta("sequences.fasta.gz")
 print(seqs.keys())  # sequence names
 
 # High-level: build index directly from FASTA
-idx = SequenceIndex(k=12)
+idx = SequenceIndex(k=15)
 names = idx.load_fasta("sequences.fasta")
 print(f"Indexed {len(names)} sequences")
 ```
@@ -65,7 +76,7 @@ print(f"Indexed {len(names)} sequences")
 idx.save("my_index.bin")
 
 # Load into a new index (k must match)
-idx2 = SequenceIndex(k=12)
+idx2 = SequenceIndex(k=15)
 idx2.load("my_index.bin")
 ```
 
