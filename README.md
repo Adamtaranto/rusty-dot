@@ -47,15 +47,23 @@ maturin develop --release
 
 ## Quick Start — single multi-FASTA index
 
+Each sequence added to a `SequenceIndex` gets its **own independent FM-index** (rust-bio FM-indexes are read-only once built and cannot be extended).
+Calling `add_sequence` or `load_fasta` multiple times **accumulates** sequences — it never merges or replaces the existing collection.
+Re-using an existing sequence name **silently overwrites** that entry.
+
 ```python
 from rusty_dot import SequenceIndex
 from rusty_dot.dotplot import DotPlotter
 
 # Build an index from a multi-sequence FASTA file
+# Each sequence in the file gets its own independent FM-index entry
 idx = SequenceIndex(k=15)
 names = idx.load_fasta("assembly.fasta")
 
-# List the sequences now held in the index (also available as idx.sequence_names())
+# load_fasta accumulates: calling it again adds more sequences, keeps existing ones
+# idx.load_fasta("more_sequences.fasta")   # would add to the same index
+
+# List the sequences now held in the index
 print(idx.sequence_names())   # ['contig1', 'contig2', 'contig3', ...]
 
 # Print all pairwise PAF lines (every i ≠ j combination)

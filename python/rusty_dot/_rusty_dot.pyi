@@ -8,9 +8,25 @@ from __future__ import annotations
 class SequenceIndex:
     """FM-index backed sequence comparison engine.
 
-    Builds FM-indexes and k-mer sets for DNA sequences read from FASTA
-    files or provided directly, then supports fast pairwise k-mer
-    coordinate lookup with optional sequential run merging.
+    Each sequence added to the index receives its **own independent FM-index**
+    built by rust-bio.  The FM-index is constructed once per sequence and
+    cannot be extended after construction, so adding more sequences never
+    modifies an existing FM-index — it only creates a new one for the
+    newly added sequence.
+
+    The index behaves as a **dictionary of per-sequence FM-indexes**:
+
+    * :meth:`add_sequence` and :meth:`load_fasta` **add** new entries to
+      the collection; calling either method multiple times accumulates
+      sequences rather than replacing the collection.
+    * If a sequence name already exists in the index, the existing entry
+      is **silently overwritten** with a new FM-index for the new sequence.
+    * Pairwise comparisons (:meth:`compare_sequences`,
+      :meth:`compare_sequences_stranded`) always operate on exactly two
+      independent FM-indexes.
+
+    The k-mer length ``k`` is fixed at construction time and applies to all
+    sequences held in the index.
 
     Parameters
     ----------
@@ -19,10 +35,26 @@ class SequenceIndex:
 
     Examples
     --------
+    Build an index from individual sequences:
+
     >>> idx = SequenceIndex(k=10)
     >>> idx.add_sequence("seq1", "ACGTACGTACGT")
     >>> idx.add_sequence("seq2", "TACGTACGTACG")
+    >>> idx.sequence_names()
+    ['seq1', 'seq2']
+
+    Accumulate sequences from multiple FASTA files:
+
+    >>> idx = SequenceIndex(k=15)
+    >>> idx.load_fasta("assembly_a.fasta")   # adds seqs from file A
+    >>> idx.load_fasta("assembly_b.fasta")   # adds seqs from file B, keeps file A seqs
     >>> matches = idx.compare_sequences("seq1", "seq2")
+
+    Overwrite a sequence by re-using its name:
+
+    >>> idx = SequenceIndex(k=10)
+    >>> idx.add_sequence("seq1", "ACGTACGT")
+    >>> idx.add_sequence("seq1", "GGGGGGGG")  # silently replaces the previous seq1
     """
 
     def __init__(self, k: int) -> None:
@@ -44,13 +76,25 @@ class SequenceIndex:
     def add_sequence(self, name: str, seq: str) -> None:
         """Add a single sequence to the index.
 
-        Builds an FM-index and collects the k-mer set for the given
-        sequence, storing both for subsequent comparisons.
+        Builds a **new independent FM-index** for ``seq`` using rust-bio and
+        stores it alongside the k-mer set and raw sequence bytes.  Each call
+        creates a separate FM-index for that sequence only — the rust-bio
+        FM-index cannot be extended after construction, so adding sequences
+        never modifies existing FM-indexes.
+
+        Calling ``add_sequence`` does **not** affect any other sequence already
+        in the index.  Sequences accumulate: calling this method *N* times with
+        *N* distinct names results in an index holding *N* independent
+        FM-indexes.
+
+        If a sequence named ``name`` already exists in the index, it is
+        **silently overwritten** with a new FM-index for the new ``seq``.
 
         Parameters
         ----------
         name : str
-            Unique identifier for the sequence.
+            Unique identifier for the sequence.  Re-using an existing name
+            replaces that sequence (and its FM-index) silently.
         seq : str
             DNA sequence string. Uppercase is recommended; lowercase
             input is accepted and treated as uppercase.
@@ -66,7 +110,16 @@ class SequenceIndex:
         """Load all sequences from a FASTA or gzipped FASTA file.
 
         Parses the file with needletail (automatic gzip detection) and
-        calls ``add_sequence`` for every record found.
+        calls :meth:`add_sequence` for every record found, building a fresh
+        **independent FM-index** for each one.
+
+        Sequences already in the index are **preserved** — ``load_fasta``
+        only adds new entries (or overwrites entries whose name already exists
+        in the index).  Calling ``load_fasta`` on two separate files
+        accumulates all sequences from both files in the same index.
+
+        If any record in the FASTA file shares a name with a sequence already
+        held in the index, that entry is **silently overwritten**.
 
         Parameters
         ----------

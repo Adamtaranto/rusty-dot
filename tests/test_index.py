@@ -236,3 +236,83 @@ def test_optimal_contig_order_unmatched_sorted_by_length_desc():
     # Unmatched sorted by length descending: long before short
     assert q_sorted[1] == 'long_unmatched'
     assert q_sorted[2] == 'short_unmatched'
+
+
+# ---------------------------------------------------------------------------
+# Per-sequence FM-index storage model
+# ---------------------------------------------------------------------------
+
+
+def test_add_sequence_accumulates():
+    """Each add_sequence call adds a new independent entry; existing ones are kept."""
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('seq1', 'ACGTACGT')
+    idx.add_sequence('seq2', 'TTTTACGT')
+    idx.add_sequence('seq3', 'GGGGGGGG')
+    assert len(idx) == 3
+    assert set(idx.sequence_names()) == {'seq1', 'seq2', 'seq3'}
+
+
+def test_add_sequence_overwrite_silently_replaces():
+    """Re-using an existing name silently overwrites that entry and its FM-index."""
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('seq1', 'ACGTACGT')  # 8 bp
+    idx.add_sequence('seq1', 'GGGGGGGGGGGGGG')  # 14 bp — same name
+    # Only one entry with that name
+    assert len(idx) == 1
+    # Length reflects the new sequence
+    assert idx.get_sequence_length('seq1') == 14
+
+
+def test_multiple_add_sequence_independent_indexes():
+    """Sequences in the same index are compared using independent FM-indexes.
+
+    Confirming that two sequences share forward k-mer matches after being
+    added separately demonstrates that each keeps its own FM-index correctly.
+    """
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('a', 'ACGTACGTACGT')
+    idx.add_sequence('b', 'ACGTACGTACGT')
+    matches = idx.compare_sequences('a', 'b', merge=False)
+    assert len(matches) > 0, 'expected k-mer matches between identical sequences'
+
+
+def test_load_fasta_accumulates(tmp_path):
+    """load_fasta accumulates sequences and preserves existing ones.
+
+    Calling load_fasta twice on two different files results in all sequences
+    from both files being held in the same index.
+    """
+    fasta_a = tmp_path / 'a.fasta'
+    fasta_b = tmp_path / 'b.fasta'
+    fasta_a.write_text('>seqA\nACGTACGTACGT\n')
+    fasta_b.write_text('>seqB\nTTTTACGTACGT\n')
+
+    idx = SequenceIndex(k=4)
+    idx.load_fasta(str(fasta_a))
+    idx.load_fasta(str(fasta_b))
+
+    assert set(idx.sequence_names()) == {'seqA', 'seqB'}
+
+
+def test_load_fasta_overwrites_duplicate_name(tmp_path):
+    """A FASTA record whose name already exists in the index overwrites that entry."""
+    fasta = tmp_path / 'dup.fasta'
+    fasta.write_text('>seq1\nACGTACGT\n')
+
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('seq1', 'GGGGGGGGGGGGGG')  # 14 bp
+    idx.load_fasta(str(fasta))  # 8 bp, same name
+
+    assert idx.get_sequence_length('seq1') == 8  # FASTA version wins
+
+
+def test_add_sequence_does_not_affect_other_sequences():
+    """Adding a new sequence does not modify sequences already in the index."""
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('first', 'ACGTACGT')
+    original_len = idx.get_sequence_length('first')
+
+    idx.add_sequence('second', 'TTTTTTTT')
+
+    assert idx.get_sequence_length('first') == original_len
