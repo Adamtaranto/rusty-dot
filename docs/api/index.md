@@ -18,7 +18,10 @@ rusty-dot exposes its functionality through the following classes and functions.
 | [`py_read_fasta`](functions.md#rusty_dot._rusty_dot.py_read_fasta) | `rusty_dot` | Read a FASTA or gzipped FASTA file |
 | [`py_build_kmer_set`](functions.md#rusty_dot._rusty_dot.py_build_kmer_set) | `rusty_dot` | Build the k-mer set for a sequence |
 | [`py_find_kmer_coords`](functions.md#rusty_dot._rusty_dot.py_find_kmer_coords) | `rusty_dot` | Find k-mer positions in a sequence via FM-index |
-| [`py_merge_kmer_runs`](functions.md#rusty_dot._rusty_dot.py_merge_kmer_runs) | `rusty_dot` | Merge co-linear k-mer hits into blocks |
+| [`py_merge_runs`](functions.md#rusty_dot._rusty_dot.py_merge_runs) | `rusty_dot` | Unified strand-aware merge: forward and both RC patterns |
+| [`py_merge_kmer_runs`](functions.md#rusty_dot._rusty_dot.py_merge_kmer_runs) | `rusty_dot` | Merge forward-strand (`+`) co-linear k-mer hits into blocks |
+| [`py_merge_rev_runs`](functions.md#rusty_dot._rusty_dot.py_merge_rev_runs) | `rusty_dot` | Merge RC anti-diagonal k-mer hits (standard inverted repeat) |
+| [`py_merge_rev_fwd_runs`](functions.md#rusty_dot._rusty_dot.py_merge_rev_fwd_runs) | `rusty_dot` | Merge RC co-diagonal k-mer hits (both arms same direction) |
 | [`py_coords_to_paf`](functions.md#rusty_dot._rusty_dot.py_coords_to_paf) | `rusty_dot` | Convert coordinate tuples to PAF lines |
 | [`py_save_index`](functions.md#rusty_dot._rusty_dot.py_save_index) | `rusty_dot` | Serialise an index collection to disk |
 | [`py_load_index`](functions.md#rusty_dot._rusty_dot.py_load_index) | `rusty_dot` | Load a serialised index from disk |

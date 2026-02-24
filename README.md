@@ -10,10 +10,18 @@ Written in Rust with PyO3 python bindings.
 - Read FASTA / gzipped FASTA files via [needletail](https://docs.rs/needletail)
 - Build FM-indexes per sequence using [rust-bio](https://docs.rs/bio)
 - K-mer set intersection for efficient shared k-mer lookup
-- Merge sequential k-mer runs into contiguous match blocks
+- **Both-strand k-mer matching**: forward (`+`) and reverse-complement (`-`) hits detected via `compare_sequences_stranded`
+- Merge sequential k-mer runs into contiguous match blocks for both orientations:
+  - Forward-strand co-linear diagonal merging (`py_merge_kmer_runs`)
+  - RC anti-diagonal merging — standard inverted repeats (`py_merge_rev_runs`)
+  - RC co-diagonal merging — both arms run in same direction (`py_merge_rev_fwd_runs`)
+  - Unified strand-aware entry-point (`py_merge_runs`)
 - PAF format output for alignment records
 - FM-index serialization/deserialization with [serde](https://docs.rs/serde) + bincode
-- All-vs-all dotplot visualization with matplotlib
+- All-vs-all dotplot visualization with matplotlib:
+  - Forward hits drawn in **blue** (configurable via `dot_color`)
+  - Reverse-complement hits drawn in **red** (configurable via `rc_color`)
+  - Sequence names rendered once — at the bottom of each column and left of each row
 - Cross-index comparisons between two sequence sets (e.g. two genome assemblies)
 - Relative sequence scaling in dotplot subpanels
 - Gravity-centre contig ordering for maximum collinearity
@@ -59,11 +67,50 @@ for line in idx.get_paf("contig1", "contig2"):
     print(line)
 
 # All-vs-all dotplot
+# Forward (+) hits are drawn in blue, reverse-complement (-) hits in red.
+# Sequence names appear once per column (bottom) and once per row (left).
 plotter = DotPlotter(idx)
 plotter.plot(output_path="all_vs_all.png", title="All vs All")
 
 # Single pairwise dotplot
 plotter.plot_single("contig1", "contig2", output_path="pair.png")
+```
+
+## Stranded (both-strand) Sequence Comparison
+
+`compare_sequences_stranded` returns both forward (`+`) and
+reverse-complement (`-`) k-mer matches, each labelled with a strand field.
+
+```python
+from rusty_dot import SequenceIndex
+
+idx = SequenceIndex(k=10)
+idx.add_sequence("seq_fwd", "AAACAAACAAAC" * 10)
+idx.add_sequence("seq_rc",  "GTTTGTTTGTTT" * 10)   # RC of seq_fwd
+
+# Returns list of (query_start, query_end, target_start, target_end, strand)
+hits = idx.compare_sequences_stranded("seq_fwd", "seq_rc", merge=True)
+for qs, qe, ts, te, strand in hits:
+    print(f"  {strand}  q[{qs}:{qe}]  t[{ts}:{te}]")
+# strand is '+' for forward matches, '-' for reverse-complement matches
+```
+
+### Inverted-repeat detection
+
+Two RC alignment patterns are recognised and merged independently:
+
+| Pattern | Merge function | Condition |
+|---------|---------------|-----------|
+| Anti-diagonal | `py_merge_rev_runs` | query advances +1, RC target *decreases* by 1 per step; the sum `q + t_rc` remains constant — arms face each other |
+| Co-diagonal | `py_merge_rev_fwd_runs` | query advances +1, RC target *also advances* by 1 per step; the difference `t_rc - q` remains constant — both arms run in the same direction |
+
+```python
+from rusty_dot._rusty_dot import py_merge_runs
+
+# Unified merge: handles forward, anti-diagonal RC, and co-diagonal RC in one call
+fwd_hits = py_merge_runs(target_coords, query_coords, k=10, strand="+")
+rev_hits = py_merge_runs(target_rc_coords, query_coords, k=10, strand="-")
+# Each result is (query_start, query_end, target_start, target_end, strand)
 ```
 
 ## All-vs-All Dotplot Between Two Indexes
