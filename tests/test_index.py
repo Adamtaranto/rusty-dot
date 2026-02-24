@@ -221,11 +221,11 @@ def test_optimal_contig_order_unmatched_sorted_by_length_desc():
     """Unmatched contigs should be placed at the end sorted by descending length."""
     idx = SequenceIndex(k=4)
     # Sequences that share k-mers
-    idx.add_sequence('seq_a', 'ACGTACGTACGTACGTACGT')   # 20 bp
-    idx.add_sequence('seq_b', 'ACGTACGTACGTACGTACGT')   # 20 bp
+    idx.add_sequence('seq_a', 'ACGTACGTACGTACGTACGT')  # 20 bp
+    idx.add_sequence('seq_b', 'ACGTACGTACGTACGTACGT')  # 20 bp
     # Two unmatched sequences of different lengths (no ACGT k-mers → no matches)
-    idx.add_sequence('long_unmatched', 'T' * 40)         # 40 bp
-    idx.add_sequence('short_unmatched', 'T' * 10)        # 10 bp
+    idx.add_sequence('long_unmatched', 'T' * 40)  # 40 bp
+    idx.add_sequence('short_unmatched', 'T' * 10)  # 10 bp
 
     q_sorted, _ = idx.optimal_contig_order(
         ['long_unmatched', 'short_unmatched', 'seq_a'],

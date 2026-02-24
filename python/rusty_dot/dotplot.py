@@ -118,7 +118,9 @@ class DotPlotter:
             t_lens = [self.index.get_sequence_length(n) for n in target_names]
             max_len = max(max(q_lens), max(t_lens), 1)
             col_widths = [figsize_per_panel * (seq_len / max_len) for seq_len in t_lens]
-            row_heights = [figsize_per_panel * (seq_len / max_len) for seq_len in q_lens]
+            row_heights = [
+                figsize_per_panel * (seq_len / max_len) for seq_len in q_lens
+            ]
             fig_w = sum(col_widths)
             fig_h = sum(row_heights)
             fig, axes = plt.subplots(

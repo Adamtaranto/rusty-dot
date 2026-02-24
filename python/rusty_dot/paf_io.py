@@ -37,8 +37,8 @@ Examples
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
+import logging
 from pathlib import Path
 import re
 from typing import Any, Generator, Iterable
@@ -459,11 +459,15 @@ def compute_gravity_contigs(
 
     sorted_q = sorted(
         query_names,
-        key=lambda n: _sort_key_with_len(n, q_weight, q_wpos, total_target_len, q_len_map),
+        key=lambda n: _sort_key_with_len(
+            n, q_weight, q_wpos, total_target_len, q_len_map
+        ),
     )
     sorted_t = sorted(
         target_names,
-        key=lambda n: _sort_key_with_len(n, t_weight, t_wpos, total_query_len, t_len_map),
+        key=lambda n: _sort_key_with_len(
+            n, t_weight, t_wpos, total_query_len, t_len_map
+        ),
     )
     return sorted_q, sorted_t
 
@@ -761,6 +765,7 @@ class CrossIndexPaf:
             raise ValueError(f"group must be 'a' or 'b', got {group!r}")
         prefix = self._PREFIX_A if group == 'a' else self._PREFIX_B
         from rusty_dot._rusty_dot import py_read_fasta
+
         seqs = py_read_fasta(path)
         names: list[str] = []
         for name, seq in seqs.items():
@@ -786,7 +791,7 @@ class CrossIndexPaf:
         list[str]
             Sequence names from group A, in insertion order.
         """
-        return [n[len(self._PREFIX_A):] for n in self._names_a]
+        return [n[len(self._PREFIX_A) :] for n in self._names_a]
 
     @property
     def target_names(self) -> list[str]:
@@ -797,7 +802,7 @@ class CrossIndexPaf:
         list[str]
             Sequence names from group B, in insertion order.
         """
-        return [n[len(self._PREFIX_B):] for n in self._names_b]
+        return [n[len(self._PREFIX_B) :] for n in self._names_b]
 
     def __repr__(self) -> str:
         """Return a concise string representation.
@@ -852,8 +857,8 @@ class CrossIndexPaf:
                 for t_internal in self._names_b:
                     lines = self._index.get_paf(q_internal, t_internal, merge)
                     # Replace internal prefixed names with original names
-                    q_orig = q_internal[len(self._PREFIX_A):]
-                    t_orig = t_internal[len(self._PREFIX_B):]
+                    q_orig = q_internal[len(self._PREFIX_A) :]
+                    t_orig = t_internal[len(self._PREFIX_B) :]
                     for line in lines:
                         fields = line.split('\t')
                         fields[0] = q_orig
@@ -872,8 +877,8 @@ class CrossIndexPaf:
                     if i == j:
                         continue
                     lines = self._index.get_paf(q_internal, t_internal, merge)
-                    q_orig = q_internal[len(self._PREFIX_A):]
-                    t_orig = t_internal[len(self._PREFIX_A):]
+                    q_orig = q_internal[len(self._PREFIX_A) :]
+                    t_orig = t_internal[len(self._PREFIX_A) :]
                     for line in lines:
                         fields = line.split('\t')
                         fields[0] = q_orig
@@ -932,6 +937,6 @@ class CrossIndexPaf:
         sorted_q_int, sorted_t_int = self._index.optimal_contig_order(
             q_internal, t_internal
         )
-        sorted_q = [n[len(self._PREFIX_A):] for n in sorted_q_int]
-        sorted_t = [n[len(self._PREFIX_B):] for n in sorted_t_int]
+        sorted_q = [n[len(self._PREFIX_A) :] for n in sorted_q_int]
+        sorted_t = [n[len(self._PREFIX_B) :] for n in sorted_t_int]
         return sorted_q, sorted_t

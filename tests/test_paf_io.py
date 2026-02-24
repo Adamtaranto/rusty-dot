@@ -267,6 +267,7 @@ class TestReorderContigs:
 class TestCrossIndexPaf:
     def test_add_sequence_and_repr(self):
         from rusty_dot.paf_io import CrossIndexPaf
+
         cross = CrossIndexPaf(k=4)
         cross.add_sequence('q1', 'ACGTACGTACGT', group='a')
         cross.add_sequence('t1', 'TACGTACGTACG', group='b')
@@ -276,12 +277,14 @@ class TestCrossIndexPaf:
 
     def test_invalid_group_raises(self):
         from rusty_dot.paf_io import CrossIndexPaf
+
         cross = CrossIndexPaf(k=4)
         with pytest.raises(ValueError):
             cross.add_sequence('x', 'ACGT', group='c')
 
     def test_get_paf_all_cross(self):
         from rusty_dot.paf_io import CrossIndexPaf
+
         cross = CrossIndexPaf(k=4)
         cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
         cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
@@ -296,6 +299,7 @@ class TestCrossIndexPaf:
     def test_get_paf_all_single_group(self):
         """get_paf_all with no group-B sequences does all-vs-all within group A."""
         from rusty_dot.paf_io import CrossIndexPaf
+
         cross = CrossIndexPaf(k=4)
         cross.add_sequence('s1', 'ACGTACGTACGTACGT', group='a')
         cross.add_sequence('s2', 'ACGTACGTACGTACGT', group='a')
@@ -306,6 +310,7 @@ class TestCrossIndexPaf:
 
     def test_reorder_contigs_raises_without_group_b(self):
         from rusty_dot.paf_io import CrossIndexPaf
+
         cross = CrossIndexPaf(k=4)
         cross.add_sequence('s1', 'ACGTACGTACGTACGT', group='a')
         with pytest.raises(ValueError):
@@ -313,6 +318,7 @@ class TestCrossIndexPaf:
 
     def test_reorder_contigs_returns_original_names(self):
         from rusty_dot.paf_io import CrossIndexPaf
+
         cross = CrossIndexPaf(k=4)
         cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
         cross.add_sequence('q2', 'TACGTACGTACGTACG', group='a')
