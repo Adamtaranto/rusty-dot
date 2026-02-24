@@ -33,6 +33,7 @@ fn _rusty_dot(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(kmer::py_build_kmer_set, m)?)?;
     m.add_function(wrap_pyfunction!(kmer::py_find_kmer_coords, m)?)?;
     m.add_function(wrap_pyfunction!(merge::py_merge_kmer_runs, m)?)?;
+    m.add_function(wrap_pyfunction!(merge::py_merge_rev_runs, m)?)?;
     m.add_function(wrap_pyfunction!(paf::py_coords_to_paf, m)?)?;
     m.add_function(wrap_pyfunction!(serialize::py_save_index, m)?)?;
     m.add_function(wrap_pyfunction!(serialize::py_load_index, m)?)?;

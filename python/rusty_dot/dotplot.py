@@ -158,6 +158,9 @@ class DotPlotter:
                     dot_color=dot_color,
                     rc_color=rc_color,
                     merge=merge,
+                    # Only label the leftmost column (y) and bottom row (x)
+                    show_xlabel=(row_idx == nrows - 1),
+                    show_ylabel=(col_idx == 0),
                 )
 
         if title:
@@ -176,6 +179,8 @@ class DotPlotter:
         dot_color: str = 'blue',
         rc_color: str = 'red',
         merge: bool = True,
+        show_xlabel: bool = True,
+        show_ylabel: bool = True,
     ) -> None:
         """Render a single comparison panel onto the given Axes.
 
@@ -195,6 +200,12 @@ class DotPlotter:
             Marker colour for reverse-complement (``-``) matches. Default is ``"red"``.
         merge : bool, optional
             Whether to merge sequential runs. Default is ``True``.
+        show_xlabel : bool, optional
+            Whether to render the target sequence name as an x-axis label.
+            Default is ``True``.
+        show_ylabel : bool, optional
+            Whether to render the query sequence name as a y-axis label.
+            Default is ``True``.
         """
         q_len = self.index.get_sequence_length(query_name)
         t_len = self.index.get_sequence_length(target_name)
@@ -222,8 +233,10 @@ class DotPlotter:
         ax.set_xlim(0, t_len)
         ax.set_ylim(0, q_len)
         ax.invert_yaxis()
-        ax.set_xlabel(target_name, fontsize=8)
-        ax.set_ylabel(query_name, fontsize=8)
+        if show_xlabel:
+            ax.set_xlabel(target_name, fontsize=8)
+        if show_ylabel:
+            ax.set_ylabel(query_name, fontsize=8)
         ax.tick_params(axis='both', labelsize=6)
         ax.set_aspect('auto')
 

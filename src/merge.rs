@@ -240,3 +240,180 @@ pub fn py_merge_kmer_runs(
         .map(|c| (c.query_start, c.query_end, c.target_start, c.target_end))
         .collect())
 }
+
+/// Python binding: merge reverse-complement (`-` strand) k-mer coordinate runs.
+///
+/// For each k-mer, `target_rev_coords` should contain the positions in the
+/// target where the **reverse complement** of that k-mer was found (as returned
+/// by ``find_rev_coords_in_index``).  Consecutive anti-diagonal pairs —
+/// where `query_pos` advances by 1 and the corresponding RC target position
+/// decreases by 1 — are merged into a single `CoordPair`.
+///
+/// Parameters
+/// ----------
+/// target_rev_coords : dict[str, list[int]]
+///     Mapping of k-mer to the 0-based start positions of its reverse complement
+///     in the target sequence.
+/// query_kmer_positions : dict[str, list[int]]
+///     Mapping of k-mer to its 0-based start positions in the query sequence.
+/// k : int
+///     The k-mer length.
+///
+/// Returns
+/// -------
+/// list[tuple[int, int, int, int]]
+///     List of ``(query_start, query_end, target_start, target_end)`` tuples
+///     representing merged ``-``-strand match regions.  Coordinates are
+///     0-based with end positions exclusive.  ``target_start`` and
+///     ``target_end`` are the forward-strand boundaries of the RC match region
+///     on the target.
+#[pyfunction]
+pub fn py_merge_rev_runs(
+    target_rev_coords: HashMap<String, Vec<usize>>,
+    query_kmer_positions: HashMap<String, Vec<usize>>,
+    k: usize,
+) -> PyResult<Vec<(usize, usize, usize, usize)>> {
+    let merged = merge_rev_runs(&target_rev_coords, &query_kmer_positions, k);
+    Ok(merged
+        .into_iter()
+        .map(|c| (c.query_start, c.query_end, c.target_start, c.target_end))
+        .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_map(entries: &[(&str, Vec<usize>)]) -> HashMap<String, Vec<usize>> {
+        entries
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect()
+    }
+
+    // --- merge_fwd_runs ---
+
+    #[test]
+    fn test_fwd_empty() {
+        assert!(merge_fwd_runs(&HashMap::new(), &HashMap::new(), 4).is_empty());
+    }
+
+    #[test]
+    fn test_fwd_single_kmer() {
+        let t = make_map(&[("ACGT", vec![10])]);
+        let q = make_map(&[("ACGT", vec![3])]);
+        let result = merge_fwd_runs(&t, &q, 4);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].query_start, 3);
+        assert_eq!(result[0].query_end, 7);
+        assert_eq!(result[0].target_start, 10);
+        assert_eq!(result[0].target_end, 14);
+        assert_eq!(result[0].strand, STRAND_FWD);
+    }
+
+    #[test]
+    fn test_fwd_consecutive_merge() {
+        // (q=0,t=10), (q=1,t=11) → one merged block
+        let t = make_map(&[("ACGT", vec![10]), ("CGTA", vec![11])]);
+        let q = make_map(&[("ACGT", vec![0]), ("CGTA", vec![1])]);
+        let result = merge_fwd_runs(&t, &q, 4);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].query_start, 0);
+        assert_eq!(result[0].query_end, 5); // 1 + 4
+        assert_eq!(result[0].target_start, 10);
+        assert_eq!(result[0].target_end, 15); // 11 + 4
+    }
+
+    #[test]
+    fn test_fwd_non_consecutive_stays_separate() {
+        let t = make_map(&[("ACGT", vec![0]), ("TTTT", vec![20])]);
+        let q = make_map(&[("ACGT", vec![0]), ("TTTT", vec![5])]);
+        let result = merge_fwd_runs(&t, &q, 4);
+        assert_eq!(result.len(), 2);
+    }
+
+    // --- merge_rev_runs ---
+
+    #[test]
+    fn test_rev_empty() {
+        assert!(merge_rev_runs(&HashMap::new(), &HashMap::new(), 4).is_empty());
+    }
+
+    #[test]
+    fn test_rev_single_kmer() {
+        // RC of "AAAC" = "GTTT" found at target pos 0
+        let t_rev = make_map(&[("AAAC", vec![0])]);
+        let q = make_map(&[("AAAC", vec![0])]);
+        let result = merge_rev_runs(&t_rev, &q, 4);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].query_start, 0);
+        assert_eq!(result[0].query_end, 4);
+        assert_eq!(result[0].target_start, 0);
+        assert_eq!(result[0].target_end, 4);
+        assert_eq!(result[0].strand, STRAND_REV);
+    }
+
+    #[test]
+    fn test_rev_consecutive_merge() {
+        // query='AAACCC' (k=3), target='GGGTTT' (RC of query)
+        // k-mer positions in query and their RC positions in target:
+        //   "AAA" at q=0 → RC "TTT" at t=3
+        //   "AAC" at q=1 → RC "GTT" at t=2
+        //   "ACC" at q=2 → RC "GGT" at t=1
+        //   "CCC" at q=3 → RC "GGG" at t=0
+        // All on anti-diagonal q+t=3 → merge into (0, 6, 0, 6)
+        let t_rev = make_map(&[
+            ("AAA", vec![3]),
+            ("AAC", vec![2]),
+            ("ACC", vec![1]),
+            ("CCC", vec![0]),
+        ]);
+        let q = make_map(&[
+            ("AAA", vec![0]),
+            ("AAC", vec![1]),
+            ("ACC", vec![2]),
+            ("CCC", vec![3]),
+        ]);
+        let result = merge_rev_runs(&t_rev, &q, 3);
+        assert_eq!(result.len(), 1, "expected one merged RC block, got {:?}", result);
+        assert_eq!(result[0].query_start, 0);
+        assert_eq!(result[0].query_end, 6); // q_prev=3, 3+3=6
+        assert_eq!(result[0].target_start, 0); // t_prev=0 (min t)
+        assert_eq!(result[0].target_end, 6); // t_start=3, 3+3=6
+        assert_eq!(result[0].strand, STRAND_REV);
+    }
+
+    #[test]
+    fn test_rev_non_consecutive_stays_separate() {
+        // Two RC hits on different anti-diagonals
+        let t_rev = make_map(&[("AAAC", vec![0]), ("CCCC", vec![5])]);
+        let q = make_map(&[("AAAC", vec![0]), ("CCCC", vec![0])]);
+        let result = merge_rev_runs(&t_rev, &q, 4);
+        // q+t=0 and q+t=5 → two separate blocks
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_rev_parallel_antidiagonals_stay_separate() {
+        // Two separate RC alignments on different anti-diagonals:
+        //   anti-diag q+t=5: (0,5), (1,4)
+        //   anti-diag q+t=10: (0,10), (1,9)
+        let t_rev = make_map(&[
+            ("AAAA", vec![5, 10]),
+            ("CCCC", vec![4, 9]),
+        ]);
+        let q = make_map(&[("AAAA", vec![0]), ("CCCC", vec![1])]);
+        let result = merge_rev_runs(&t_rev, &q, 4);
+        assert_eq!(result.len(), 2, "expected 2 separate merged RC blocks, got {:?}", result);
+        let result_set: std::collections::HashSet<(usize, usize, usize, usize)> = result
+            .iter()
+            .map(|c| (c.query_start, c.query_end, c.target_start, c.target_end))
+            .collect();
+        // anti-diag 5: q=[0,5), t=[4,9) (t_prev=4, t_start+k=5+4=9)
+        assert!(result_set.contains(&(0, 1 + 4, 4, 5 + 4)),
+            "missing anti-diag-5 block in {:?}", result_set);
+        // anti-diag 10: q=[0,5), t=[9,14) (t_prev=9, t_start+k=10+4=14)
+        assert!(result_set.contains(&(0, 1 + 4, 9, 10 + 4)),
+            "missing anti-diag-10 block in {:?}", result_set);
+    }
+}

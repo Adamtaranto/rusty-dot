@@ -158,3 +158,47 @@ def test_plot_scale_sequences_false_matches_default(dotplot_index, tmp_path):
     # Both should exist and be non-empty
     assert os.path.getsize(out1) > 0
     assert os.path.getsize(out2) > 0
+
+
+def test_plot_grid_labels_only_at_edges():
+    """In a multi-panel grid plot, x-labels appear only on the bottom row
+    and y-labels appear only on the leftmost column."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('q1', 'ACGTACGTACGT')
+    idx.add_sequence('q2', 'TACGTACGTACG')
+    idx.add_sequence('t1', 'ACGTACGTACGT')
+    idx.add_sequence('t2', 'GCGCGCGCGCGC')
+    plotter = DotPlotter(idx)
+
+    query_names = ['q1', 'q2']
+    target_names = ['t1', 't2']
+    nrows, ncols = len(query_names), len(target_names)
+
+    fig, axes = plt.subplots(nrows, ncols, squeeze=False)
+    for row_idx, q_name in enumerate(query_names):
+        for col_idx, t_name in enumerate(target_names):
+            plotter._plot_panel(
+                axes[row_idx][col_idx],
+                q_name,
+                t_name,
+                show_xlabel=(row_idx == nrows - 1),
+                show_ylabel=(col_idx == 0),
+            )
+    plt.close(fig)
+
+    # Bottom row: xlabel present
+    assert axes[nrows - 1][0].get_xlabel() != '', 'bottom-left should have x-label'
+    assert axes[nrows - 1][ncols - 1].get_xlabel() != '', 'bottom-right should have x-label'
+    # Non-bottom rows: xlabel absent
+    assert axes[0][0].get_xlabel() == '', 'top-left should not have x-label'
+    assert axes[0][ncols - 1].get_xlabel() == '', 'top-right should not have x-label'
+    # Leftmost column: ylabel present
+    assert axes[0][0].get_ylabel() != '', 'top-left should have y-label'
+    assert axes[nrows - 1][0].get_ylabel() != '', 'bottom-left should have y-label'
+    # Non-leftmost columns: ylabel absent
+    assert axes[0][ncols - 1].get_ylabel() == '', 'top-right should not have y-label'
+    assert axes[nrows - 1][ncols - 1].get_ylabel() == '', 'bottom-right should not have y-label'
