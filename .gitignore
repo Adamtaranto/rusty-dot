@@ -38,3 +38,6 @@ __pycache__/
 
 # MkDocs build output
 site/
+.coverage
+coverage.xml
+target/

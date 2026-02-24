@@ -221,6 +221,25 @@ class SequenceIndex:
         """
         ...
 
+    def get_paf_all(self, merge: bool = True) -> list[str]:
+        """Return PAF-formatted strings for every ordered sequence pair.
+
+        Calls :meth:`get_paf` for every ``(i, j)`` pair where ``i != j``,
+        populating the comparison cache as a side-effect.
+
+        Parameters
+        ----------
+        merge : bool, optional
+            Whether to merge consecutive co-linear k-mer runs before
+            generating PAF lines.  Default is ``True``.
+
+        Returns
+        -------
+        list[str]
+            All PAF lines for every pairwise comparison, one line per match.
+        """
+        ...
+
     def precompute_all_pairs(self, merge: bool = True) -> list[tuple[str, str]]:
         """Pre-calculate comparisons for every ordered sequence pair.
 

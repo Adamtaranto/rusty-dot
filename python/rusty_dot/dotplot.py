@@ -60,6 +60,7 @@ class DotPlotter:
         merge: bool = True,
         title: Optional[str] = None,
         dpi: int = 150,
+        scale_sequences: bool = False,
     ) -> None:
         """Plot an all-vs-all dotplot grid.
 
@@ -79,7 +80,10 @@ class DotPlotter:
         output_path : str or Path, optional
             Output image file path. Default is ``"dotplot.png"``.
         figsize_per_panel : float, optional
-            Size in inches for each subplot panel. Default is ``4.0``.
+            Base size in inches for each subplot panel when
+            ``scale_sequences=False``.  When ``scale_sequences=True`` this
+            value sets the size of the *longest* sequence axis and all
+            other axes are scaled proportionally.  Default is ``4.0``.
         dot_size : float, optional
             Size of each dot in the scatter plot. Default is ``0.5``.
         dot_color : str, optional
@@ -91,6 +95,11 @@ class DotPlotter:
             Overall figure title. If ``None``, no title is added.
         dpi : int, optional
             Resolution of the output image. Default is ``150``.
+        scale_sequences : bool, optional
+            When ``True``, subplot widths and heights are proportional to
+            the lengths of the corresponding sequences so that relative
+            sequence sizes are preserved.  When ``False`` (default) every
+            panel has the same fixed size.
         """
         all_names = self.index.sequence_names()
         if not all_names:
@@ -104,15 +113,35 @@ class DotPlotter:
         nrows = len(query_names)
         ncols = len(target_names)
 
-        fig_w = figsize_per_panel * ncols
-        fig_h = figsize_per_panel * nrows
-
-        fig, axes = plt.subplots(
-            nrows,
-            ncols,
-            figsize=(fig_w, fig_h),
-            squeeze=False,
-        )
+        if scale_sequences:
+            q_lens = [self.index.get_sequence_length(n) for n in query_names]
+            t_lens = [self.index.get_sequence_length(n) for n in target_names]
+            max_len = max(max(q_lens), max(t_lens), 1)
+            col_widths = [figsize_per_panel * (seq_len / max_len) for seq_len in t_lens]
+            row_heights = [
+                figsize_per_panel * (seq_len / max_len) for seq_len in q_lens
+            ]
+            fig_w = sum(col_widths)
+            fig_h = sum(row_heights)
+            fig, axes = plt.subplots(
+                nrows,
+                ncols,
+                figsize=(fig_w, fig_h),
+                squeeze=False,
+                gridspec_kw={
+                    'width_ratios': col_widths,
+                    'height_ratios': row_heights,
+                },
+            )
+        else:
+            fig_w = figsize_per_panel * ncols
+            fig_h = figsize_per_panel * nrows
+            fig, axes = plt.subplots(
+                nrows,
+                ncols,
+                figsize=(fig_w, fig_h),
+                squeeze=False,
+            )
 
         for row_idx, q_name in enumerate(query_names):
             for col_idx, t_name in enumerate(target_names):

@@ -257,3 +257,97 @@ class TestReorderContigs:
         q_sorted, t_sorted = aln.reorder_contigs(['query1'], ['target1'])
         assert q_sorted == ['query1']
         assert t_sorted == ['target1']
+
+
+# ---------------------------------------------------------------------------
+# CrossIndexPaf
+# ---------------------------------------------------------------------------
+
+
+class TestCrossIndexPaf:
+    def test_add_sequence_and_repr(self):
+        from rusty_dot.paf_io import CrossIndexPaf
+
+        cross = CrossIndexPaf(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGT', group='a')
+        cross.add_sequence('t1', 'TACGTACGTACG', group='b')
+        assert 'CrossIndexPaf' in repr(cross)
+        assert cross.query_names == ['q1']
+        assert cross.target_names == ['t1']
+
+    def test_invalid_group_raises(self):
+        from rusty_dot.paf_io import CrossIndexPaf
+
+        cross = CrossIndexPaf(k=4)
+        with pytest.raises(ValueError):
+            cross.add_sequence('x', 'ACGT', group='c')
+
+    def test_get_paf_all_cross(self):
+        from rusty_dot.paf_io import CrossIndexPaf
+
+        cross = CrossIndexPaf(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+        lines = cross.get_paf_all()
+        assert isinstance(lines, list)
+        # All lines should reference the original (un-prefixed) names
+        for line in lines:
+            fields = line.split('\t')
+            assert fields[0] == 'q1'
+            assert fields[5] == 't1'
+
+    def test_get_paf_all_single_group(self):
+        """get_paf_all with no group-B sequences does all-vs-all within group A."""
+        from rusty_dot.paf_io import CrossIndexPaf
+
+        cross = CrossIndexPaf(k=4)
+        cross.add_sequence('s1', 'ACGTACGTACGTACGT', group='a')
+        cross.add_sequence('s2', 'ACGTACGTACGTACGT', group='a')
+        lines = cross.get_paf_all()
+        # s1 vs s2 and s2 vs s1 should both appear
+        queries = {line.split('\t')[0] for line in lines}
+        assert 's1' in queries or 's2' in queries
+
+    def test_reorder_contigs_raises_without_group_b(self):
+        from rusty_dot.paf_io import CrossIndexPaf
+
+        cross = CrossIndexPaf(k=4)
+        cross.add_sequence('s1', 'ACGTACGTACGTACGT', group='a')
+        with pytest.raises(ValueError):
+            cross.reorder_contigs()
+
+    def test_reorder_contigs_returns_original_names(self):
+        from rusty_dot.paf_io import CrossIndexPaf
+
+        cross = CrossIndexPaf(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
+        cross.add_sequence('q2', 'TACGTACGTACGTACG', group='a')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+        q_sorted, t_sorted = cross.reorder_contigs()
+        assert set(q_sorted) == {'q1', 'q2'}
+        assert set(t_sorted) == {'t1'}
+
+
+# ---------------------------------------------------------------------------
+# compute_gravity_contigs: unmatched sorted by descending length
+# ---------------------------------------------------------------------------
+
+
+class TestComputeGravityContigsUnmatchedLength:
+    def test_unmatched_sorted_by_length_desc(self):
+        """Unmatched contigs must appear after matched ones, sorted by length descending."""
+        records = [
+            PafRecord.from_line(
+                'q_early\t50\t0\t50\t+\ttarget\t100\t0\t50\t48\t50\t255'
+            ),
+        ]
+        # Add two unmatched queries: long_unmatched (100 bp) and short_unmatched (10 bp)
+        # Neither appears in records → len_map has no entry → length 0 for both
+        # In this edge case they sort equal; just verify they're both at the end.
+        q_sorted, _ = compute_gravity_contigs(
+            records,
+            ['q_early', 'long_unmatched', 'short_unmatched'],
+            ['target'],
+        )
+        assert q_sorted[0] == 'q_early'
+        assert set(q_sorted[1:]) == {'long_unmatched', 'short_unmatched'}

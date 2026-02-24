@@ -195,3 +195,44 @@ def test_compare_sequences_missing_target(simple_index):
     """Test that a missing target name raises KeyError."""
     with pytest.raises(KeyError):
         simple_index.compare_sequences('seq1', 'no_such_seq')
+
+
+def test_get_paf_all_returns_paf_lines():
+    """Test that get_paf_all returns PAF lines for all pairs."""
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('a', 'ACGTACGTACGTACGT')
+    idx.add_sequence('b', 'TACGTACGTACGTACG')
+    paf_lines = idx.get_paf_all()
+    # Each line must have 12 tab-separated fields
+    assert isinstance(paf_lines, list)
+    for line in paf_lines:
+        fields = line.split('\t')
+        assert len(fields) == 12
+
+
+def test_get_paf_all_empty_index_returns_empty():
+    """Test that get_paf_all on a single-sequence index returns no lines."""
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('only', 'ACGTACGTACGT')
+    assert idx.get_paf_all() == []
+
+
+def test_optimal_contig_order_unmatched_sorted_by_length_desc():
+    """Unmatched contigs should be placed at the end sorted by descending length."""
+    idx = SequenceIndex(k=4)
+    # Sequences that share k-mers
+    idx.add_sequence('seq_a', 'ACGTACGTACGTACGTACGT')  # 20 bp
+    idx.add_sequence('seq_b', 'ACGTACGTACGTACGTACGT')  # 20 bp
+    # Two unmatched sequences of different lengths (no ACGT k-mers → no matches)
+    idx.add_sequence('long_unmatched', 'T' * 40)  # 40 bp
+    idx.add_sequence('short_unmatched', 'T' * 10)  # 10 bp
+
+    q_sorted, _ = idx.optimal_contig_order(
+        ['long_unmatched', 'short_unmatched', 'seq_a'],
+        ['seq_b'],
+    )
+    # seq_a matches seq_b → sorted first
+    assert q_sorted[0] == 'seq_a'
+    # Unmatched sorted by length descending: long before short
+    assert q_sorted[1] == 'long_unmatched'
+    assert q_sorted[2] == 'short_unmatched'
