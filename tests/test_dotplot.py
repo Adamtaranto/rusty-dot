@@ -86,6 +86,7 @@ def test_plot_rc_only_sequences(tmp_path):
 def test_plot_rc_lines_are_anti_diagonal(tmp_path):
     """RC matches are drawn as anti-diagonal lines in the plot axes."""
     import matplotlib
+
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
@@ -116,6 +117,7 @@ def test_plot_rc_lines_are_anti_diagonal(tmp_path):
 def test_plot_fwd_lines_are_diagonal(tmp_path):
     """Forward matches are drawn as diagonal lines (x increasing) in the axes."""
     import matplotlib
+
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
@@ -128,7 +130,9 @@ def test_plot_fwd_lines_are_diagonal(tmp_path):
     plotter._plot_panel(ax, 'q', 't')
     plt.close(fig)
 
-    fwd_lines = [line for line in ax.lines if list(line.get_xdata()) == sorted(line.get_xdata())]
+    fwd_lines = [
+        line for line in ax.lines if list(line.get_xdata()) == sorted(line.get_xdata())
+    ]
     assert len(fwd_lines) > 0, 'Expected at least one forward (diagonal) match line'
 
 
