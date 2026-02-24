@@ -3,6 +3,8 @@
 //! This module is only compiled when the `fasta` feature is enabled (the
 //! default for native builds).  Wasm builds omit it because needletail
 //! cannot link against the `wasm32-unknown-emscripten` target.
+// pyo3 pyfunction return types trigger a false-positive useless_conversion lint.
+#![allow(clippy::useless_conversion)]
 
 #[cfg(feature = "fasta")]
 use crate::error::RustyDotError;

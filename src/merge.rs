@@ -3,6 +3,8 @@
 //! When k-mers are consecutive in both query and target sequences,
 //! they can be merged into a single match region, reducing the
 //! number of reported features.
+// pyo3 pyfunction return types trigger a false-positive useless_conversion lint.
+#![allow(clippy::useless_conversion)]
 //!
 //! Two merging algorithms are provided:
 //! - [`merge_fwd_runs`]: for forward (`+`) strand co-linear hits where
