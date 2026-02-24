@@ -198,3 +198,46 @@ def test_merge_rev_longer_run():
 def test_merge_rev_empty_input():
     """Empty input returns empty list."""
     assert py_merge_rev_runs({}, {}, 4) == []
+
+
+# ---------------------------------------------------------------------------
+# Cross-strand collinear pairs must not merge across strands
+# ---------------------------------------------------------------------------
+
+
+def test_merge_fwd_does_not_merge_antidiagonal_pairs():
+    """merge_fwd_runs must NOT merge pairs that are collinear on the reverse strand.
+
+    Anti-diagonal consecutive pairs advance +1 in query but -1 in target.
+    They land on *different* forward diagonals (t-q = 5 vs 3) and must each
+    become a separate block even though the query positions are adjacent.
+
+    (q=0, t=5): forward diagonal t-q = 5
+    (q=1, t=4): forward diagonal t-q = 3  ← different → 2 separate blocks
+    """
+    k = 4
+    kmer_coords = {'AAAA': [5], 'CCCC': [4]}
+    query_positions = {'AAAA': [0], 'CCCC': [1]}
+    merged = py_merge_kmer_runs(kmer_coords, query_positions, k)
+    assert len(merged) == 2, (
+        f'forward merge must not merge anti-diagonal (RC-strand) pairs, got {merged}'
+    )
+
+
+def test_merge_rev_does_not_merge_diagonal_pairs():
+    """merge_rev_runs must NOT merge pairs that are collinear on the forward strand.
+
+    Forward-diagonal consecutive pairs advance +1 in both query and target.
+    They land on *different* reverse anti-diagonals (q+t = 5 vs 7) and must
+    each become a separate block even though the query positions are adjacent.
+
+    (q=0, t=5): anti-diagonal q+t = 5
+    (q=1, t=6): anti-diagonal q+t = 7  ← different → 2 separate blocks
+    """
+    k = 4
+    target_rev = {'AAAA': [5], 'CCCC': [6]}
+    query_pos = {'AAAA': [0], 'CCCC': [1]}
+    merged = py_merge_rev_runs(target_rev, query_pos, k)
+    assert len(merged) == 2, (
+        f'reverse merge must not merge forward-diagonal (+ strand) pairs, got {merged}'
+    )

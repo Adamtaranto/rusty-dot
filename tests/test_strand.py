@@ -171,6 +171,42 @@ class TestStrandHandling:
         assert ts < te
         assert te - ts >= 4  # at least k bases covered
 
+    def test_consecutive_opposite_strand_kmers_not_merged(self):
+        """Sequential query k-mers with collinear hits on opposite strands must not merge.
+
+        query = 'AACCC' (k=4):
+          AACC at q=0 → forward match in target (AACC at t=0).
+          ACCC at q=1 → RC match in target (RC(ACCC)=GGGT at t=4).
+
+        These two k-mers are *consecutive* in the query (overlapping by k-1=3 bases),
+        and each has a collinear hit in the target — but on **opposite strands**.
+        The expected result is two separate blocks (one '+', one '-'), NOT a single
+        merged cross-strand block.
+        """
+        idx = make_idx({'q': 'AACCC', 't': 'AACCGGGT'}, k=4)
+        stranded = idx.compare_sequences_stranded('q', 't', merge=True)
+
+        fwd_hits = [m for m in stranded if m[4] == '+']
+        rev_hits = [m for m in stranded if m[4] == '-']
+
+        assert len(fwd_hits) >= 1, f'expected + strand hit for AACC, got {stranded}'
+        assert len(rev_hits) >= 1, f'expected - strand hit for ACCC→GGGT, got {stranded}'
+
+        # Exactly one block per strand: no cross-strand merging occurred.
+        assert len(stranded) == 2, (
+            f'expected exactly 2 blocks (one per strand), got {stranded}'
+        )
+
+        # Forward block: AACC matched at query q=0, target t=0.
+        fwd = fwd_hits[0]
+        assert fwd[0] == 0, f'forward hit q_start should be 0, got {fwd}'
+        assert fwd[2] == 0, f'forward hit t_start should be 0, got {fwd}'
+
+        # RC block: ACCC matched at query q=1; RC(ACCC)=GGGT at target t=4.
+        rev = rev_hits[0]
+        assert rev[0] == 1, f'RC hit q_start should be 1, got {rev}'
+        assert rev[2] == 4, f'RC hit t_start should be 4, got {rev}'
+
 
 # ---------------------------------------------------------------------------
 # Optimal contig order

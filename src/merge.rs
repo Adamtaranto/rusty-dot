@@ -394,6 +394,56 @@ mod tests {
     }
 
     #[test]
+    fn test_fwd_does_not_merge_antidiagonal_pairs() {
+        // Anti-diagonal pairs: consecutive query positions with DECREASING target positions.
+        // These belong to the reverse (-) strand; merge_fwd_runs must NOT merge them.
+        //
+        // (q=0, t=5): forward diagonal t-q = 5
+        // (q=1, t=4): forward diagonal t-q = 3  ← different diagonal
+        //
+        // They sit on the SAME reverse anti-diagonal (q+t = 5), but that is irrelevant
+        // here: merge_fwd_runs groups by t-q and the two pairs land on different
+        // forward diagonals, so each becomes its own block.
+        let t = make_map(&[("AAAA", vec![5]), ("CCCC", vec![4])]);
+        let q = make_map(&[("AAAA", vec![0]), ("CCCC", vec![1])]);
+        let result = merge_fwd_runs(&t, &q, 4);
+        assert_eq!(
+            result.len(),
+            2,
+            "merge_fwd_runs must not merge anti-diagonal (opposite-strand) pairs: {:?}",
+            result
+        );
+        for block in &result {
+            assert_eq!(block.strand, STRAND_FWD);
+        }
+    }
+
+    #[test]
+    fn test_rev_does_not_merge_diagonal_pairs() {
+        // Forward-diagonal pairs: consecutive query positions with INCREASING target positions.
+        // These belong to the forward (+) strand; merge_rev_runs must NOT merge them.
+        //
+        // (q=0, t=5): reverse anti-diagonal q+t = 5
+        // (q=1, t=6): reverse anti-diagonal q+t = 7  ← different anti-diagonal
+        //
+        // They sit on the SAME forward diagonal (t-q = 5), but that is irrelevant
+        // here: merge_rev_runs groups by q+t and the two pairs land on different
+        // anti-diagonals, so each becomes its own block.
+        let t_rev = make_map(&[("AAAA", vec![5]), ("CCCC", vec![6])]);
+        let q = make_map(&[("AAAA", vec![0]), ("CCCC", vec![1])]);
+        let result = merge_rev_runs(&t_rev, &q, 4);
+        assert_eq!(
+            result.len(),
+            2,
+            "merge_rev_runs must not merge forward-diagonal (opposite-strand) pairs: {:?}",
+            result
+        );
+        for block in &result {
+            assert_eq!(block.strand, STRAND_REV);
+        }
+    }
+
+    #[test]
     fn test_rev_parallel_antidiagonals_stay_separate() {
         // Two separate RC alignments on different anti-diagonals:
         //   anti-diag q+t=5: (0,5), (1,4)
