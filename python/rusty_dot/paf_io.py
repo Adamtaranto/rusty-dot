@@ -651,7 +651,9 @@ class PafAlignment:
             Filtered alignment containing only records with
             ``query_aligned_len >= min_length``.
         """
-        return PafAlignment([r for r in self.records if r.query_aligned_len >= min_length])
+        return PafAlignment(
+            [r for r in self.records if r.query_aligned_len >= min_length]
+        )
 
     # ------------------------------------------------------------------
     # Contig reordering

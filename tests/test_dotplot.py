@@ -210,6 +210,7 @@ def test_plot_single_svg_explicit_format_parameter(dotplot_index, tmp_path):
 def test_plot_min_length_filters_short_matches(tmp_path):
     """Setting min_length filters out short matches from the dotplot."""
     import matplotlib
+
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
