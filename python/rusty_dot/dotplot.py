@@ -12,10 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
-import matplotlib
-
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.figure
 
 from rusty_dot._rusty_dot import SequenceIndex
 
@@ -55,7 +53,8 @@ class DotPlotter:
     >>> idx.add_sequence("seq1", "ACGTACGTACGT" * 10)
     >>> idx.add_sequence("seq2", "TACGTACGTACG" * 10)
     >>> plotter = DotPlotter(idx)
-    >>> plotter.plot(output_path="dotplot.png")
+    >>> fig = plotter.plot(output_path="dotplot.png")  # save to file
+    >>> fig = plotter.plot()  # display inline in Jupyter, no file saved
     """
 
     def __init__(self, index: Union[SequenceIndex, 'CrossIdx']) -> None:
@@ -72,7 +71,7 @@ class DotPlotter:
         self,
         query_names: Optional[list[str]] = None,
         target_names: Optional[list[str]] = None,
-        output_path: Union[str, Path] = 'dotplot.png',
+        output_path: Optional[Union[str, Path]] = None,
         figsize_per_panel: float = 4.0,
         dot_size: float = 0.5,
         dot_color: str = 'blue',
@@ -83,13 +82,17 @@ class DotPlotter:
         scale_sequences: bool = True,
         format: Optional[str] = None,
         min_length: int = 0,
-    ) -> None:
+    ) -> matplotlib.figure.Figure:
         """Plot an all-vs-all dotplot grid.
 
         If both ``query_names`` and ``target_names`` are provided, the plot
         will show each query sequence (rows) against each target sequence
         (columns). If only one set is provided, or neither, all pairwise
         combinations within the available sequences are plotted.
+
+        The figure is always returned so it can be displayed inline in a
+        Jupyter notebook.  When ``output_path`` is provided the figure is
+        also saved to disk.
 
         Parameters
         ----------
@@ -100,9 +103,9 @@ class DotPlotter:
             Sequence names for the x-axis (columns). If ``None``, uses all
             sequences in the index.
         output_path : str or Path, optional
-            Output image file path. Default is ``"dotplot.png"``. Use a
-            ``.svg`` extension (or set ``format='svg'``) to produce an SVG
-            vector image.
+            Output image file path.  When ``None`` (default) the figure is
+            not saved to disk.  Use a ``.svg`` extension (or set
+            ``format='svg'``) to produce an SVG vector image.
         figsize_per_panel : float, optional
             Base size in inches for each subplot panel when
             ``scale_sequences=False``.  When ``scale_sequences=True`` this
@@ -135,6 +138,13 @@ class DotPlotter:
             Minimum alignment length to display.  Matches shorter than this
             value are not drawn.  Applies to merged k-mer runs and pre-computed
             PAF alignments.  Default is ``0`` (no filtering).
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+            The generated figure.  In a Jupyter notebook the figure is
+            displayed inline automatically; call ``matplotlib.pyplot.close``
+            on the returned object when it is no longer needed.
         """
         all_names = self.index.sequence_names()
         if not all_names:
@@ -199,8 +209,9 @@ class DotPlotter:
             fig.suptitle(title, fontsize=14, y=1.01)
 
         plt.tight_layout()
-        plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
-        plt.close(fig)
+        if output_path is not None:
+            plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
+        return fig
 
     def _plot_panel(
         self,
@@ -282,7 +293,7 @@ class DotPlotter:
         self,
         query_name: str,
         target_name: str,
-        output_path: Union[str, Path] = 'dotplot.png',
+        output_path: Optional[Union[str, Path]] = None,
         figsize: tuple[float, float] = (6.0, 6.0),
         dot_size: float = 0.5,
         dot_color: str = 'blue',
@@ -292,7 +303,7 @@ class DotPlotter:
         dpi: int = 150,
         format: Optional[str] = None,
         min_length: int = 0,
-    ) -> None:
+    ) -> matplotlib.figure.Figure:
         """Plot a single pairwise dotplot.
 
         Parameters
@@ -302,9 +313,9 @@ class DotPlotter:
         target_name : str
             Name of the target sequence (x-axis).
         output_path : str or Path, optional
-            Output image file path. Default is ``"dotplot.png"``. Use a
-            ``.svg`` extension (or set ``format='svg'``) to produce an SVG
-            vector image.
+            Output image file path.  When ``None`` (default) the figure is
+            not saved to disk.  Use a ``.svg`` extension (or set
+            ``format='svg'``) to produce an SVG vector image.
         figsize : tuple[float, float], optional
             Figure size as (width, height) in inches. Default is ``(6, 6)``.
         dot_size : float, optional
@@ -327,6 +338,13 @@ class DotPlotter:
             Minimum alignment length to display.  Matches shorter than this
             value are not drawn.  Applies to merged k-mer runs and pre-computed
             PAF alignments.  Default is ``0`` (no filtering).
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+            The generated figure.  In a Jupyter notebook the figure is
+            displayed inline automatically; call ``matplotlib.pyplot.close``
+            on the returned object when it is no longer needed.
         """
         fig, ax = plt.subplots(figsize=figsize)
         self._plot_panel(
@@ -343,5 +361,6 @@ class DotPlotter:
             title = f'{query_name} vs {target_name}'
         ax.set_title(title, fontsize=10)
         plt.tight_layout()
-        plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
-        plt.close(fig)
+        if output_path is not None:
+            plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
+        return fig
