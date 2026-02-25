@@ -1958,23 +1958,23 @@ output format of rusty-dot.</p>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot</span><span class="w"> </span><span class="kn">import</span> <span class="n">SequenceIndex</span><span class="p">,</span> <span class="n">py_coords_to_paf</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.paf_io</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">PafRecord</span><span class="p">,</span>
     <span class="n">PafAlignment</span><span class="p">,</span>
+    <span class="n">PafRecord</span><span class="p">,</span>
     <span class="n">parse_paf_file</span><span class="p">,</span>
 <span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-1">import tempfile
-import os
+<div class="clipboard-copy-txt" id="cell-1">import os
+import tempfile
 
 from rusty_dot import SequenceIndex, py_coords_to_paf
 from rusty_dot.paf_io import (
-    PafRecord,
     PafAlignment,
+    PafRecord,
     parse_paf_file,
 )</div>
 </div>
@@ -2402,6 +2402,11 @@ print(f'from_records: {aln2}')</div>
 <span class="c1"># Filter to a specific target</span>
 <span class="n">filtered_t</span> <span class="o">=</span> <span class="n">aln</span><span class="o">.</span><span class="n">filter_by_target</span><span class="p">([</span><span class="s1">'target'</span><span class="p">])</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"filter_by_target(['target']): </span><span class="si">{</span><span class="n">filtered_t</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+<span class="c1"># Filter by minimum alignment length (query span)</span>
+<span class="c1"># Only keeps records where query_end - query_start &gt;= min_length</span>
+<span class="n">filtered_len</span> <span class="o">=</span> <span class="n">aln</span><span class="o">.</span><span class="n">filter_by_min_length</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'filter_by_min_length(20): </span><span class="si">{</span><span class="n">filtered_len</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-9"># Filter to a specific query
 filtered_q = aln.filter_by_query(['query'])
@@ -2409,7 +2414,12 @@ print(f"filter_by_query(['query']): {filtered_q}")
 
 # Filter to a specific target
 filtered_t = aln.filter_by_target(['target'])
-print(f"filter_by_target(['target']): {filtered_t}")</div>
+print(f"filter_by_target(['target']): {filtered_t}")
+
+# Filter by minimum alignment length (query span)
+# Only keeps records where query_end - query_start &gt;= min_length
+filtered_len = aln.filter_by_min_length(20)
+print(f'filter_by_min_length(20): {filtered_len}')</div>
 </div>
 </div>
 </div>
@@ -2657,8 +2667,12 @@ print(f'Optimal target order: {t_order}')</div>
 <td><code>PafRecord.to_line()</code></td>
 </tr>
 <tr>
-<td>Filter records</td>
+<td>Filter by query/target</td>
 <td><code>PafAlignment.filter_by_query(names)</code> / <code>filter_by_target(names)</code></td>
+</tr>
+<tr>
+<td>Filter by alignment length</td>
+<td><code>PafAlignment.filter_by_min_length(min_length)</code></td>
 </tr>
 <tr>
 <td>Reorder contigs</td>

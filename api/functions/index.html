@@ -1468,7 +1468,8 @@ For most use cases, the <a href="../sequence_index/"><code>SequenceIndex</code><
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If the file cannot be opened or parsed.</p>
+                <p>If the file cannot be opened, parsed, or contains duplicate sequence
+names.</p>
               </div>
             </td>
           </tr>
@@ -1722,24 +1723,30 @@ functions are available for lower-level control.</p>
 <h2 id="rusty_dot._rusty_dot.py_merge_runs" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">py_merge_runs</span><span class="p">(</span><span class="n">kmer_coords</span><span class="p">,</span> <span class="n">query_kmer_positions</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">strand</span><span class="p">)</span></code>
 
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-builtin"><code>builtin</code></small>
+  </span>
+
 <a href="#rusty_dot._rusty_dot.py_merge_runs" class="headerlink" title="Permanent link">&para;</a></h2>
 
 
     <div class="doc doc-contents first">
 
-        <p>Merge k-mer hits into contiguous blocks for either strand orientation.</p>
-<p>A unified entry-point that dispatches to the forward or reverse-complement
-merge algorithm based on <code>strand</code>.</p>
-<p>For <code>strand="+"</code> the forward (co-linear diagonal) algorithm is used:
-<code>kmer_coords</code> holds positions of each k-mer in the target and
-<code>query_kmer_positions</code> holds positions of the same k-mer in the query.</p>
-<p>For <code>strand="-"</code> <strong>both</strong> the anti-diagonal algorithm
-(:func:<code>py_merge_rev_runs</code>) and the co-diagonal algorithm
-(:func:<code>py_merge_rev_fwd_runs</code>) are applied to <code>kmer_coords</code> (positions
-of the reverse complement of each k-mer in the target).  Results from
-both algorithms are combined and deduplicated, so every valid RC alignment
-— whether the RC target positions increase or decrease as the query
-advances — is reported exactly once.</p>
+        <p>Python binding: unified merge for both strand orientations.</p>
+<p>A single entry-point for merging k-mer coordinate runs on either the
+forward (<code>"+"```) or reverse-complement (</code>"-"<code>`) strand.  The function
+dispatches to :func:</code>merge_fwd_runs<code>for the forward strand.  For the
+reverse strand it applies **both** the anti-diagonal algorithm
+(:func:</code>merge_rev_runs<code>) and the co-diagonal algorithm
+(:func:</code>merge_rev_fwd_runs`), combining the results and deduplicating
+any identical blocks.</p>
+<p>For the <strong>forward</strong> strand, <code>kmer_coords</code> contains the positions of each
+k-mer in the <em>target</em> sequence and <code>query_kmer_positions</code> contains the
+positions of the same k-mers in the <em>query</em> sequence.</p>
+<p>For the <strong>reverse</strong> strand, <code>kmer_coords</code> should contain the positions
+of the <strong>reverse complement</strong> of each query k-mer in the target (as
+returned by <code>find_rev_coords_in_index</code>), and <code>query_kmer_positions</code>
+contains the positions of the original k-mers in the query.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -1795,7 +1802,7 @@ these are the positions of the RC of each k-mer in the target.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>The k-mer length, used to compute (exclusive) end coordinates.</p>
+                <p>The k-mer length.</p>
               </div>
             </td>
             <td>
@@ -1813,7 +1820,7 @@ these are the positions of the RC of each k-mer in the target.</p>
               <div class="doc-md-description">
                 <p>Orientation of the match: <code>"+"</code> for forward (co-linear diagonal)
 or <code>"-"</code> for reverse-complement (both anti-diagonal and co-diagonal
-patterns are merged and returned together, deduplicated).</p>
+patterns are merged and returned together).</p>
               </div>
             </td>
             <td>
@@ -1841,7 +1848,8 @@ patterns are merged and returned together, deduplicated).</p>
               <div class="doc-md-description">
                 <p>List of <code>(query_start, query_end, target_start, target_end, strand)</code>
 5-tuples.  Coordinates are 0-based; end positions are exclusive.
-<code>strand</code> echoes the input argument.</p>
+<code>strand</code> echoes the input argument so callers can mix results from
+multiple calls without losing orientation information.</p>
               </div>
             </td>
           </tr>
@@ -2013,17 +2021,21 @@ Coordinates are 0-based, with end positions exclusive.</p>
 <h2 id="rusty_dot._rusty_dot.py_merge_rev_runs" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">py_merge_rev_runs</span><span class="p">(</span><span class="n">target_rev_coords</span><span class="p">,</span> <span class="n">query_kmer_positions</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span></code>
 
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-builtin"><code>builtin</code></small>
+  </span>
+
 <a href="#rusty_dot._rusty_dot.py_merge_rev_runs" class="headerlink" title="Permanent link">&para;</a></h2>
 
 
     <div class="doc doc-contents first">
 
-        <p>Merge reverse-complement k-mer hits into contiguous anti-diagonal blocks.</p>
-<p>For every <code>(query_pos, target_rev_pos)</code> pair derived from the two
-mappings, this function groups hits by anti-diagonal
-(<code>query_pos + target_rev_pos</code>) and, within each anti-diagonal, merges
-consecutive hits where <code>query_pos</code> increments by 1 and
-<code>target_rev_pos</code> decrements by 1.</p>
+        <p>Python binding: merge reverse-complement (<code>-</code> strand) k-mer coordinate runs.</p>
+<p>For each k-mer, <code>target_rev_coords</code> should contain the positions in the
+target where the <strong>reverse complement</strong> of that k-mer was found (as returned
+by <code>find_rev_coords_in_index</code>).  Consecutive anti-diagonal pairs —
+where <code>query_pos</code> advances by 1 and the corresponding RC target position
+decreases by 1 — are merged into a single <code>CoordPair</code>.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -2046,135 +2058,8 @@ consecutive hits where <code>query_pos</code> increments by 1 and
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Mapping of k-mer string to the 0-based start positions of its
-<strong>reverse complement</strong> in the target sequence (as returned by
-<code>find_rev_coords_in_index</code>).</p>
-              </div>
-            </td>
-            <td>
-                <em>required</em>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>query_kmer_positions</code>
-            </td>
-            <td>
-                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="list">list</span>[<span title="int">int</span>]]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Mapping of k-mer string to list of 0-based start positions in the
-query sequence.</p>
-              </div>
-            </td>
-            <td>
-                <em>required</em>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>k</code>
-            </td>
-            <td>
-                  <code><span title="int">int</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>The k-mer length, used to compute the (exclusive) end coordinates
-of each merged block.</p>
-              </div>
-            </td>
-            <td>
-                <em>required</em>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-    <p><span class="doc-section-title">Returns:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="list">list</span>[<span title="tuple">tuple</span>[<span title="int">int</span>, <span title="int">int</span>, <span title="int">int</span>, <span title="int">int</span>]]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>List of <code>(query_start, query_end, target_start, target_end)</code>
-tuples representing merged <code>-</code>-strand match regions.  Coordinates
-are 0-based; end positions are exclusive.  <code>target_start</code> and
-<code>target_end</code> are the forward-strand boundaries of the RC region
-on the target.</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-function">
-
-
-<h2 id="rusty_dot._rusty_dot.py_merge_rev_fwd_runs" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">py_merge_rev_fwd_runs</span><span class="p">(</span><span class="n">target_rev_coords</span><span class="p">,</span> <span class="n">query_kmer_positions</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span></code>
-
-<a href="#rusty_dot._rusty_dot.py_merge_rev_fwd_runs" class="headerlink" title="Permanent link">&para;</a></h2>
-
-
-    <div class="doc doc-contents first">
-
-        <p>Merge RC k-mer hits co-linear on a forward diagonal into contiguous blocks.</p>
-<p>Handles the case where sequential query k-mers have their reverse complements
-at <strong>increasing</strong> positions in the target — i.e., as the query position
-advances by 1, the forward-strand target position of the RC match also
-advances by 1 (<code>t_rc - q = constant</code>).  This is complementary to
-:func:<code>py_merge_rev_runs</code>, which handles the anti-diagonal case
-(<code>t_rc</code> decreases as <code>q</code> increases).</p>
-<p>This pattern arises in inverted-repeat contexts where both repeat arms
-run in the same left-to-right direction along the forward strand:</p>
-<ul>
-<li>:func:<code>py_merge_rev_runs</code> — anti-diagonal (<code>q + t_rc = const</code>):
-  standard inverted repeat / reverse-complement alignment.</li>
-<li>:func:<code>py_merge_rev_fwd_runs</code> — forward diagonal (<code>t_rc - q = const</code>):
-  inverted-repeat case where both arms advance in the same direction.</li>
-</ul>
-
-
-<p><span class="doc-section-title">Parameters:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-          <th>Default</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                <code>target_rev_coords</code>
-            </td>
-            <td>
-                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="list">list</span>[<span title="int">int</span>]]</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Mapping of k-mer to the 0-based start positions of its <strong>reverse
-complement</strong> in the target sequence (as returned by
-<code>find_rev_coords_in_index</code>).</p>
+                <p>Mapping of k-mer to the 0-based start positions of its reverse complement
+in the target sequence.</p>
               </div>
             </td>
             <td>
@@ -2206,7 +2091,131 @@ complement</strong> in the target sequence (as returned by
             </td>
             <td>
               <div class="doc-md-description">
-                <p>The k-mer length, used to compute (exclusive) end coordinates.</p>
+                <p>The k-mer length.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="list">list</span>[<span title="tuple">tuple</span>[<span title="int">int</span>, <span title="int">int</span>, <span title="int">int</span>, <span title="int">int</span>]]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>List of <code>(query_start, query_end, target_start, target_end)</code> tuples
+representing merged <code>-</code>-strand match regions.  Coordinates are
+0-based with end positions exclusive.  <code>target_start</code> and
+<code>target_end</code> are the forward-strand boundaries of the RC match region
+on the target.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="rusty_dot._rusty_dot.py_merge_rev_fwd_runs" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">py_merge_rev_fwd_runs</span><span class="p">(</span><span class="n">target_rev_coords</span><span class="p">,</span> <span class="n">query_kmer_positions</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-builtin"><code>builtin</code></small>
+  </span>
+
+<a href="#rusty_dot._rusty_dot.py_merge_rev_fwd_runs" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+        <p>Python binding: merge reverse-complement (<code>-</code> strand) k-mer coordinate runs
+that are co-linear on a <strong>forward diagonal</strong> (RC positions increase as query
+position increases).</p>
+<p>This is the complement of :func:<code>py_merge_rev_runs</code>, which handles the
+anti-diagonal case.  Together they cover all possible orientations of
+reverse-complement k-mer matches:</p>
+<ul>
+<li><code>py_merge_rev_runs</code> — anti-diagonal: <code>q</code> advances +1, <code>t_rc</code> decreases by 1
+  (standard inverted-repeat / reverse-complement alignment).</li>
+<li><code>py_merge_rev_fwd_runs</code> — forward diagonal: <code>q</code> advances +1, <code>t_rc</code> also
+  advances +1 (inverted-repeat case where both arms run in the same direction).</li>
+</ul>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>target_rev_coords</code>
+            </td>
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="list">list</span>[<span title="int">int</span>]]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Mapping of k-mer to the 0-based start positions of its reverse complement
+in the target sequence (as returned by <code>find_rev_coords_in_index</code>).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>query_kmer_positions</code>
+            </td>
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="list">list</span>[<span title="int">int</span>]]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Mapping of k-mer to its 0-based start positions in the query sequence.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>k</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The k-mer length.</p>
               </div>
             </td>
             <td>

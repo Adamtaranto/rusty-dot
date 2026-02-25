@@ -686,6 +686,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#9-svg-vector-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. SVG vector output
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-minimum-alignment-length-filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Minimum alignment length filter
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#summary-of-dotplotter-parameters" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1105,6 +1127,28 @@
     <span class="md-ellipsis">
       
         8. Panel size control
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-svg-vector-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. SVG vector output
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-minimum-alignment-length-filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Minimum alignment length filter
       
     </span>
   </a>
@@ -1895,14 +1939,14 @@ dots indicate conserved regions.  Inversions appear as anti-diagonal lines.</p>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot</span><span class="w"> </span><span class="kn">import</span> <span class="n">SequenceIndex</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.dotplot</span><span class="w"> </span><span class="kn">import</span> <span class="n">DotPlotter</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-1">import tempfile
-import os
+<div class="clipboard-copy-txt" id="cell-1">import os
+import tempfile
 
 from rusty_dot import SequenceIndex
 from rusty_dot.dotplot import DotPlotter</div>
@@ -2392,6 +2436,163 @@ print(f'Large-panel plot saved: {large_path}')</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h2 id="9-svg-vector-output">9. SVG vector output<a class="anchor-link" href="#9-svg-vector-output">¶</a></h2><p>rusty-dot passes the <code>format</code> argument directly to <code>matplotlib.savefig</code>.  This means you can
+produce SVG, PDF, or any other matplotlib-supported format.</p>
+<p>The easiest way is to use a <code>.svg</code> file extension — matplotlib detects the format
+automatically.  You can also pass <code>format='svg'</code> explicitly to override the extension.</p>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="CodeMirror cm-s-jupyter">
+<div class="zeroclipboard-container">
+<clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-10">
+<div>
+<span class="notice" hidden="">Copied!</span>
+<svg aria-hidden="true" class="clipboard-copy-icon" data-view-component="true" height="20" version="1.1" viewbox="0 0 16 16" width="20">
+<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill="currentColor" fill-rule="evenodd"></path>
+<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill="currentColor" fill-rule="evenodd"></path>
+</svg>
+</div>
+</clipboard-copy>
+</div>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="c1"># SVG via file extension</span>
+<span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.svg'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+    <span class="n">svg_ext_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+
+<span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">output_path</span><span class="o">=</span><span class="n">svg_ext_path</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s1">'SVG via extension'</span><span class="p">)</span>
+<span class="n">size_bytes</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">svg_ext_path</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'SVG (extension): </span><span class="si">{</span><span class="n">svg_ext_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">size_bytes</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+
+<span class="c1"># SVG via explicit format parameter (output path need not end in .svg)</span>
+<span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.out'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+    <span class="n">svg_fmt_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+
+<span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">output_path</span><span class="o">=</span><span class="n">svg_fmt_path</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s1">'svg'</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s1">'SVG via format param'</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'SVG (explicit): </span><span class="si">{</span><span class="n">svg_fmt_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">svg_fmt_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+
+<span class="c1"># Verify it is valid SVG</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">svg_ext_path</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">snippet</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">80</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="se">\n</span><span class="s1">File header: </span><span class="si">{</span><span class="n">snippet</span><span class="si">!r}</span><span class="s1">'</span><span class="p">)</span>
+</pre></div>
+<div class="clipboard-copy-txt" id="cell-10"># SVG via file extension
+with tempfile.NamedTemporaryFile(suffix='.svg', delete=False) as fh:
+    svg_ext_path = fh.name
+
+plotter.plot(output_path=svg_ext_path, title='SVG via extension')
+size_bytes = os.path.getsize(svg_ext_path)
+print(f'SVG (extension): {svg_ext_path}  ({size_bytes} bytes)')
+
+# SVG via explicit format parameter (output path need not end in .svg)
+with tempfile.NamedTemporaryFile(suffix='.out', delete=False) as fh:
+    svg_fmt_path = fh.name
+
+plotter.plot(output_path=svg_fmt_path, format='svg', title='SVG via format param')
+print(f'SVG (explicit): {svg_fmt_path}  ({os.path.getsize(svg_fmt_path)} bytes)')
+
+# Verify it is valid SVG
+with open(svg_ext_path) as f:
+    snippet = f.read(80)
+print(f'\nFile header: {snippet!r}')</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+<h2 id="10-minimum-alignment-length-filter">10. Minimum alignment length filter<a class="anchor-link" href="#10-minimum-alignment-length-filter">¶</a></h2><p>Pass <code>min_length</code> to suppress alignments shorter than a given number of base pairs.
+This applies to merged k-mer runs (which may be longer than the original k-mer size after merging)
+and to any pre-computed PAF alignments that are loaded later.</p>
+<p>The filter is applied per match segment; only the length of the query span is checked:
+<code>query_end - query_start &gt;= min_length</code>.</p>
+</div>
+</div>
+</div>
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
+<div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea">
+<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
+<div class="CodeMirror cm-s-jupyter">
+<div class="zeroclipboard-container">
+<clipboard-copy ,="" aria-label="Copy to Clipboard" for="cell-11">
+<div>
+<span class="notice" hidden="">Copied!</span>
+<svg aria-hidden="true" class="clipboard-copy-icon" data-view-component="true" height="20" version="1.1" viewbox="0 0 16 16" width="20">
+<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill="currentColor" fill-rule="evenodd"></path>
+<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill="currentColor" fill-rule="evenodd"></path>
+</svg>
+</div>
+</clipboard-copy>
+</div>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="c1"># Without filtering: all merged hits are drawn</span>
+<span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+    <span class="n">unfiltered_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+<span class="n">plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span>
+    <span class="s1">'reference'</span><span class="p">,</span> <span class="s1">'shifted'</span><span class="p">,</span> <span class="n">output_path</span><span class="o">=</span><span class="n">unfiltered_path</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s1">'No min_length filter'</span>
+<span class="p">)</span>
+
+<span class="c1"># With filtering: only hits of at least 24 bp are drawn</span>
+<span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+    <span class="n">filtered_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+<span class="n">plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span>
+    <span class="s1">'reference'</span><span class="p">,</span>
+    <span class="s1">'shifted'</span><span class="p">,</span>
+    <span class="n">output_path</span><span class="o">=</span><span class="n">filtered_path</span><span class="p">,</span>
+    <span class="n">min_length</span><span class="o">=</span><span class="mi">24</span><span class="p">,</span>
+    <span class="n">title</span><span class="o">=</span><span class="s1">'min_length=24'</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Unfiltered: </span><span class="si">{</span><span class="n">unfiltered_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">unfiltered_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Filtered:   </span><span class="si">{</span><span class="n">filtered_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">filtered_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+</pre></div>
+<div class="clipboard-copy-txt" id="cell-11"># Without filtering: all merged hits are drawn
+with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as fh:
+    unfiltered_path = fh.name
+plotter.plot_single(
+    'reference', 'shifted', output_path=unfiltered_path, title='No min_length filter'
+)
+
+# With filtering: only hits of at least 24 bp are drawn
+with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as fh:
+    filtered_path = fh.name
+plotter.plot_single(
+    'reference',
+    'shifted',
+    output_path=filtered_path,
+    min_length=24,
+    title='min_length=24',
+)
+
+print(f'Unfiltered: {unfiltered_path}  ({os.path.getsize(unfiltered_path)} bytes)')
+print(f'Filtered:   {filtered_path}  ({os.path.getsize(filtered_path)} bytes)')</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell">
+<div class="jp-Cell-inputWrapper" tabindex="0">
+<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+</div>
+<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
+</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h2 id="summary-of-dotplotter-parameters">Summary of DotPlotter parameters<a class="anchor-link" href="#summary-of-dotplotter-parameters">¶</a></h2><table>
 <thead>
 <tr>
@@ -2417,6 +2618,11 @@ print(f'Large-panel plot saved: {large_path}')</div>
 <td>Output file path</td>
 </tr>
 <tr>
+<td><code>format</code></td>
+<td><code>None</code></td>
+<td>Output format (e.g. <code>'svg'</code>, <code>'png'</code>, <code>'pdf'</code>); inferred from extension when <code>None</code></td>
+</tr>
+<tr>
 <td><code>figsize_per_panel</code></td>
 <td><code>4.0</code></td>
 <td>Inches per subplot panel (all-vs-all only)</td>
@@ -2434,12 +2640,22 @@ print(f'Large-panel plot saved: {large_path}')</div>
 <tr>
 <td><code>dot_color</code></td>
 <td><code>"blue"</code></td>
-<td>Colour of match lines</td>
+<td>Colour of forward-strand match lines</td>
+</tr>
+<tr>
+<td><code>rc_color</code></td>
+<td><code>"red"</code></td>
+<td>Colour of reverse-complement match lines</td>
 </tr>
 <tr>
 <td><code>merge</code></td>
 <td><code>True</code></td>
 <td>Merge co-linear k-mer runs into blocks</td>
+</tr>
+<tr>
+<td><code>min_length</code></td>
+<td><code>0</code></td>
+<td>Minimum alignment length to display; <code>0</code> = show all</td>
 </tr>
 <tr>
 <td><code>title</code></td>

@@ -1880,19 +1880,19 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot</span><span class="w"> </span><span class="kn">import</span> <span class="n">SequenceIndex</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.dotplot</span><span class="w"> </span><span class="kn">import</span> <span class="n">DotPlotter</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.paf_io</span><span class="w"> </span><span class="kn">import</span> <span class="n">PafAlignment</span><span class="p">,</span> <span class="n">PafRecord</span><span class="p">,</span> <span class="n">parse_paf_file</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.paf_io</span><span class="w"> </span><span class="kn">import</span> <span class="n">PafAlignment</span><span class="p">,</span> <span class="n">parse_paf_file</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-1">import subprocess
-from pathlib import Path
+<div class="clipboard-copy-txt" id="cell-1">from pathlib import Path
+import subprocess
 
 from rusty_dot import SequenceIndex
 from rusty_dot.dotplot import DotPlotter
-from rusty_dot.paf_io import PafAlignment, PafRecord, parse_paf_file</div>
+from rusty_dot.paf_io import PafAlignment, parse_paf_file</div>
 </div>
 </div>
 </div>
@@ -1932,7 +1932,7 @@ from rusty_dot.paf_io import PafAlignment, PafRecord, parse_paf_file</div>
 </clipboard-copy>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="c1"># ── Adjust these paths ───────────────────────────────────────────────────────</span>
-<span class="n">QUERY_FASTA</span> <span class="o">=</span> <span class="s1">'genome_a.fasta'</span>   <span class="c1"># query assembly (rows in the dotplot)</span>
+<span class="n">QUERY_FASTA</span> <span class="o">=</span> <span class="s1">'genome_a.fasta'</span>  <span class="c1"># query assembly (rows in the dotplot)</span>
 <span class="n">TARGET_FASTA</span> <span class="o">=</span> <span class="s1">'genome_b.fasta'</span>  <span class="c1"># target assembly (columns in the dotplot)</span>
 <span class="n">PAF_OUTPUT</span> <span class="o">=</span> <span class="s1">'alignments.paf'</span>
 <span class="c1"># ─────────────────────────────────────────────────────────────────────────────</span>
@@ -1945,14 +1945,16 @@ from rusty_dot.paf_io import PafAlignment, PafRecord, parse_paf_file</div>
         <span class="n">check</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">Path</span><span class="p">(</span><span class="n">PAF_OUTPUT</span><span class="p">)</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Alignment complete.  Wrote </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">splitlines</span><span class="p">())</span><span class="si">}</span><span class="s1"> records to </span><span class="si">{</span><span class="n">PAF_OUTPUT</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s1">'Alignment complete.  Wrote </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">splitlines</span><span class="p">())</span><span class="si">}</span><span class="s1"> records to </span><span class="si">{</span><span class="n">PAF_OUTPUT</span><span class="si">}</span><span class="s1">'</span>
+    <span class="p">)</span>
 <span class="k">except</span> <span class="p">(</span><span class="ne">FileNotFoundError</span><span class="p">,</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CalledProcessError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'minimap2 not available or alignment failed: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
     <span class="nb">print</span><span class="p">(</span><span class="s1">'Falling back to synthetic PAF data in Section 3.'</span><span class="p">)</span>
     <span class="n">PAF_OUTPUT</span> <span class="o">=</span> <span class="kc">None</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-2"># ── Adjust these paths ───────────────────────────────────────────────────────
-QUERY_FASTA = 'genome_a.fasta'   # query assembly (rows in the dotplot)
+QUERY_FASTA = 'genome_a.fasta'  # query assembly (rows in the dotplot)
 TARGET_FASTA = 'genome_b.fasta'  # target assembly (columns in the dotplot)
 PAF_OUTPUT = 'alignments.paf'
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1965,7 +1967,9 @@ try:
         check=True,
     )
     Path(PAF_OUTPUT).write_text(result.stdout)
-    print(f'Alignment complete.  Wrote {len(result.stdout.splitlines())} records to {PAF_OUTPUT}')
+    print(
+        f'Alignment complete.  Wrote {len(result.stdout.splitlines())} records to {PAF_OUTPUT}'
+    )
 except (FileNotFoundError, subprocess.CalledProcessError) as exc:
     print(f'minimap2 not available or alignment failed: {exc}')
     print('Falling back to synthetic PAF data in Section 3.')
@@ -2014,7 +2018,9 @@ except (FileNotFoundError, subprocess.CalledProcessError) as exc:
         <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  target: </span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">target_name</span><span class="si">}</span><span class="s1"> (</span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">target_len</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1"> bp)'</span><span class="p">)</span>
         <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  strand: </span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">strand</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">cigar</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'  CIGAR-derived identity: </span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">n_matches</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nb">max</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">alignment_length</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="si">:</span><span class="s1">.2%</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s1">'  CIGAR-derived identity: </span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">n_matches</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nb">max</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">alignment_length</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="si">:</span><span class="s1">.2%</span><span class="si">}</span><span class="s1">'</span>
+            <span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-3">if PAF_OUTPUT and Path(PAF_OUTPUT).exists():
     records = list(parse_paf_file(PAF_OUTPUT))
@@ -2025,7 +2031,9 @@ except (FileNotFoundError, subprocess.CalledProcessError) as exc:
         print(f'  target: {r.target_name} ({r.target_len:,} bp)')
         print(f'  strand: {r.strand}')
         if r.cigar:
-            print(f'  CIGAR-derived identity: {r.n_matches / max(r.alignment_length, 1):.2%}')</div>
+            print(
+                f'  CIGAR-derived identity: {r.n_matches / max(r.alignment_length, 1):.2%}'
+            )</div>
 </div>
 </div>
 </div>
@@ -2183,7 +2191,8 @@ print('Sorted target contigs:', t_sorted)</div>
     <span class="n">seq_lens</span><span class="p">[</span><span class="n">rec</span><span class="o">.</span><span class="n">target_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">target_len</span>
 
 <span class="c1"># Create synthetic sequences of the correct length for illustration</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">random</span><span class="o">,</span><span class="w"> </span><span class="nn">string</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+
 <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
 <span class="n">BASES</span> <span class="o">=</span> <span class="s1">'ACGT'</span>
 
@@ -2201,7 +2210,8 @@ for rec in aln.records:
     seq_lens[rec.target_name] = rec.target_len
 
 # Create synthetic sequences of the correct length for illustration
-import random, string
+import random
+
 random.seed(42)
 BASES = 'ACGT'
 
@@ -2252,6 +2262,7 @@ print(idx)</div>
 <span class="p">)</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">IPython.display</span><span class="w"> </span><span class="kn">import</span> <span class="n">Image</span>
+
 <span class="n">Image</span><span class="p">(</span><span class="s1">'/tmp/minimap2_dotplot.png'</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-7">plotter = DotPlotter(idx)
@@ -2271,6 +2282,7 @@ plotter.plot(
 )
 
 from IPython.display import Image
+
 Image('/tmp/minimap2_dotplot.png')</div>
 </div>
 </div>

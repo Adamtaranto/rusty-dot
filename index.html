@@ -1056,7 +1056,10 @@ At its core, it builds an <a href="https://en.wikipedia.org/wiki/FM-index">FM-in
 <li><strong>PAF format output</strong> for alignment records</li>
 <li><strong>FM-index serialization/deserialization</strong> with <a href="https://docs.rs/serde">serde</a> + bincode</li>
 <li><strong>All-vs-all dotplot visualization</strong> with matplotlib: forward hits in blue, RC hits in red; edge-only axis labels in grid plots; subpanels scaled by sequence length by default (<code>scale_sequences=True</code>)</li>
+<li><strong>SVG vector output</strong> via the <code>format</code> parameter (<code>format='svg'</code>) or by using a <code>.svg</code> file extension — suitable for publication-quality figures</li>
+<li><strong>Minimum alignment length filter</strong> (<code>min_length</code>) on <code>DotPlotter.plot()</code> / <code>plot_single()</code> — suppresses short or spurious alignment hits before rendering</li>
 <li><strong><code>CrossIdx</code></strong> multi-group cross-index: N arbitrary sequence groups, configurable group pairs for alignment, per-group contig ordering (insertion order, length, or collinearity), <code>run_merge</code> to update cached PAF records, compatible with <code>DotPlotter</code></li>
+<li><strong><code>PafAlignment.filter_by_min_length()</code></strong> — discard short alignment records from a loaded PAF file; filters on query aligned length</li>
 <li><strong>Full Python bindings</strong> via <a href="https://pyo3.rs">PyO3</a></li>
 </ul>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
@@ -1080,6 +1083,12 @@ At its core, it builds an <a href="https://en.wikipedia.org/wiki/FM-index">FM-in
 <a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="c1"># Generate dotplot — forward hits blue, RC hits red</span>
 <a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="n">plotter</span> <span class="o">=</span> <span class="n">DotPlotter</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
 <a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">output_path</span><span class="o">=</span><span class="s2">&quot;dotplot.png&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="c1"># Save as SVG vector image</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">output_path</span><span class="o">=</span><span class="s2">&quot;dotplot.svg&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="c1"># Filter short alignments (&lt; 200 bp) before plotting</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">output_path</span><span class="o">=</span><span class="s2">&quot;dotplot_filtered.png&quot;</span><span class="p">,</span> <span class="n">min_length</span><span class="o">=</span><span class="mi">200</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="documentation-sections">Documentation Sections<a class="headerlink" href="#documentation-sections" title="Permanent link">&para;</a></h2>
 <ul>

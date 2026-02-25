@@ -1920,28 +1920,28 @@ from rusty_dot.paf_io import CrossIndexPaf, PafAlignment, PafRecord</div>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="c1"># Sequences for "genome A" — three contigs of different lengths</span>
 <span class="n">genome_a</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s1">'contigA1'</span><span class="p">:</span> <span class="s1">'ACGTACGTACGTACGTACGT'</span> <span class="o">*</span> <span class="mi">10</span><span class="p">,</span>   <span class="c1"># 200 bp</span>
-    <span class="s1">'contigA2'</span><span class="p">:</span> <span class="s1">'TACGTACGTACGTACGTACG'</span> <span class="o">*</span> <span class="mi">5</span><span class="p">,</span>    <span class="c1"># 100 bp</span>
-    <span class="s1">'contigA3'</span><span class="p">:</span> <span class="s1">'GCGCGCGCGCGCGCGCGCGC'</span> <span class="o">*</span> <span class="mi">3</span><span class="p">,</span>   <span class="c1"># 60 bp</span>
+    <span class="s1">'contigA1'</span><span class="p">:</span> <span class="s1">'ACGTACGTACGTACGTACGT'</span> <span class="o">*</span> <span class="mi">10</span><span class="p">,</span>  <span class="c1"># 200 bp</span>
+    <span class="s1">'contigA2'</span><span class="p">:</span> <span class="s1">'TACGTACGTACGTACGTACG'</span> <span class="o">*</span> <span class="mi">5</span><span class="p">,</span>  <span class="c1"># 100 bp</span>
+    <span class="s1">'contigA3'</span><span class="p">:</span> <span class="s1">'GCGCGCGCGCGCGCGCGCGC'</span> <span class="o">*</span> <span class="mi">3</span><span class="p">,</span>  <span class="c1"># 60 bp</span>
 <span class="p">}</span>
 
 <span class="c1"># Sequences for "genome B" — three contigs</span>
 <span class="n">genome_b</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s1">'contigB1'</span><span class="p">:</span> <span class="s1">'ACGTACGTACGTACGTACGT'</span> <span class="o">*</span> <span class="mi">8</span><span class="p">,</span>   <span class="c1"># 160 bp  (similar to contigA1)</span>
+    <span class="s1">'contigB1'</span><span class="p">:</span> <span class="s1">'ACGTACGTACGTACGTACGT'</span> <span class="o">*</span> <span class="mi">8</span><span class="p">,</span>  <span class="c1"># 160 bp  (similar to contigA1)</span>
     <span class="s1">'contigB2'</span><span class="p">:</span> <span class="s1">'GCGCGCGCGCGCGCGCGCGC'</span> <span class="o">*</span> <span class="mi">4</span><span class="p">,</span>  <span class="c1"># 80 bp   (similar to contigA3)</span>
     <span class="s1">'contigB3'</span><span class="p">:</span> <span class="s1">'TTTTAAAAAGGGGCCCCTTTT'</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span>  <span class="c1"># 42 bp   (no matches)</span>
 <span class="p">}</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-2"># Sequences for "genome A" — three contigs of different lengths
 genome_a = {
-    'contigA1': 'ACGTACGTACGTACGTACGT' * 10,   # 200 bp
-    'contigA2': 'TACGTACGTACGTACGTACG' * 5,    # 100 bp
-    'contigA3': 'GCGCGCGCGCGCGCGCGCGC' * 3,   # 60 bp
+    'contigA1': 'ACGTACGTACGTACGTACGT' * 10,  # 200 bp
+    'contigA2': 'TACGTACGTACGTACGTACG' * 5,  # 100 bp
+    'contigA3': 'GCGCGCGCGCGCGCGCGCGC' * 3,  # 60 bp
 }
 
 # Sequences for "genome B" — three contigs
 genome_b = {
-    'contigB1': 'ACGTACGTACGTACGTACGT' * 8,   # 160 bp  (similar to contigA1)
+    'contigB1': 'ACGTACGTACGTACGTACGT' * 8,  # 160 bp  (similar to contigA1)
     'contigB2': 'GCGCGCGCGCGCGCGCGCGC' * 4,  # 80 bp   (similar to contigA3)
     'contigB3': 'TTTTAAAAAGGGGCCCCTTTT' * 2,  # 42 bp   (no matches)
 }</div>
@@ -2216,6 +2216,7 @@ print(combined_idx)</div>
 <span class="p">)</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">IPython.display</span><span class="w"> </span><span class="kn">import</span> <span class="n">Image</span>
+
 <span class="n">Image</span><span class="p">(</span><span class="s1">'/tmp/cross_index_dotplot.png'</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-7">plotter = DotPlotter(combined_idx)
@@ -2231,6 +2232,7 @@ plotter.plot(
 )
 
 from IPython.display import Image
+
 Image('/tmp/cross_index_dotplot.png')</div>
 </div>
 </div>

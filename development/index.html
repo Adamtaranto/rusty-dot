@@ -1319,12 +1319,12 @@ dependencies declared in <code>pyproject.toml</code>.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>Always re-run <code>maturin develop</code> after modifying any Rust source files
-(<code>src/*.rs</code>).  Pure Python changes in <code>python/rusty_dot/</code> take effect
+(<code>src/*.rs</code>). Pure Python changes in <code>python/rusty_dot/</code> take effect
 immediately without a rebuild.</p>
 </div>
 <h2 id="installing-pre-commit-hooks">Installing pre-commit hooks<a class="headerlink" href="#installing-pre-commit-hooks" title="Permanent link">&para;</a></h2>
 <p>rusty-dot uses <a href="https://pre-commit.com/">pre-commit</a> to enforce code quality
-on every commit.  Install the hooks once after cloning:</p>
+on every commit. Install the hooks once after cloning:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>pip<span class="w"> </span>install<span class="w"> </span>pre-commit<span class="w">   </span><span class="c1"># already included in the dev extras</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>pre-commit<span class="w"> </span>install<span class="w">                 </span><span class="c1"># install commit-stage hooks</span>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>pre-commit<span class="w"> </span>install<span class="w"> </span>--hook-type<span class="w"> </span>pre-push<span class="w">   </span><span class="c1"># install push-stage hooks</span>
@@ -1433,7 +1433,7 @@ formatting (configured in <code>pyproject.toml</code>).</p>
 <p>Install the docs dependencies (included in <code>pip install maturin --extras dev,docs</code>):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>mkdocs<span class="w"> </span>serve
 </code></pre></div>
-<p>Open <a href="http://127.0.0.1:8000">http://127.0.0.1:8000</a> in your browser.  The site rebuilds automatically
+<p>Open <a href="http://127.0.0.1:8000">http://127.0.0.1:8000</a> in your browser. The site rebuilds automatically
 when you save a documentation file.</p>
 <p>To build a static site:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>mkdocs<span class="w"> </span>build

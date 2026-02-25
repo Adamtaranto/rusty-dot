@@ -2420,8 +2420,8 @@ if paf_lines:
 </clipboard-copy>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="c1"># Save PAF output to a file</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 
 <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s1">'w'</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s1">'.paf'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
     <span class="n">paf_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
@@ -2432,8 +2432,8 @@ if paf_lines:
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'File size: </span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">paf_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes'</span><span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-9"># Save PAF output to a file
-import tempfile
 import os
+import tempfile
 
 with tempfile.NamedTemporaryFile(mode='w', suffix='.paf', delete=False) as fh:
     paf_path = fh.name
@@ -2477,8 +2477,8 @@ print(f'File size: {os.path.getsize(paf_path)} bytes')</div>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">gzip</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">gzip</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 
 <span class="n">fasta_content</span> <span class="o">=</span> <span class="s1">'&gt;seq1</span><span class="se">\n</span><span class="s1">ACGTACGTACGTACGTACGT</span><span class="se">\n</span><span class="s1">&gt;seq2</span><span class="se">\n</span><span class="s1">TACGTACGTACGTACGTACG</span><span class="se">\n</span><span class="s1">'</span>
 
@@ -2502,8 +2502,8 @@ print(f'File size: {os.path.getsize(paf_path)} bytes')</div>
 <span class="n">names_gz</span> <span class="o">=</span> <span class="n">idx3</span><span class="o">.</span><span class="n">load_fasta</span><span class="p">(</span><span class="n">gz_path</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Loaded from gzipped FASTA: </span><span class="si">{</span><span class="n">names_gz</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-10">import tempfile
-import gzip
+<div class="clipboard-copy-txt" id="cell-10">import gzip
+import tempfile
 
 fasta_content = '&gt;seq1\nACGTACGTACGTACGTACGT\n&gt;seq2\nTACGTACGTACGTACGTACG\n'
 
