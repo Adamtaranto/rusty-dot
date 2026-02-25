@@ -1,6 +1,8 @@
 """Tests for the dotplot visualization module."""
 
+import logging
 import os
+import textwrap
 
 import pytest
 
@@ -298,3 +300,218 @@ def test_plot_single_min_length_parameter_accepted(dotplot_index, tmp_path):
     assert axes[nrows - 1][ncols - 1].get_ylabel() == '', (
         'bottom-right should not have y-label'
     )
+
+
+# ---------------------------------------------------------------------------
+# PafAlignment source (identity colouring)
+# ---------------------------------------------------------------------------
+
+# Minimal PAF content with two records that have different identities:
+# - record 1: 45/50 matches → 0.9 identity (forward strand)
+# - record 2: 38/40 matches → 0.95 identity (minus strand)
+_PAF_WITH_IDENTITY = textwrap.dedent("""\
+    query1\t100\t0\t50\t+\ttarget1\t200\t10\t60\t45\t50\t255
+    query2\t80\t0\t40\t-\ttarget1\t200\t150\t190\t38\t40\t255
+""")
+
+
+def _write_temp_paf(content: str, tmp_path) -> str:
+    path = tmp_path / 'alignments.paf'
+    path.write_text(content)
+    return str(path)
+
+
+@pytest.fixture
+def paf_alignment(tmp_path):
+    """Return a PafAlignment loaded from a temp PAF file."""
+    from rusty_dot.paf_io import PafAlignment
+
+    path = _write_temp_paf(_PAF_WITH_IDENTITY, tmp_path)
+    return PafAlignment.from_file(path)
+
+
+def test_dotplotter_accepts_paf_alignment(paf_alignment):
+    """DotPlotter can be initialised with a PafAlignment."""
+    plotter = DotPlotter(paf_alignment)
+    assert plotter._is_paf_source
+
+
+def test_paf_source_length_map(paf_alignment):
+    """_paf_len_map is populated from PAF records."""
+    plotter = DotPlotter(paf_alignment)
+    assert plotter._get_sequence_length('query1') == 100
+    assert plotter._get_sequence_length('target1') == 200
+
+
+def test_paf_source_sequence_names(paf_alignment):
+    """_sequence_names returns all names seen in the PAF records."""
+    plotter = DotPlotter(paf_alignment)
+    names = set(plotter._sequence_names())
+    assert 'query1' in names
+    assert 'target1' in names
+
+
+def test_get_paf_matches_returns_identity(paf_alignment):
+    """_get_paf_matches returns tuples that include identity values."""
+    plotter = DotPlotter(paf_alignment)
+    matches = plotter._get_paf_matches('query1', 'target1', min_length=0)
+    assert len(matches) == 1
+    q_start, q_end, t_start, t_end, strand, identity = matches[0]
+    assert strand == '+'
+    assert identity == pytest.approx(0.9)
+
+
+def test_get_paf_matches_minus_strand_identity(paf_alignment):
+    """_get_paf_matches handles minus-strand records and computes identity."""
+    plotter = DotPlotter(paf_alignment)
+    matches = plotter._get_paf_matches('query2', 'target1', min_length=0)
+    assert len(matches) == 1
+    _, _, _, _, strand, identity = matches[0]
+    assert strand == '-'
+    assert identity == pytest.approx(0.95)
+
+
+def test_get_paf_matches_min_length_filter(paf_alignment):
+    """_get_paf_matches respects min_length filtering."""
+    plotter = DotPlotter(paf_alignment)
+    # query1 has query_aligned_len=50, query2 has 40
+    matches = plotter._get_paf_matches('query2', 'target1', min_length=50)
+    assert len(matches) == 0
+
+
+def test_plot_paf_source_creates_file(paf_alignment, tmp_path):
+    """plot() works with a PafAlignment source and produces a valid file."""
+    plotter = DotPlotter(paf_alignment)
+    output = str(tmp_path / 'paf_dotplot.png')
+    plotter.plot(
+        query_names=['query1', 'query2'],
+        target_names=['target1'],
+        output_path=output,
+        scale_sequences=False,
+    )
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_plot_paf_source_color_by_identity(paf_alignment, tmp_path):
+    """plot() with color_by_identity=True on a PAF source produces a file."""
+    plotter = DotPlotter(paf_alignment)
+    output = str(tmp_path / 'identity_plot.png')
+    plotter.plot(
+        query_names=['query1', 'query2'],
+        target_names=['target1'],
+        output_path=output,
+        color_by_identity=True,
+        palette='viridis',
+        scale_sequences=False,
+    )
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_plot_single_paf_source_color_by_identity(paf_alignment, tmp_path):
+    """plot_single() with color_by_identity=True on a PAF source works."""
+    plotter = DotPlotter(paf_alignment)
+    output = str(tmp_path / 'identity_single.png')
+    plotter.plot_single(
+        'query1', 'target1', output_path=output, color_by_identity=True
+    )
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_plot_identity_scale_creates_file(tmp_path):
+    """plot_identity_scale() creates a non-empty image file."""
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('seq1', 'ACGT' * 5)
+    plotter = DotPlotter(idx)
+    output = str(tmp_path / 'scale.png')
+    plotter.plot_identity_scale(output_path=output)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_plot_identity_scale_svg(tmp_path):
+    """plot_identity_scale() can produce an SVG file."""
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('seq1', 'ACGT' * 5)
+    plotter = DotPlotter(idx)
+    output = str(tmp_path / 'scale.svg')
+    plotter.plot_identity_scale(output_path=output)
+    assert os.path.exists(output)
+    with open(output) as f:
+        content = f.read(200)
+    assert '<svg' in content or '<?xml' in content
+
+
+def test_plot_identity_scale_custom_palette(tmp_path):
+    """plot_identity_scale() accepts a custom palette without error."""
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('seq1', 'ACGT' * 5)
+    plotter = DotPlotter(idx)
+    output = str(tmp_path / 'scale_rdylgn.png')
+    plotter.plot_identity_scale(output_path=output, palette='RdYlGn')
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_color_by_identity_warns_for_kmer_source(dotplot_index, tmp_path, caplog):
+    """A warning is emitted when color_by_identity=True with a k-mer source."""
+    plotter = DotPlotter(dotplot_index)
+    with caplog.at_level(logging.WARNING, logger='rusty_dot.dotplot'):
+        plotter.plot(
+            query_names=['seq1'],
+            target_names=['seq2'],
+            output_path=str(tmp_path / 'warn_kmer.png'),
+            color_by_identity=True,
+        )
+    assert any('color_by_identity' in msg for msg in caplog.messages)
+
+
+def test_color_by_identity_warns_for_kmer_source_plot_single(dotplot_index, tmp_path, caplog):
+    """A warning is emitted when color_by_identity=True in plot_single with a k-mer source."""
+    plotter = DotPlotter(dotplot_index)
+    with caplog.at_level(logging.WARNING, logger='rusty_dot.dotplot'):
+        plotter.plot_single(
+            'seq1',
+            'seq2',
+            output_path=str(tmp_path / 'warn_kmer_single.png'),
+            color_by_identity=True,
+        )
+    assert any('color_by_identity' in msg for msg in caplog.messages)
+
+
+def test_color_by_identity_no_warning_for_paf_source(paf_alignment, tmp_path, caplog):
+    """No warning is emitted when color_by_identity=True with a PAF source."""
+    plotter = DotPlotter(paf_alignment)
+    with caplog.at_level(logging.WARNING, logger='rusty_dot.dotplot'):
+        plotter.plot(
+            query_names=['query1'],
+            target_names=['target1'],
+            output_path=str(tmp_path / 'no_warn.png'),
+            color_by_identity=True,
+            scale_sequences=False,
+        )
+    assert not any('color_by_identity' in msg for msg in caplog.messages)
+
+
+def test_paf_source_panel_uses_identity_colours(paf_alignment):
+    """Lines are drawn with colours from the colormap when color_by_identity=True."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    plotter = DotPlotter(paf_alignment)
+    fig, ax = plt.subplots()
+    plotter._plot_panel(
+        ax, 'query1', 'target1', color_by_identity=True, palette='plasma'
+    )
+    plt.close(fig)
+
+    # At least one line must be drawn
+    assert len(ax.lines) > 0
+    # The line colour should not be plain 'blue' or 'red' (identity-mapped instead)
+    for line in ax.lines:
+        clr = line.get_color()
+        assert clr != 'blue' and clr != 'red'
