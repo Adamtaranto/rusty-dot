@@ -22,9 +22,12 @@ Written in Rust with PyO3 python bindings.
   - Forward hits drawn in **blue** (configurable via `dot_color`)
   - Reverse-complement hits drawn in **red** (configurable via `rc_color`)
   - Sequence names rendered once — at the bottom of each column and left of each row
+  - **SVG vector output** in addition to PNG/PDF via the `format` parameter
+  - **Minimum alignment length filter** (`min_length`) to suppress short/spurious hits before rendering
 - Cross-index comparisons between two sequence sets (e.g. two genome assemblies)
 - Relative sequence scaling in dotplot subpanels
 - Gravity-centre contig ordering for maximum collinearity
+- **`PafAlignment.filter_by_min_length()`** — discard short alignment records from a loaded PAF file
 - Full Python bindings via [PyO3](https://pyo3.rs)
 
 ## Installation
@@ -80,6 +83,12 @@ for line in idx.get_paf("contig1", "contig2"):
 # Sequence names appear once per column (bottom) and once per row (left).
 plotter = DotPlotter(idx)
 plotter.plot(output_path="all_vs_all.png", title="All vs All")
+
+# Save as an SVG vector image instead of PNG
+plotter.plot(output_path="all_vs_all.svg", title="All vs All")
+
+# Filter out short alignments (< 500 bp) before plotting
+plotter.plot(output_path="filtered.png", min_length=500)
 
 # Single pairwise dotplot
 plotter.plot_single("contig1", "contig2", output_path="pair.png")
@@ -167,6 +176,42 @@ plotter.plot(
     scale_sequences=True,   # subplot size proportional to sequence length
     title="Genome A vs Genome B",
 )
+
+# Save as SVG vector image for publication-quality output
+plotter.plot(
+    query_names=q_sorted,
+    target_names=t_sorted,
+    output_path="cross_dotplot.svg",
+    scale_sequences=True,
+    title="Genome A vs Genome B",
+)
+
+# Suppress short alignments (e.g. < 500 bp) from the plot
+plotter.plot(
+    query_names=q_sorted,
+    target_names=t_sorted,
+    output_path="cross_dotplot_filtered.png",
+    scale_sequences=True,
+    min_length=500,
+    title="Genome A vs Genome B (≥500 bp alignments)",
+)
+```
+
+## Filtering PAF Alignments by Length
+
+Use `PafAlignment.filter_by_min_length` to remove short alignment records after loading a PAF
+file.  This is particularly useful for cleaned-up visualisations when alignments have been
+merged from k-mer runs (which can be longer than the k-mer size) or when working with a
+pre-computed PAF file.
+
+```python
+from rusty_dot.paf_io import PafAlignment
+
+aln = PafAlignment.from_file("alignments.paf")
+
+# Keep only alignments of at least 500 bp on the query
+aln_long = aln.filter_by_min_length(500)
+print(f"Records before: {len(aln)}, after: {len(aln_long)}")
 ```
 
 ## Saving and Loading Indexes
