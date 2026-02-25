@@ -7,7 +7,7 @@ alignment records.
 ## CrossIdx — Multi-group cross-index
 
 `CrossIdx` (formerly `CrossIndexPaf`) manages sequences divided into named
-groups and computes cross-group pairwise comparisons.  It is compatible with
+groups and computes cross-group pairwise comparisons. It is compatible with
 :class:`~rusty_dot.dotplot.DotPlotter`.
 
 ### Alignment scope by number of groups

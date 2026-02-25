@@ -72,13 +72,13 @@ print(rusty_dot.__version__)
 
 !!! note
     Always re-run `maturin develop` after modifying any Rust source files
-    (`src/*.rs`).  Pure Python changes in `python/rusty_dot/` take effect
+    (`src/*.rs`). Pure Python changes in `python/rusty_dot/` take effect
     immediately without a rebuild.
 
 ## Installing pre-commit hooks
 
 rusty-dot uses [pre-commit](https://pre-commit.com/) to enforce code quality
-on every commit.  Install the hooks once after cloning:
+on every commit. Install the hooks once after cloning:
 
 ```bash
 pip install pre-commit   # already included in the dev extras
@@ -192,7 +192,7 @@ Install the docs dependencies (included in `pip install maturin --extras dev,doc
 mkdocs serve
 ```
 
-Open <http://127.0.0.1:8000> in your browser.  The site rebuilds automatically
+Open <http://127.0.0.1:8000> in your browser. The site rebuilds automatically
 when you save a documentation file.
 
 To build a static site:

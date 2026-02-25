@@ -200,7 +200,7 @@ plotter.plot(
 ## Filtering PAF Alignments by Length
 
 Use `PafAlignment.filter_by_min_length` to remove short alignment records after loading a PAF
-file.  This is particularly useful for cleaned-up visualisations when alignments have been
+file. This is particularly useful for cleaned-up visualisations when alignments have been
 merged from k-mer runs (which can be longer than the k-mer size) or when working with a
 pre-computed PAF file.
 
