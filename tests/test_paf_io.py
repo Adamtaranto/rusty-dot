@@ -187,6 +187,26 @@ class TestPafAlignment:
         filtered = self.aln.filter_by_target(['no_such_target'])
         assert len(filtered) == 0
 
+    def test_filter_by_min_length_keeps_long(self):
+        # SIMPLE_PAF has alignment_block_len values 50, 30, 40
+        # query_aligned_len: 50-0=50, 90-60=30, 40-0=40
+        filtered = self.aln.filter_by_min_length(40)
+        assert len(filtered) == 2  # records with query_aligned_len >= 40: 50 and 40
+
+    def test_filter_by_min_length_zero_keeps_all(self):
+        filtered = self.aln.filter_by_min_length(0)
+        assert len(filtered) == len(self.aln)
+
+    def test_filter_by_min_length_removes_all(self):
+        filtered = self.aln.filter_by_min_length(1000)
+        assert len(filtered) == 0
+
+    def test_filter_by_min_length_exact_boundary(self):
+        # Only keeps records where query_aligned_len >= 50 (exactly 50 passes)
+        filtered = self.aln.filter_by_min_length(50)
+        assert len(filtered) == 1
+        assert filtered.records[0].query_aligned_len == 50
+
 
 # ---------------------------------------------------------------------------
 # compute_gravity_contigs

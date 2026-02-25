@@ -5,7 +5,9 @@ This module provides:
 - :func:`parse_paf_file` — a generator that yields :class:`PafRecord` objects.
 - :class:`PafAlignment` — a container that loads PAF records from a file or
   a list and provides a :meth:`~PafAlignment.reorder_contigs` method to
-  reorganise sequences for maximum collinearity.
+  reorganise sequences for maximum collinearity, and a
+  :meth:`~PafAlignment.filter_by_min_length` method to discard short
+  alignments.
 - :class:`CrossIdx` — multi-group sequence index for cross-group pairwise
   comparisons (e.g. two or more genome assemblies).  Sequences are organised
   into named groups; alignments are computed between non-self group pairs.
@@ -629,6 +631,29 @@ class PafAlignment:
         """
         keep = set(names)
         return PafAlignment([r for r in self.records if r.target_name in keep])
+
+    def filter_by_min_length(self, min_length: int) -> 'PafAlignment':
+        """Return a new :class:`PafAlignment` keeping only records of sufficient length.
+
+        Filters on the query aligned length (``query_end - query_start``), which
+        equals the alignment block span for both merged k-mer runs and PAF
+        alignments imported from a file.
+
+        Parameters
+        ----------
+        min_length : int
+            Minimum alignment length (inclusive).  Records with a query aligned
+            length strictly less than ``min_length`` are discarded.
+
+        Returns
+        -------
+        PafAlignment
+            Filtered alignment containing only records with
+            ``query_aligned_len >= min_length``.
+        """
+        return PafAlignment(
+            [r for r in self.records if r.query_aligned_len >= min_length]
+        )
 
     # ------------------------------------------------------------------
     # Contig reordering
