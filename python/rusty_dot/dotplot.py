@@ -81,6 +81,8 @@ class DotPlotter:
         title: Optional[str] = None,
         dpi: int = 150,
         scale_sequences: bool = True,
+        format: Optional[str] = None,
+        min_length: int = 0,
     ) -> None:
         """Plot an all-vs-all dotplot grid.
 
@@ -98,7 +100,9 @@ class DotPlotter:
             Sequence names for the x-axis (columns). If ``None``, uses all
             sequences in the index.
         output_path : str or Path, optional
-            Output image file path. Default is ``"dotplot.png"``.
+            Output image file path. Default is ``"dotplot.png"``. Use a
+            ``.svg`` extension (or set ``format='svg'``) to produce an SVG
+            vector image.
         figsize_per_panel : float, optional
             Base size in inches for each subplot panel when
             ``scale_sequences=False``.  When ``scale_sequences=True`` this
@@ -123,6 +127,14 @@ class DotPlotter:
             proportional to the lengths of the corresponding sequences so that
             relative sequence sizes are preserved.  When ``False``, every
             panel has the same fixed size.
+        format : str, optional
+            Output image format (e.g. ``'png'``, ``'svg'``, ``'pdf'``).
+            When ``None`` (default), the format is inferred from the
+            ``output_path`` file extension.
+        min_length : int, optional
+            Minimum alignment length to display.  Matches shorter than this
+            value are not drawn.  Applies to merged k-mer runs and pre-computed
+            PAF alignments.  Default is ``0`` (no filtering).
         """
         all_names = self.index.sequence_names()
         if not all_names:
@@ -177,6 +189,7 @@ class DotPlotter:
                     dot_color=dot_color,
                     rc_color=rc_color,
                     merge=merge,
+                    min_length=min_length,
                     # Only label the leftmost column (y) and bottom row (x)
                     show_xlabel=(row_idx == nrows - 1),
                     show_ylabel=(col_idx == 0),
@@ -186,7 +199,7 @@ class DotPlotter:
             fig.suptitle(title, fontsize=14, y=1.01)
 
         plt.tight_layout()
-        plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight')
+        plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
         plt.close(fig)
 
     def _plot_panel(
@@ -198,6 +211,7 @@ class DotPlotter:
         dot_color: str = 'blue',
         rc_color: str = 'red',
         merge: bool = True,
+        min_length: int = 0,
         show_xlabel: bool = True,
         show_ylabel: bool = True,
     ) -> None:
@@ -219,6 +233,9 @@ class DotPlotter:
             Marker colour for reverse-complement (``-``) matches. Default is ``"red"``.
         merge : bool, optional
             Whether to merge sequential runs. Default is ``True``.
+        min_length : int, optional
+            Minimum alignment length to display.  Matches shorter than this
+            value are skipped.  Default is ``0`` (no filtering).
         show_xlabel : bool, optional
             Whether to render the target sequence name as an x-axis label.
             Default is ``True``.
@@ -233,6 +250,8 @@ class DotPlotter:
 
         # Draw match lines/dots; RC matches are drawn as anti-diagonal lines.
         for q_start, q_end, t_start, t_end, strand in matches:
+            if min_length > 0 and (q_end - q_start) < min_length:
+                continue
             if strand == '-':
                 # Reverse complement: as query advances (q_start→q_end) the
                 # target position retreats (t_end→t_start).
@@ -271,6 +290,8 @@ class DotPlotter:
         merge: bool = True,
         title: Optional[str] = None,
         dpi: int = 150,
+        format: Optional[str] = None,
+        min_length: int = 0,
     ) -> None:
         """Plot a single pairwise dotplot.
 
@@ -281,7 +302,9 @@ class DotPlotter:
         target_name : str
             Name of the target sequence (x-axis).
         output_path : str or Path, optional
-            Output image file path. Default is ``"dotplot.png"``.
+            Output image file path. Default is ``"dotplot.png"``. Use a
+            ``.svg`` extension (or set ``format='svg'``) to produce an SVG
+            vector image.
         figsize : tuple[float, float], optional
             Figure size as (width, height) in inches. Default is ``(6, 6)``.
         dot_size : float, optional
@@ -296,6 +319,14 @@ class DotPlotter:
             Plot title. If ``None``, a default title is used.
         dpi : int, optional
             Output image resolution. Default is ``150``.
+        format : str, optional
+            Output image format (e.g. ``'png'``, ``'svg'``, ``'pdf'``).
+            When ``None`` (default), the format is inferred from the
+            ``output_path`` file extension.
+        min_length : int, optional
+            Minimum alignment length to display.  Matches shorter than this
+            value are not drawn.  Applies to merged k-mer runs and pre-computed
+            PAF alignments.  Default is ``0`` (no filtering).
         """
         fig, ax = plt.subplots(figsize=figsize)
         self._plot_panel(
@@ -306,10 +337,11 @@ class DotPlotter:
             dot_color=dot_color,
             rc_color=rc_color,
             merge=merge,
+            min_length=min_length,
         )
         if title is None:
             title = f'{query_name} vs {target_name}'
         ax.set_title(title, fontsize=10)
         plt.tight_layout()
-        plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight')
+        plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
         plt.close(fig)

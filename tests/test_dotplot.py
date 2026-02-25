@@ -160,7 +160,97 @@ def test_plot_scale_sequences_false_matches_default(dotplot_index, tmp_path):
     assert os.path.getsize(out2) > 0
 
 
-def test_plot_grid_labels_only_at_edges():
+def test_plot_svg_format_extension(dotplot_index, tmp_path):
+    """Test that SVG output is produced when the output path has a .svg extension."""
+    plotter = DotPlotter(dotplot_index)
+    output = str(tmp_path / 'dotplot.svg')
+    plotter.plot(output_path=output)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+    # SVG files start with XML/SVG markup
+    with open(output, 'r') as f:
+        content = f.read(100)
+    assert '<svg' in content or '<?xml' in content
+
+
+def test_plot_single_svg_format_extension(dotplot_index, tmp_path):
+    """Test that plot_single produces SVG output via file extension."""
+    plotter = DotPlotter(dotplot_index)
+    output = str(tmp_path / 'single.svg')
+    plotter.plot_single('seq1', 'seq2', output_path=output)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+    with open(output, 'r') as f:
+        content = f.read(100)
+    assert '<svg' in content or '<?xml' in content
+
+
+def test_plot_svg_explicit_format_parameter(dotplot_index, tmp_path):
+    """Test that format='svg' forces SVG output even with a .png extension."""
+    plotter = DotPlotter(dotplot_index)
+    output = str(tmp_path / 'dotplot.png')
+    plotter.plot(output_path=output, format='svg')
+    assert os.path.exists(output)
+    with open(output, 'r') as f:
+        content = f.read(100)
+    assert '<svg' in content or '<?xml' in content
+
+
+def test_plot_single_svg_explicit_format_parameter(dotplot_index, tmp_path):
+    """Test that format='svg' in plot_single forces SVG output."""
+    plotter = DotPlotter(dotplot_index)
+    output = str(tmp_path / 'single.png')
+    plotter.plot_single('seq1', 'seq2', output_path=output, format='svg')
+    assert os.path.exists(output)
+    with open(output, 'r') as f:
+        content = f.read(100)
+    assert '<svg' in content or '<?xml' in content
+
+
+def test_plot_min_length_filters_short_matches(tmp_path):
+    """Setting min_length filters out short matches from the dotplot."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    # Sequences with only short (k=4) matches when unmerged
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('q', 'ACGTACGTACGT')
+    idx.add_sequence('t', 'ACGTACGTACGT')
+    plotter = DotPlotter(idx)
+
+    fig, ax_all = plt.subplots()
+    plotter._plot_panel(ax_all, 'q', 't', min_length=0)
+    n_lines_all = len(ax_all.lines)
+    plt.close(fig)
+
+    fig, ax_filtered = plt.subplots()
+    # A very large min_length should filter everything out
+    plotter._plot_panel(ax_filtered, 'q', 't', min_length=10000)
+    n_lines_filtered = len(ax_filtered.lines)
+    plt.close(fig)
+
+    assert n_lines_all > 0
+    assert n_lines_filtered == 0
+
+
+def test_plot_min_length_parameter_accepted(dotplot_index, tmp_path):
+    """Test that min_length parameter is accepted in plot() without error."""
+    plotter = DotPlotter(dotplot_index)
+    output = str(tmp_path / 'minlen.png')
+    plotter.plot(output_path=output, min_length=5)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_plot_single_min_length_parameter_accepted(dotplot_index, tmp_path):
+    """Test that min_length parameter is accepted in plot_single() without error."""
+    plotter = DotPlotter(dotplot_index)
+    output = str(tmp_path / 'minlen_single.png')
+    plotter.plot_single('seq1', 'seq2', output_path=output, min_length=5)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
     """In a multi-panel grid plot, x-labels appear only on the bottom row
     and y-labels appear only on the leftmost column."""
     import matplotlib
