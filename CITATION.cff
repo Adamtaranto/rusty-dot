@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "Rusty-dot: A Python library for making dot-plot comparisons of DNA sequences powered by a fast Rust FM-Index."
 version: 0.1.0
-date-released: 2026-02-24
+date-released: 2026-02-25
 authors:
   - family-names: Taranto
     given-names: Adam
