@@ -8,7 +8,7 @@ This module provides:
   reorganise sequences for maximum collinearity, and a
   :meth:`~PafAlignment.filter_by_min_length` method to discard short
   alignments.
-- :class:`CrossIdx` — multi-group sequence index for cross-group pairwise
+- :class:`CrossIndex` — multi-group sequence index for cross-group pairwise
   comparisons (e.g. two or more genome assemblies).  Sequences are organised
   into named groups; alignments are computed between non-self group pairs.
   Compatible with :class:`~rusty_dot.dotplot.DotPlotter`.
@@ -688,11 +688,11 @@ class PafAlignment:
 
 
 # ---------------------------------------------------------------------------
-# CrossIdx: multi-group pairwise sequence comparisons
+# CrossIndex: multi-group pairwise sequence comparisons
 # ---------------------------------------------------------------------------
 
 
-class CrossIdx:
+class CrossIndex:
     """Multi-group sequence index for cross-group pairwise comparisons.
 
     Sequences are organised into named groups (e.g. ``'assembly_a'``,
@@ -710,11 +710,11 @@ class CrossIdx:
 
     **DotPlotter compatibility**
 
-    ``CrossIdx`` exposes :meth:`get_sequence_length`,
+    ``CrossIndex`` exposes :meth:`get_sequence_length`,
     :meth:`compare_sequences_stranded`, and :meth:`sequence_names` so that it
     can be passed directly to :class:`~rusty_dot.dotplot.DotPlotter`::
 
-        cross = CrossIdx(k=15)
+        cross = CrossIndex(k=15)
         cross.load_fasta("assembly_a.fasta", group="a")
         cross.load_fasta("assembly_b.fasta", group="b")
 
@@ -733,15 +733,15 @@ class CrossIdx:
 
     Examples
     --------
-    >>> from rusty_dot.paf_io import CrossIdx
-    >>> cross = CrossIdx(k=10)
+    >>> from rusty_dot.paf_io import CrossIndex
+    >>> cross = CrossIndex(k=10)
     >>> cross.load_fasta("genome_a.fasta", group="a")
     >>> cross.load_fasta("genome_b.fasta", group="b")
     >>> paf_lines = cross.get_paf()
     """
 
     def __init__(self, k: int) -> None:
-        """Initialise an empty CrossIdx.
+        """Initialise an empty CrossIndex.
 
         Parameters
         ----------
@@ -1054,7 +1054,7 @@ class CrossIdx:
         paf_lines: list[str] = []
         for query_group, target_group in group_pairs:
             _log.info(
-                'CrossIdx: computing %d x %d pairwise alignments '
+                'CrossIndex: computing %d x %d pairwise alignments '
                 'between group %r (%d sequences) and group %r (%d sequences)',
                 len(self._groups.get(query_group, [])),
                 len(self._groups.get(target_group, [])),
@@ -1121,7 +1121,7 @@ class CrossIdx:
         # Single group or no group 'b': all-vs-all within group 'a'
         names_a = self._groups.get('a', [])
         _log.info(
-            'CrossIdx: computing all-vs-all pairwise alignments '
+            'CrossIndex: computing all-vs-all pairwise alignments '
             'within group a (%d sequences)',
             len(names_a),
         )
@@ -1200,10 +1200,10 @@ class CrossIdx:
         Returns
         -------
         str
-            ``CrossIdx(k=<k>, groups={<label>=<n>, ...})``.
+            ``CrossIndex(k=<k>, groups={<label>=<n>, ...})``.
         """
         group_info = ', '.join(f'{g}={len(names)}' for g, names in self._groups.items())
-        return f'CrossIdx(k={self._k}, groups={{{group_info}}})'
+        return f'CrossIndex(k={self._k}, groups={{{group_info}}})'
 
     def __str__(self) -> str:
         """Return a human-readable stats summary.
@@ -1215,7 +1215,7 @@ class CrossIdx:
             record count.
         """
         n_total = sum(len(v) for v in self._groups.values())
-        lines = [f'CrossIdx (k={self._k})']
+        lines = [f'CrossIndex (k={self._k})']
         lines.append(f'  Total sequences : {n_total}')
         for g, names in self._groups.items():
             lines.append(f'  Group {g!r:12s}: {len(names):>6d} sequences')
@@ -1223,9 +1223,3 @@ class CrossIdx:
         return '\n'.join(lines)
 
 
-# ---------------------------------------------------------------------------
-# Backward-compatible alias
-# ---------------------------------------------------------------------------
-
-#: Alias for :class:`CrossIdx` kept for backward compatibility.
-CrossIndexPaf = CrossIdx
