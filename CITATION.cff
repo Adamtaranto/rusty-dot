@@ -11,7 +11,7 @@ authors:
 repository-code: "https://github.com/Adamtaranto/rusty-dot"
 license: GPL-3
 abstract: >-
-  "rusty-dot is a high performance toolkit for generating dot-plot vizualisations between DNA sequences Rust. The core functions are written in Rust for speed and efficiency, we use the FM-Index from Rust-Bio for fast k-mer lookup. Python bindings are provided via PyO3 Maturin and allow rusty-dot to be imported and used as a standard Python library. "
+  "rusty-dot is a high performance toolkit for generating dot-plot vizualisations between DNA sequences Rust. The core functions are written in Rust for speed and efficiency, we use the FM-Index for fast lookups."
 keywords:
   - genome-vizualization
   - bioinformatics
