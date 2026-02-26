@@ -29,6 +29,7 @@ from rusty_dot._rusty_dot import (  # noqa: F401
     py_read_fasta,
     py_save_index,
 )
+from rusty_dot.annotation import GffAnnotation, GffFeature  # noqa: F401
 from rusty_dot.dotplot import DotPlotter  # noqa: F401
 from rusty_dot.paf_io import (  # noqa: F401
     CrossIndex,
@@ -47,6 +48,8 @@ __all__ = [
     'PafAlignment',
     'parse_paf_file',
     'compute_gravity_contigs',
+    'GffAnnotation',
+    'GffFeature',
     'py_read_fasta',
     'py_build_kmer_set',
     'py_find_kmer_coords',
