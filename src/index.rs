@@ -183,12 +183,34 @@ impl SequenceIndex {
     ///     sequence names.
     #[cfg(feature = "fasta")]
     pub fn load_fasta(&mut self, py: Python<'_>, path: &str) -> PyResult<Vec<String>> {
-        use crate::fasta::read_fasta;
-        // read_fasta now errors on internal FASTA duplicates and returns Vec in file order
-        let seqs = read_fasta(path).map_err(|e| -> pyo3::PyErr { e.into() })?;
+        use crate::error::RustyDotError;
+        use needletail::parse_fastx_file;
+        use std::collections::HashSet;
+        use std::path::Path;
+
         let warnings = py.import_bound("warnings")?;
-        let mut names = Vec::new();
-        for (name, seq) in &seqs {
+        let mut names: Vec<String> = Vec::new();
+        let mut seen_in_file: HashSet<String> = HashSet::new();
+
+        let mut reader = parse_fastx_file(Path::new(path))
+            .map_err(|e| -> pyo3::PyErr { RustyDotError::FastaParse(e.to_string()).into() })?;
+
+        while let Some(record) = reader.next() {
+            let record = record
+                .map_err(|e| -> pyo3::PyErr { RustyDotError::FastaParse(e.to_string()).into() })?;
+            let name = String::from_utf8_lossy(record.id())
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string();
+            let seq = String::from_utf8_lossy(&record.seq()).to_uppercase();
+
+            if !seen_in_file.insert(name.clone()) {
+                return Err(RustyDotError::FastaParse(format!(
+                    "duplicate sequence name '{name}' in FASTA file '{path}'"
+                ))
+                .into());
+            }
             if self.sequences.contains_key(name.as_str()) {
                 warnings.call_method1(
                     "warn",
@@ -200,9 +222,10 @@ impl SequenceIndex {
                     ),
                 )?;
             }
-            let text = sequence_to_index_text(seq);
+            let text = sequence_to_index_text(&seq);
             let fm = FmIdx::new(text).map_err(|e| -> pyo3::PyErr { e.into() })?;
-            let kmer_set = build_kmer_set(seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
+            let kmer_set =
+                build_kmer_set(&seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
             let seq_len = seq.len();
             let seq_bytes = seq.as_bytes().to_vec();
             self.sequences.insert(
@@ -214,7 +237,7 @@ impl SequenceIndex {
                     seq_len,
                 },
             );
-            names.push(name.clone());
+            names.push(name);
         }
         Ok(names)
     }
