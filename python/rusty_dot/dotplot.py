@@ -269,7 +269,9 @@ class DotPlotter:
 
                 # Column label at top of each column (top row only), rotated.
                 if row_idx == 0:
-                    ax.set_title(t_name, fontsize=8, rotation=45, ha='left', va='bottom')
+                    ax.set_title(
+                        t_name, fontsize=8, rotation=45, ha='left', va='bottom'
+                    )
 
                 # Suppress redundant tick labels on internal panels.
                 if row_idx < nrows - 1:

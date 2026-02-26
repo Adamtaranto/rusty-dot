@@ -397,7 +397,7 @@ def test_plot_annotation_squares_drawn(dotplot_index, simple_annotation):
     n_patches_diag = len(axes[0][0].patches)
     n_patches_off = len(axes[0][1].patches)
     assert n_patches_diag == 2  # two seq1 features
-    assert n_patches_off == 0   # off-diagonal: no patches
+    assert n_patches_off == 0  # off-diagonal: no patches
 
 
 def test_plot_warns_when_annotation_contains_unknown_sequences(dotplot_index, caplog):
@@ -479,7 +479,9 @@ def test_plot_single_no_annotation_single_ax(dotplot_index):
     plt.close(fig)
 
 
-def test_plot_single_self_vs_self_with_annotation(dotplot_index, simple_annotation, tmp_path):
+def test_plot_single_self_vs_self_with_annotation(
+    dotplot_index, simple_annotation, tmp_path
+):
     """plot_single() works for self-vs-self with annotation tracks."""
     plotter = DotPlotter(dotplot_index)
     output = str(tmp_path / 'self_annotated.png')

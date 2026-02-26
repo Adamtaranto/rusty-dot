@@ -181,8 +181,7 @@ class GffAnnotation:
         """
         if palette not in SUPPORTED_PALETTES:
             raise ValueError(
-                f"Unknown palette {palette!r}. "
-                f"Choose from: {SUPPORTED_PALETTES}"
+                f'Unknown palette {palette!r}. Choose from: {SUPPORTED_PALETTES}'
             )
         self._records: list[GffFeature] = list(records)
         self._palette = palette
