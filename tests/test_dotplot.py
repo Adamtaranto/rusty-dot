@@ -349,7 +349,9 @@ def test_plot_no_output_path_creates_no_file(dotplot_index, tmp_path, monkeypatc
     assert list(tmp_path.iterdir()) == []
 
 
-def test_plot_single_no_output_path_creates_no_file(dotplot_index, tmp_path, monkeypatch):
+def test_plot_single_no_output_path_creates_no_file(
+    dotplot_index, tmp_path, monkeypatch
+):
     """plot_single() with output_path=None does not create any file."""
     monkeypatch.chdir(tmp_path)
     plotter = DotPlotter(dotplot_index)

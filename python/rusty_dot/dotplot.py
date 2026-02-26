@@ -12,8 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
-import matplotlib.pyplot as plt
 import matplotlib.figure
+import matplotlib.pyplot as plt
 
 from rusty_dot._rusty_dot import SequenceIndex
 
