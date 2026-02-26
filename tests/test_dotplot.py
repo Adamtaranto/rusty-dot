@@ -413,9 +413,7 @@ def test_plot_single_paf_source_color_by_identity(paf_alignment, tmp_path):
     """plot_single() with color_by_identity=True on a PAF source works."""
     plotter = DotPlotter(paf_alignment)
     output = str(tmp_path / 'identity_single.png')
-    plotter.plot_single(
-        'query1', 'target1', output_path=output, color_by_identity=True
-    )
+    plotter.plot_single('query1', 'target1', output_path=output, color_by_identity=True)
     assert os.path.exists(output)
     assert os.path.getsize(output) > 0
 
@@ -468,7 +466,9 @@ def test_color_by_identity_warns_for_kmer_source(dotplot_index, tmp_path, caplog
     assert any('color_by_identity' in msg for msg in caplog.messages)
 
 
-def test_color_by_identity_warns_for_kmer_source_plot_single(dotplot_index, tmp_path, caplog):
+def test_color_by_identity_warns_for_kmer_source_plot_single(
+    dotplot_index, tmp_path, caplog
+):
     """A warning is emitted when color_by_identity=True in plot_single with a k-mer source."""
     plotter = DotPlotter(dotplot_index)
     with caplog.at_level(logging.WARNING, logger='rusty_dot.dotplot'):

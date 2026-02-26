@@ -28,7 +28,6 @@ if TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 
-
 class DotPlotter:
     """Generate all-vs-all dotplots for sets of DNA sequences.
 
@@ -81,7 +80,9 @@ class DotPlotter:
     >>> plotter.plot(output_path="dotplot.png")
     """
 
-    def __init__(self, index: Union[SequenceIndex, 'CrossIndex', 'PafAlignment']) -> None:
+    def __init__(
+        self, index: Union[SequenceIndex, 'CrossIndex', 'PafAlignment']
+    ) -> None:
         """Initialise the DotPlotter.
 
         Parameters
@@ -412,7 +413,9 @@ class DotPlotter:
                     alpha=0.7,
                 )
         else:
-            matches = self.index.compare_sequences_stranded(query_name, target_name, merge)  # type: ignore[union-attr]
+            matches = self.index.compare_sequences_stranded(
+                query_name, target_name, merge
+            )  # type: ignore[union-attr]
 
             # Draw match lines/dots; RC matches are drawn as anti-diagonal lines.
             for q_start, q_end, t_start, t_end, strand in matches:
