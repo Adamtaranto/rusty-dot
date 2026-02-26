@@ -20,18 +20,18 @@ import matplotlib.pyplot as plt
 from rusty_dot._rusty_dot import SequenceIndex
 
 if TYPE_CHECKING:
-    from rusty_dot.paf_io import CrossIdx
+    from rusty_dot.paf_io import CrossIndex
 
 
 class DotPlotter:
     """Generate all-vs-all dotplots for sets of DNA sequences.
 
     Accepts either a :class:`~rusty_dot.SequenceIndex` (single sequence
-    collection) or a :class:`~rusty_dot.paf_io.CrossIdx` (multi-group
-    collection).  When using a ``CrossIdx``, pass group-specific names via
+    collection) or a :class:`~rusty_dot.paf_io.CrossIndex` (multi-group
+    collection).  When using a ``CrossIndex``, pass group-specific names via
     ``query_names`` and ``target_names``::
 
-        cross = CrossIdx(k=15)
+        cross = CrossIndex(k=15)
         cross.load_fasta("assembly_a.fasta", group="a")
         cross.load_fasta("assembly_b.fasta", group="b")
 
@@ -44,7 +44,7 @@ class DotPlotter:
 
     Parameters
     ----------
-    index : SequenceIndex or CrossIdx
+    index : SequenceIndex or CrossIndex
         A populated index instance.
 
     Examples
@@ -58,12 +58,12 @@ class DotPlotter:
     >>> plotter.plot(output_path="dotplot.png")
     """
 
-    def __init__(self, index: Union[SequenceIndex, 'CrossIdx']) -> None:
+    def __init__(self, index: Union[SequenceIndex, 'CrossIndex']) -> None:
         """Initialise the DotPlotter.
 
         Parameters
         ----------
-        index : SequenceIndex or CrossIdx
+        index : SequenceIndex or CrossIndex
             A populated index instance.
         """
         self.index = index
