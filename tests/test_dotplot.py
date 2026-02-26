@@ -380,7 +380,7 @@ def _make_paf_alignment(query_name='seq1', target_name='seq2'):
             target_len=20,
             target_start=0,
             target_end=10,
-            residue_matches=9,   # 90% identity
+            residue_matches=9,  # 90% identity
             alignment_block_len=10,
             mapping_quality=255,
         ),
@@ -394,7 +394,7 @@ def _make_paf_alignment(query_name='seq1', target_name='seq2'):
             target_len=20,
             target_start=12,
             target_end=20,
-            residue_matches=8,   # identity = 8/8 = 100%
+            residue_matches=8,  # identity = 8/8 = 100%
             alignment_block_len=8,
             mapping_quality=255,
         ),
@@ -459,8 +459,11 @@ def test_plot_color_by_identity_custom_palette(dotplot_index, tmp_path):
     plotter = DotPlotter(dotplot_index, paf_alignment=paf)
     output = str(tmp_path / 'plasma.png')
     fig = plotter.plot_single(
-        'seq1', 'seq2', output_path=output,
-        color_by_identity=True, identity_palette='plasma',
+        'seq1',
+        'seq2',
+        output_path=output,
+        color_by_identity=True,
+        identity_palette='plasma',
     )
     plt.close(fig)
     assert os.path.exists(output)
@@ -553,7 +556,9 @@ def test_plot_identity_colorbar_custom_palette(dotplot_index, tmp_path):
     assert os.path.getsize(output) > 0
 
 
-def test_plot_identity_colorbar_no_file_without_output(dotplot_index, tmp_path, monkeypatch):
+def test_plot_identity_colorbar_no_file_without_output(
+    dotplot_index, tmp_path, monkeypatch
+):
     """plot_identity_colorbar() with output_path=None does not create any file."""
     import matplotlib
 
@@ -579,9 +584,17 @@ def test_plot_color_by_identity_grid(dotplot_index, tmp_path):
         for t in ['seq1', 'seq2']:
             paf_records.append(
                 PafRecord(
-                    query_name=q, query_len=20, query_start=0, query_end=10,
-                    strand='+', target_name=t, target_len=20, target_start=0,
-                    target_end=10, residue_matches=10, alignment_block_len=10,
+                    query_name=q,
+                    query_len=20,
+                    query_start=0,
+                    query_end=10,
+                    strand='+',
+                    target_name=t,
+                    target_len=20,
+                    target_start=0,
+                    target_end=10,
+                    residue_matches=10,
+                    alignment_block_len=10,
                     mapping_quality=255,
                 )
             )
@@ -609,15 +622,31 @@ def test_plot_color_by_identity_min_length_filters(dotplot_index):
 
     records = [
         PafRecord(
-            query_name='seq1', query_len=20, query_start=0, query_end=5,
-            strand='+', target_name='seq2', target_len=20, target_start=0,
-            target_end=5, residue_matches=5, alignment_block_len=5,
+            query_name='seq1',
+            query_len=20,
+            query_start=0,
+            query_end=5,
+            strand='+',
+            target_name='seq2',
+            target_len=20,
+            target_start=0,
+            target_end=5,
+            residue_matches=5,
+            alignment_block_len=5,
             mapping_quality=255,
         ),
         PafRecord(
-            query_name='seq1', query_len=20, query_start=10, query_end=20,
-            strand='+', target_name='seq2', target_len=20, target_start=10,
-            target_end=20, residue_matches=10, alignment_block_len=10,
+            query_name='seq1',
+            query_len=20,
+            query_start=10,
+            query_end=20,
+            strand='+',
+            target_name='seq2',
+            target_len=20,
+            target_start=10,
+            target_end=20,
+            residue_matches=10,
+            alignment_block_len=10,
             mapping_quality=255,
         ),
     ]
@@ -630,7 +659,9 @@ def test_plot_color_by_identity_min_length_filters(dotplot_index):
     plt.close(fig)
 
     fig, ax_filtered = plt.subplots()
-    plotter._plot_panel(ax_filtered, 'seq1', 'seq2', color_by_identity=True, min_length=8)
+    plotter._plot_panel(
+        ax_filtered, 'seq1', 'seq2', color_by_identity=True, min_length=8
+    )
     n_filtered = len(ax_filtered.lines)
     plt.close(fig)
 

@@ -348,7 +348,9 @@ class DotPlotter:
         else:
             # Draw match lines/dots from k-mer index; RC matches are drawn as
             # anti-diagonal lines.
-            matches = self.index.compare_sequences_stranded(query_name, target_name, merge)
+            matches = self.index.compare_sequences_stranded(
+                query_name, target_name, merge
+            )
             for q_start, q_end, t_start, t_end, strand in matches:
                 if min_length > 0 and (q_end - q_start) < min_length:
                     continue
