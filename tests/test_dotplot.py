@@ -358,3 +358,312 @@ def test_plot_single_no_output_path_creates_no_file(
     fig = plotter.plot_single('seq1', 'seq2')
     plt.close(fig)
     assert list(tmp_path.iterdir()) == []
+
+
+# ---------------------------------------------------------------------------
+# Identity colouring tests
+# ---------------------------------------------------------------------------
+
+
+def _make_paf_alignment(query_name='seq1', target_name='seq2'):
+    """Build a small PafAlignment with varying identity records."""
+    from rusty_dot.paf_io import PafAlignment, PafRecord
+
+    records = [
+        PafRecord(
+            query_name=query_name,
+            query_len=20,
+            query_start=0,
+            query_end=10,
+            strand='+',
+            target_name=target_name,
+            target_len=20,
+            target_start=0,
+            target_end=10,
+            residue_matches=9,  # 90% identity
+            alignment_block_len=10,
+            mapping_quality=255,
+        ),
+        PafRecord(
+            query_name=query_name,
+            query_len=20,
+            query_start=12,
+            query_end=20,
+            strand='-',
+            target_name=target_name,
+            target_len=20,
+            target_start=12,
+            target_end=20,
+            residue_matches=8,  # identity = 8/8 = 100%
+            alignment_block_len=8,
+            mapping_quality=255,
+        ),
+    ]
+    return PafAlignment(records)
+
+
+def test_dotplotter_accepts_paf_alignment(dotplot_index):
+    """DotPlotter can be constructed with a paf_alignment argument."""
+    paf = _make_paf_alignment()
+    plotter = DotPlotter(dotplot_index, paf_alignment=paf)
+    assert plotter.paf_alignment is paf
+
+
+def test_dotplotter_paf_alignment_defaults_none(dotplot_index):
+    """paf_alignment defaults to None when not supplied."""
+    plotter = DotPlotter(dotplot_index)
+    assert plotter.paf_alignment is None
+
+
+def test_plot_color_by_identity_with_paf(dotplot_index, tmp_path):
+    """color_by_identity=True with a PafAlignment produces a valid plot file."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    paf = _make_paf_alignment(query_name='seq1', target_name='seq2')
+    plotter = DotPlotter(dotplot_index, paf_alignment=paf)
+    output = str(tmp_path / 'identity.png')
+    fig = plotter.plot_single(
+        'seq1', 'seq2', output_path=output, color_by_identity=True
+    )
+    plt.close(fig)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_plot_color_by_identity_lines_drawn(dotplot_index):
+    """color_by_identity=True draws lines from PAF records, not k-mer matches."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    paf = _make_paf_alignment(query_name='seq1', target_name='seq2')
+    plotter = DotPlotter(dotplot_index, paf_alignment=paf)
+
+    fig, ax = plt.subplots()
+    plotter._plot_panel(ax, 'seq1', 'seq2', color_by_identity=True)
+    plt.close(fig)
+
+    # Two PAF records → two lines drawn
+    assert len(ax.lines) == 2
+
+
+def test_plot_color_by_identity_custom_palette(dotplot_index, tmp_path):
+    """identity_palette parameter is accepted without error."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    paf = _make_paf_alignment(query_name='seq1', target_name='seq2')
+    plotter = DotPlotter(dotplot_index, paf_alignment=paf)
+    output = str(tmp_path / 'plasma.png')
+    fig = plotter.plot_single(
+        'seq1',
+        'seq2',
+        output_path=output,
+        color_by_identity=True,
+        identity_palette='plasma',
+    )
+    plt.close(fig)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_plot_color_by_identity_warns_without_paf(dotplot_index, caplog):
+    """color_by_identity=True without a PafAlignment logs a warning."""
+    import logging
+
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    plotter = DotPlotter(dotplot_index)
+    with caplog.at_level(logging.WARNING, logger='rusty_dot.dotplot'):
+        fig, ax = plt.subplots()
+        plotter._plot_panel(ax, 'seq1', 'seq2', color_by_identity=True)
+        plt.close(fig)
+
+    assert any('color_by_identity' in msg for msg in caplog.messages)
+
+
+def test_plot_color_by_identity_fallback_uses_kmer_matches(dotplot_index):
+    """After warning, the panel falls back to k-mer match lines (not zero lines)."""
+    import logging
+
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    plotter = DotPlotter(dotplot_index)
+
+    fig_kmer, ax_kmer = plt.subplots()
+    plotter._plot_panel(ax_kmer, 'seq1', 'seq2', color_by_identity=False)
+    n_kmer = len(ax_kmer.lines)
+    plt.close(fig_kmer)
+
+    # Suppress the expected warning to keep test output clean.
+    fig_warn, ax_warn = plt.subplots()
+    logging.disable(logging.WARNING)
+    try:
+        plotter._plot_panel(ax_warn, 'seq1', 'seq2', color_by_identity=True)
+    finally:
+        logging.disable(logging.NOTSET)
+    n_fallback = len(ax_warn.lines)
+    plt.close(fig_warn)
+
+    # fallback should produce the same number of lines as the normal k-mer plot
+    assert n_fallback == n_kmer
+
+
+def test_plot_identity_colorbar_returns_figure(dotplot_index):
+    """plot_identity_colorbar() returns a matplotlib Figure."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    plotter = DotPlotter(dotplot_index)
+    fig = plotter.plot_identity_colorbar()
+    assert isinstance(fig, matplotlib.figure.Figure)
+    plt.close(fig)
+
+
+def test_plot_identity_colorbar_saves_file(dotplot_index, tmp_path):
+    """plot_identity_colorbar() saves a file when output_path is given."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    plotter = DotPlotter(dotplot_index)
+    output = str(tmp_path / 'colorbar.png')
+    fig = plotter.plot_identity_colorbar(output_path=output)
+    plt.close(fig)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_plot_identity_colorbar_custom_palette(dotplot_index, tmp_path):
+    """plot_identity_colorbar() accepts a custom palette name."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    plotter = DotPlotter(dotplot_index)
+    output = str(tmp_path / 'colorbar_plasma.png')
+    fig = plotter.plot_identity_colorbar(palette='plasma', output_path=output)
+    plt.close(fig)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_plot_identity_colorbar_no_file_without_output(
+    dotplot_index, tmp_path, monkeypatch
+):
+    """plot_identity_colorbar() with output_path=None does not create any file."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    monkeypatch.chdir(tmp_path)
+    plotter = DotPlotter(dotplot_index)
+    fig = plotter.plot_identity_colorbar()
+    plt.close(fig)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_plot_color_by_identity_grid(dotplot_index, tmp_path):
+    """color_by_identity=True works in multi-panel grid plot()."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    paf_records = []
+    from rusty_dot.paf_io import PafAlignment, PafRecord
+
+    for q in ['seq1', 'seq2']:
+        for t in ['seq1', 'seq2']:
+            paf_records.append(
+                PafRecord(
+                    query_name=q,
+                    query_len=20,
+                    query_start=0,
+                    query_end=10,
+                    strand='+',
+                    target_name=t,
+                    target_len=20,
+                    target_start=0,
+                    target_end=10,
+                    residue_matches=10,
+                    alignment_block_len=10,
+                    mapping_quality=255,
+                )
+            )
+    paf = PafAlignment(paf_records)
+    plotter = DotPlotter(dotplot_index, paf_alignment=paf)
+    output = str(tmp_path / 'grid_identity.png')
+    fig = plotter.plot(
+        query_names=['seq1', 'seq2'],
+        target_names=['seq1', 'seq2'],
+        output_path=output,
+        color_by_identity=True,
+    )
+    plt.close(fig)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_plot_color_by_identity_min_length_filters(dotplot_index):
+    """min_length filtering works correctly with identity-coloured PAF records."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    from rusty_dot.paf_io import PafAlignment, PafRecord
+
+    records = [
+        PafRecord(
+            query_name='seq1',
+            query_len=20,
+            query_start=0,
+            query_end=5,
+            strand='+',
+            target_name='seq2',
+            target_len=20,
+            target_start=0,
+            target_end=5,
+            residue_matches=5,
+            alignment_block_len=5,
+            mapping_quality=255,
+        ),
+        PafRecord(
+            query_name='seq1',
+            query_len=20,
+            query_start=10,
+            query_end=20,
+            strand='+',
+            target_name='seq2',
+            target_len=20,
+            target_start=10,
+            target_end=20,
+            residue_matches=10,
+            alignment_block_len=10,
+            mapping_quality=255,
+        ),
+    ]
+    paf = PafAlignment(records)
+    plotter = DotPlotter(dotplot_index, paf_alignment=paf)
+
+    fig, ax_all = plt.subplots()
+    plotter._plot_panel(ax_all, 'seq1', 'seq2', color_by_identity=True, min_length=0)
+    n_all = len(ax_all.lines)
+    plt.close(fig)
+
+    fig, ax_filtered = plt.subplots()
+    plotter._plot_panel(
+        ax_filtered, 'seq1', 'seq2', color_by_identity=True, min_length=8
+    )
+    n_filtered = len(ax_filtered.lines)
+    plt.close(fig)
+
+    assert n_all == 2
+    assert n_filtered == 1

@@ -21,6 +21,7 @@ At its core, it builds an [FM-index](https://en.wikipedia.org/wiki/FM-index) (vi
 - **All-vs-all dotplot visualization** with matplotlib: forward hits in blue, RC hits in red; edge-only axis labels in grid plots; subpanels scaled by sequence length by default (`scale_sequences=True`)
 - **SVG vector output** via the `format` parameter (`format='svg'`) or by using a `.svg` file extension — suitable for publication-quality figures
 - **Minimum alignment length filter** (`min_length`) on `DotPlotter.plot()` / `plot_single()` — suppresses short or spurious alignment hits before rendering
+- **Identity-based alignment colouring** — when alignments are loaded from a PAF file, pass `color_by_identity=True` to colour each segment by `residue_matches / alignment_block_len` using any Matplotlib colormap (`identity_palette`); `DotPlotter.plot_identity_colorbar()` renders the scale as a standalone figure
 - **`CrossIndex`** multi-group cross-index: N arbitrary sequence groups, configurable group pairs for alignment, per-group contig ordering (insertion order, length, or collinearity), `run_merge` to update cached PAF records, compatible with `DotPlotter`
 - **`PafAlignment.filter_by_min_length()`** — discard short alignment records from a loaded PAF file; filters on query aligned length
 - **Full Python bindings** via [PyO3](https://pyo3.rs)
@@ -54,6 +55,13 @@ plotter.plot(output_path="dotplot.svg")
 
 # Filter short alignments (< 200 bp) before plotting
 plotter.plot(output_path="dotplot_filtered.png", min_length=200)
+
+# Colour alignments by identity from a PAF file
+from rusty_dot.paf_io import PafAlignment
+aln = PafAlignment.from_file("alignments.paf")
+plotter = DotPlotter(idx, paf_alignment=aln)
+plotter.plot(output_path="identity_dotplot.png", color_by_identity=True, identity_palette="viridis")
+plotter.plot_identity_colorbar(palette="viridis", output_path="colorbar.png")
 ```
 
 ## Documentation Sections

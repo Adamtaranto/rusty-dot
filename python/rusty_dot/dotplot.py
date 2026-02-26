@@ -9,16 +9,20 @@ Reference: https://github.com/rrwick/Autocycler/blob/b0523350898faac71686251ec58
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
+import matplotlib.colors as mcolors
 import matplotlib.figure
 import matplotlib.pyplot as plt
 
 from rusty_dot._rusty_dot import SequenceIndex
 
 if TYPE_CHECKING:
-    from rusty_dot.paf_io import CrossIndex
+    from rusty_dot.paf_io import CrossIndex, PafAlignment
+
+_log = logging.getLogger(__name__)
 
 
 class DotPlotter:
@@ -40,10 +44,24 @@ class DotPlotter:
             output_path="cross_plot.png",
         )
 
+    To colour alignments by sequence identity, supply a
+    :class:`~rusty_dot.paf_io.PafAlignment` and set
+    ``color_by_identity=True``::
+
+        from rusty_dot.paf_io import PafAlignment
+        aln = PafAlignment.from_file("alignments.paf")
+        plotter = DotPlotter(idx, paf_alignment=aln)
+        fig = plotter.plot(color_by_identity=True, identity_palette="viridis")
+        cbar = plotter.plot_identity_colorbar(palette="viridis")
+
     Parameters
     ----------
     index : SequenceIndex or CrossIndex
         A populated index instance.
+    paf_alignment : PafAlignment, optional
+        Pre-loaded PAF alignments used as the data source when
+        ``color_by_identity=True``.  When ``None`` (default) k-mer matches
+        from *index* are used for plotting.
 
     Examples
     --------
@@ -57,15 +75,23 @@ class DotPlotter:
     >>> fig = plotter.plot()  # display inline in Jupyter, no file saved
     """
 
-    def __init__(self, index: Union[SequenceIndex, 'CrossIndex']) -> None:
+    def __init__(
+        self,
+        index: Union[SequenceIndex, 'CrossIndex'],
+        paf_alignment: Optional['PafAlignment'] = None,
+    ) -> None:
         """Initialise the DotPlotter.
 
         Parameters
         ----------
         index : SequenceIndex or CrossIndex
             A populated index instance.
+        paf_alignment : PafAlignment, optional
+            Pre-loaded PAF alignments.  Required for identity-based colouring.
+            When ``None`` (default), k-mer matches from *index* are used.
         """
         self.index = index
+        self.paf_alignment = paf_alignment
 
     def plot(
         self,
@@ -82,6 +108,8 @@ class DotPlotter:
         scale_sequences: bool = True,
         format: Optional[str] = None,
         min_length: int = 0,
+        color_by_identity: bool = False,
+        identity_palette: str = 'viridis',
     ) -> matplotlib.figure.Figure:
         """Plot an all-vs-all dotplot grid.
 
@@ -138,6 +166,17 @@ class DotPlotter:
             Minimum alignment length to display.  Matches shorter than this
             value are not drawn.  Applies to merged k-mer runs and pre-computed
             PAF alignments.  Default is ``0`` (no filtering).
+        color_by_identity : bool, optional
+            When ``True``, alignments are coloured by sequence identity using
+            the *identity_palette* colormap.  Requires a
+            :class:`~rusty_dot.paf_io.PafAlignment` to be supplied as
+            ``paf_alignment`` to :meth:`__init__`; if no PAF alignment is
+            available a warning is logged and the default strand colours are
+            used instead.  Default is ``False``.
+        identity_palette : str, optional
+            Matplotlib colormap name used to map identity values (0–1) to
+            colours when ``color_by_identity=True``.  Default is
+            ``'viridis'``.
 
         Returns
         -------
@@ -203,6 +242,8 @@ class DotPlotter:
                     # Only label the leftmost column (y) and bottom row (x)
                     show_xlabel=(row_idx == nrows - 1),
                     show_ylabel=(col_idx == 0),
+                    color_by_identity=color_by_identity,
+                    identity_palette=identity_palette,
                 )
 
         if title:
@@ -225,6 +266,8 @@ class DotPlotter:
         min_length: int = 0,
         show_xlabel: bool = True,
         show_ylabel: bool = True,
+        color_by_identity: bool = False,
+        identity_palette: str = 'viridis',
     ) -> None:
         """Render a single comparison panel onto the given Axes.
 
@@ -253,31 +296,79 @@ class DotPlotter:
         show_ylabel : bool, optional
             Whether to render the query sequence name as a y-axis label.
             Default is ``True``.
+        color_by_identity : bool, optional
+            When ``True``, colour alignments by sequence identity using
+            *identity_palette*.  Requires ``self.paf_alignment`` to be set;
+            if not, a warning is logged and strand colours are used instead.
+            Default is ``False``.
+        identity_palette : str, optional
+            Matplotlib colormap name for identity-based colouring.
+            Default is ``'viridis'``.
         """
         q_len = self.index.get_sequence_length(query_name)
         t_len = self.index.get_sequence_length(target_name)
 
-        matches = self.index.compare_sequences_stranded(query_name, target_name, merge)
-
-        # Draw match lines/dots; RC matches are drawn as anti-diagonal lines.
-        for q_start, q_end, t_start, t_end, strand in matches:
-            if min_length > 0 and (q_end - q_start) < min_length:
-                continue
-            if strand == '-':
-                # Reverse complement: as query advances (q_start→q_end) the
-                # target position retreats (t_end→t_start).
-                xs = [t_end, t_start]
-                color = rc_color
-            else:
-                xs = [t_start, t_end]
-                color = dot_color
-            ax.plot(
-                xs,
-                [q_start, q_end],
-                color=color,
-                linewidth=dot_size,
-                alpha=0.7,
+        if color_by_identity and self.paf_alignment is None:
+            _log.warning(
+                'color_by_identity=True requires a PafAlignment; k-mer matches '
+                'are always 100% identity. Pass paf_alignment= to DotPlotter '
+                'to enable identity colouring.'
             )
+            color_by_identity = False
+
+        if color_by_identity:
+            # Use PAF records for this sequence pair, coloured by identity.
+            cmap = plt.get_cmap(identity_palette)
+            norm = mcolors.Normalize(vmin=0, vmax=1)
+            records = [
+                r
+                for r in self.paf_alignment.records  # type: ignore[union-attr]
+                if r.query_name == query_name and r.target_name == target_name
+            ]
+            for rec in records:
+                if min_length > 0 and rec.query_aligned_len < min_length:
+                    continue
+                identity = (
+                    rec.residue_matches / rec.alignment_block_len
+                    if rec.alignment_block_len > 0
+                    else 1.0
+                )
+                color = cmap(norm(identity))
+                if rec.strand == '-':
+                    xs = [rec.target_end, rec.target_start]
+                else:
+                    xs = [rec.target_start, rec.target_end]
+                ax.plot(
+                    xs,
+                    [rec.query_start, rec.query_end],
+                    color=color,
+                    linewidth=dot_size,
+                    alpha=0.7,
+                )
+        else:
+            # Draw match lines/dots from k-mer index; RC matches are drawn as
+            # anti-diagonal lines.
+            matches = self.index.compare_sequences_stranded(
+                query_name, target_name, merge
+            )
+            for q_start, q_end, t_start, t_end, strand in matches:
+                if min_length > 0 and (q_end - q_start) < min_length:
+                    continue
+                if strand == '-':
+                    # Reverse complement: as query advances (q_start→q_end) the
+                    # target position retreats (t_end→t_start).
+                    xs = [t_end, t_start]
+                    color = rc_color
+                else:
+                    xs = [t_start, t_end]
+                    color = dot_color
+                ax.plot(
+                    xs,
+                    [q_start, q_end],
+                    color=color,
+                    linewidth=dot_size,
+                    alpha=0.7,
+                )
 
         ax.set_xlim(0, t_len)
         ax.set_ylim(0, q_len)
@@ -303,6 +394,8 @@ class DotPlotter:
         dpi: int = 150,
         format: Optional[str] = None,
         min_length: int = 0,
+        color_by_identity: bool = False,
+        identity_palette: str = 'viridis',
     ) -> matplotlib.figure.Figure:
         """Plot a single pairwise dotplot.
 
@@ -338,6 +431,17 @@ class DotPlotter:
             Minimum alignment length to display.  Matches shorter than this
             value are not drawn.  Applies to merged k-mer runs and pre-computed
             PAF alignments.  Default is ``0`` (no filtering).
+        color_by_identity : bool, optional
+            When ``True``, alignments are coloured by sequence identity using
+            the *identity_palette* colormap.  Requires a
+            :class:`~rusty_dot.paf_io.PafAlignment` to be supplied as
+            ``paf_alignment`` to :meth:`__init__`; if no PAF alignment is
+            available a warning is logged and the default strand colours are
+            used instead.  Default is ``False``.
+        identity_palette : str, optional
+            Matplotlib colormap name used to map identity values (0–1) to
+            colours when ``color_by_identity=True``.  Default is
+            ``'viridis'``.
 
         Returns
         -------
@@ -356,10 +460,65 @@ class DotPlotter:
             rc_color=rc_color,
             merge=merge,
             min_length=min_length,
+            color_by_identity=color_by_identity,
+            identity_palette=identity_palette,
         )
         if title is None:
             title = f'{query_name} vs {target_name}'
         ax.set_title(title, fontsize=10)
+        plt.tight_layout()
+        if output_path is not None:
+            plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
+        return fig
+
+    def plot_identity_colorbar(
+        self,
+        palette: str = 'viridis',
+        figsize: tuple[float, float] = (1.5, 4.0),
+        output_path: Optional[Union[str, Path]] = None,
+        dpi: int = 150,
+        format: Optional[str] = None,
+    ) -> matplotlib.figure.Figure:
+        """Render the identity colour scale as a standalone figure.
+
+        Produces a figure containing only a vertical colorbar that maps
+        identity values (0–100 %) to colours from *palette*.  This is
+        intended to be displayed alongside a dotplot produced with
+        ``color_by_identity=True``.
+
+        Parameters
+        ----------
+        palette : str, optional
+            Matplotlib colormap name.  Should match the *identity_palette*
+            used when calling :meth:`plot` or :meth:`plot_single`.
+            Default is ``'viridis'``.
+        figsize : tuple[float, float], optional
+            Figure size as ``(width, height)`` in inches.
+            Default is ``(1.5, 4.0)``.
+        output_path : str or Path, optional
+            Output image file path.  When ``None`` (default) the figure is
+            not saved to disk.
+        dpi : int, optional
+            Output image resolution. Default is ``150``.
+        format : str, optional
+            Output image format (e.g. ``'png'``, ``'svg'``, ``'pdf'``).
+            When ``None`` (default), the format is inferred from the
+            ``output_path`` file extension.
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+            A figure containing only the colorbar.
+        """
+        norm = mcolors.Normalize(vmin=0, vmax=1)
+        sm = plt.cm.ScalarMappable(cmap=plt.get_cmap(palette), norm=norm)
+        sm.set_array([])
+        fig, ax = plt.subplots(figsize=figsize)
+        cb = fig.colorbar(sm, ax=ax, orientation='vertical')
+        cb.set_label('Identity', fontsize=10)
+        cb.set_ticks([0, 0.25, 0.5, 0.75, 1.0])
+        cb.set_ticklabels(['0%', '25%', '50%', '75%', '100%'])
+        ax.set_visible(False)
         plt.tight_layout()
         if output_path is not None:
             plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
