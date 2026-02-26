@@ -17,7 +17,7 @@ Written in Rust with PyO3 python bindings.
   - RC co-diagonal merging — both arms run in same direction (`py_merge_rev_fwd_runs`)
   - Unified strand-aware entry-point (`py_merge_runs`)
 - PAF format output for alignment records
-- FM-index serialization/deserialization with [serde](https://docs.rs/serde) + bincode
+- FM-index serialization/deserialization with [serde](https://docs.rs/serde) + postcard
 - All-vs-all dotplot visualization with matplotlib:
   - Forward hits drawn in **blue** (configurable via `dot_color`)
   - Reverse-complement hits drawn in **red** (configurable via `rc_color`)
