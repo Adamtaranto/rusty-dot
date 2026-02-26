@@ -51,8 +51,7 @@ pub fn save_index(collection: &IndexCollection, path: &str) -> Result<(), RustyD
     let file =
         File::create(Path::new(path)).map_err(|e| RustyDotError::Serialization(e.to_string()))?;
     let writer = BufWriter::new(file);
-    postcard::to_io(collection, writer)
-        .map_err(|e| RustyDotError::Serialization(e.to_string()))?;
+    postcard::to_io(collection, writer).map_err(|e| RustyDotError::Serialization(e.to_string()))?;
     Ok(())
 }
 
