@@ -224,8 +224,7 @@ impl SequenceIndex {
             }
             let text = sequence_to_index_text(&seq);
             let fm = FmIdx::new(text).map_err(|e| -> pyo3::PyErr { e.into() })?;
-            let kmer_set =
-                build_kmer_set(&seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
+            let kmer_set = build_kmer_set(&seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
             let seq_len = seq.len();
             let seq_bytes = seq.as_bytes().to_vec();
             self.sequences.insert(
