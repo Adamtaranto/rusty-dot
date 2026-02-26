@@ -667,3 +667,176 @@ def test_plot_color_by_identity_min_length_filters(dotplot_index):
 
     assert n_all == 2
     assert n_filtered == 1
+
+
+# ---------------------------------------------------------------------------
+# PafAlignment as DotPlotter index (no SequenceIndex required)
+# ---------------------------------------------------------------------------
+
+
+def _make_paf_alignment_index():
+    """Build a PafAlignment suitable for use as a DotPlotter index."""
+    from rusty_dot.paf_io import PafAlignment, PafRecord
+
+    return PafAlignment([
+        PafRecord(
+            query_name='contigA',
+            query_len=100,
+            query_start=0,
+            query_end=80,
+            strand='+',
+            target_name='contigB',
+            target_len=90,
+            target_start=0,
+            target_end=80,
+            residue_matches=78,
+            alignment_block_len=80,
+            mapping_quality=60,
+        ),
+        PafRecord(
+            query_name='contigA',
+            query_len=100,
+            query_start=5,
+            query_end=40,
+            strand='-',
+            target_name='contigC',
+            target_len=50,
+            target_start=10,
+            target_end=45,
+            residue_matches=33,
+            alignment_block_len=35,
+            mapping_quality=60,
+        ),
+    ])
+
+
+def test_paf_alignment_as_index_sequence_names():
+    """PafAlignment.sequence_names() returns all unique query+target names."""
+    from rusty_dot.paf_io import PafAlignment, PafRecord
+
+    aln = _make_paf_alignment_index()
+    names = aln.sequence_names()
+    assert set(names) == {'contigA', 'contigB', 'contigC'}
+
+
+def test_paf_alignment_as_index_get_sequence_length():
+    """PafAlignment.get_sequence_length() returns lengths from PAF records."""
+    aln = _make_paf_alignment_index()
+    assert aln.get_sequence_length('contigA') == 100
+    assert aln.get_sequence_length('contigB') == 90
+    assert aln.get_sequence_length('contigC') == 50
+
+
+def test_paf_alignment_as_index_get_sequence_length_missing():
+    """PafAlignment.get_sequence_length() raises KeyError for unknown names."""
+    aln = _make_paf_alignment_index()
+    with pytest.raises(KeyError):
+        aln.get_sequence_length('nonexistent')
+
+
+def test_dotplotter_accepts_paf_alignment_as_index(tmp_path):
+    """DotPlotter can be constructed with a PafAlignment as the index."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    aln = _make_paf_alignment_index()
+    plotter = DotPlotter(aln)
+    # paf_alignment is automatically set to the PafAlignment index
+    assert plotter.paf_alignment is aln
+
+
+def test_dotplotter_paf_as_index_plot(tmp_path):
+    """DotPlotter(PafAlignment) produces a valid plot file without SequenceIndex."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    aln = _make_paf_alignment_index()
+    plotter = DotPlotter(aln)
+    output = str(tmp_path / 'paf_index_plot.png')
+    fig = plotter.plot(
+        query_names=['contigA'],
+        target_names=['contigB'],
+        output_path=output,
+    )
+    plt.close(fig)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_dotplotter_paf_as_index_strand_colors(tmp_path):
+    """DotPlotter(PafAlignment) draws forward and RC alignments with correct colours."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    aln = _make_paf_alignment_index()
+    plotter = DotPlotter(aln)
+
+    fig, ax = plt.subplots()
+    plotter._plot_panel(ax, 'contigA', 'contigB', dot_color='blue', rc_color='red')
+    plt.close(fig)
+
+    # One '+' alignment should produce one line
+    assert len(ax.lines) == 1
+
+
+def test_dotplotter_paf_as_index_rc_alignment():
+    """DotPlotter(PafAlignment) renders RC alignment as anti-diagonal line."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    aln = _make_paf_alignment_index()
+    plotter = DotPlotter(aln)
+
+    fig, ax = plt.subplots()
+    plotter._plot_panel(ax, 'contigA', 'contigC')
+    plt.close(fig)
+
+    assert len(ax.lines) == 1
+    xdata = ax.lines[0].get_xdata()
+    # RC strand: x goes from target_end to target_start (decreasing)
+    assert xdata[0] > xdata[1]
+
+
+def test_dotplotter_paf_as_index_plot_grid(tmp_path):
+    """DotPlotter(PafAlignment).plot() works for multi-panel grids."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    aln = _make_paf_alignment_index()
+    q_order, t_order = aln.reorder_contigs()
+    plotter = DotPlotter(aln)
+    output = str(tmp_path / 'paf_grid.png')
+    fig = plotter.plot(
+        query_names=q_order,
+        target_names=t_order,
+        output_path=output,
+        scale_sequences=True,
+    )
+    plt.close(fig)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_dotplotter_paf_as_index_identity_coloring(tmp_path):
+    """DotPlotter(PafAlignment).plot(color_by_identity=True) works without explicit paf_alignment."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    aln = _make_paf_alignment_index()
+    plotter = DotPlotter(aln)
+    output = str(tmp_path / 'paf_identity.png')
+    fig = plotter.plot(
+        query_names=['contigA'],
+        target_names=['contigB'],
+        output_path=output,
+        color_by_identity=True,
+    )
+    plt.close(fig)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0

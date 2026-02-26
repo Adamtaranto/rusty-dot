@@ -72,5 +72,6 @@ nav:
       - Overview: api/index.md
       - SequenceIndex: api/sequence_index.md
       - DotPlotter: api/dotplot.md
+      - CrossIndex: api/cross_index.md
       - PAF I/O: api/paf_io.md
       - Low-Level Functions: api/functions.md

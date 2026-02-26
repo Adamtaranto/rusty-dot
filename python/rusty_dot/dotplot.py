@@ -19,10 +19,11 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 
 from rusty_dot._rusty_dot import SequenceIndex
+from rusty_dot.paf_io import PafAlignment
 
 if TYPE_CHECKING:
     from rusty_dot.annotation import GffAnnotation
-    from rusty_dot.paf_io import CrossIndex, PafAlignment
+    from rusty_dot.paf_io import CrossIndex
 
 _log = logging.getLogger(__name__)
 
@@ -30,9 +31,29 @@ _log = logging.getLogger(__name__)
 class DotPlotter:
     """Generate all-vs-all dotplots for sets of DNA sequences.
 
-    Accepts either a :class:`~rusty_dot.SequenceIndex` (single sequence
-    collection) or a :class:`~rusty_dot.paf_io.CrossIndex` (multi-group
-    collection).  When using a ``CrossIndex``, pass group-specific names via
+    Accepts a :class:`~rusty_dot.SequenceIndex` (single sequence collection),
+    a :class:`~rusty_dot.paf_io.CrossIndex` (multi-group collection), or a
+    :class:`~rusty_dot.paf_io.PafAlignment` loaded from an external aligner
+    such as minimap2.
+
+    When a ``PafAlignment`` is passed as *index*, sequence lengths are read
+    from the PAF records and alignments are rendered directly — no k-mer index
+    is required::
+
+        from rusty_dot.paf_io import PafAlignment
+        from rusty_dot.dotplot import DotPlotter
+
+        aln = PafAlignment.from_file("alignments.paf")
+        q_order, t_order = aln.reorder_contigs()
+
+        plotter = DotPlotter(aln)
+        plotter.plot(
+            query_names=q_order,
+            target_names=t_order,
+            output_path="dotplot.png",
+        )
+
+    When using a ``CrossIndex``, pass group-specific names via
     ``query_names`` and ``target_names``::
 
         cross = CrossIndex(k=15)
@@ -52,18 +73,22 @@ class DotPlotter:
 
         from rusty_dot.paf_io import PafAlignment
         aln = PafAlignment.from_file("alignments.paf")
-        plotter = DotPlotter(idx, paf_alignment=aln)
+        plotter = DotPlotter(aln)
         fig = plotter.plot(color_by_identity=True, identity_palette="viridis")
         cbar = plotter.plot_identity_colorbar(palette="viridis")
 
     Parameters
     ----------
-    index : SequenceIndex or CrossIndex
-        A populated index instance.
+    index : SequenceIndex, CrossIndex, or PafAlignment
+        A populated index or alignment collection.  When a
+        :class:`~rusty_dot.paf_io.PafAlignment` is supplied, it is used both
+        to resolve sequence lengths and as the source of alignment segments.
     paf_alignment : PafAlignment, optional
         Pre-loaded PAF alignments used as the data source when
-        ``color_by_identity=True``.  When ``None`` (default) k-mer matches
-        from *index* are used for plotting.
+        ``color_by_identity=True`` and *index* is a ``SequenceIndex`` or
+        ``CrossIndex``.  When *index* is already a ``PafAlignment`` this
+        argument is ignored.  When ``None`` (default) and *index* is not a
+        ``PafAlignment``, k-mer matches from *index* are used for plotting.
 
     Examples
     --------
@@ -79,21 +104,40 @@ class DotPlotter:
 
     def __init__(
         self,
-        index: Union[SequenceIndex, 'CrossIndex'],
+        index: Union[SequenceIndex, 'CrossIndex', 'PafAlignment'],
         paf_alignment: Optional['PafAlignment'] = None,
     ) -> None:
         """Initialise the DotPlotter.
 
         Parameters
         ----------
-        index : SequenceIndex or CrossIndex
-            A populated index instance.
+        index : SequenceIndex, CrossIndex, or PafAlignment
+            A populated index or alignment collection.  When a
+            :class:`~rusty_dot.paf_io.PafAlignment` is supplied, it is used
+            both to resolve sequence lengths and as the source of alignment
+            segments.
         paf_alignment : PafAlignment, optional
-            Pre-loaded PAF alignments.  Required for identity-based colouring.
+            Pre-loaded PAF alignments.  Used for identity-based colouring
+            when *index* is a ``SequenceIndex`` or ``CrossIndex``.  When
+            *index* is already a ``PafAlignment`` this argument is ignored.
             When ``None`` (default), k-mer matches from *index* are used.
         """
         self.index = index
-        self.paf_alignment = paf_alignment
+        # When a PafAlignment is passed as the primary index, use it for
+        # rendering alignment segments (the explicit paf_alignment kwarg is
+        # then redundant and is ignored to avoid confusion).
+        if isinstance(index, PafAlignment):
+            self.paf_alignment: Optional[PafAlignment] = index
+        else:
+            self.paf_alignment = paf_alignment
+
+    def _index_is_paf(self) -> bool:
+        """Return ``True`` when *index* is a :class:`~rusty_dot.paf_io.PafAlignment`.
+
+        Helper used by :meth:`_plot_panel` to decide whether to draw from PAF
+        records or from the k-mer engine.
+        """
+        return isinstance(self.index, PafAlignment)
 
     def plot(
         self,
@@ -345,18 +389,25 @@ class DotPlotter:
         q_len = self.index.get_sequence_length(query_name)
         t_len = self.index.get_sequence_length(target_name)
 
-        if color_by_identity and self.paf_alignment is None:
+        # Determine rendering mode:
+        # • When index is a PafAlignment (no k-mer index), always draw from
+        #   PAF records using strand colours unless color_by_identity is set.
+        # • When index has a k-mer engine but color_by_identity is requested
+        #   without a PafAlignment, fall back to k-mer matches with a warning.
+        use_paf = color_by_identity or self._index_is_paf()
+
+        if use_paf and self.paf_alignment is None:
             _log.warning(
                 'color_by_identity=True requires a PafAlignment; k-mer matches '
                 'are always 100% identity. Pass paf_alignment= to DotPlotter '
                 'to enable identity colouring.'
             )
-            color_by_identity = False
+            use_paf = False
 
-        if color_by_identity:
-            # Use PAF records for this sequence pair, coloured by identity.
-            cmap = plt.get_cmap(identity_palette)
-            norm = mcolors.Normalize(vmin=0, vmax=1)
+        if use_paf:
+            # Use PAF records for this sequence pair.
+            cmap = plt.get_cmap(identity_palette) if color_by_identity else None
+            norm = mcolors.Normalize(vmin=0, vmax=1) if color_by_identity else None
             records = [
                 r
                 for r in self.paf_alignment.records  # type: ignore[union-attr]
@@ -365,12 +416,15 @@ class DotPlotter:
             for rec in records:
                 if min_length > 0 and rec.query_aligned_len < min_length:
                     continue
-                identity = (
-                    rec.residue_matches / rec.alignment_block_len
-                    if rec.alignment_block_len > 0
-                    else 1.0
-                )
-                color = cmap(norm(identity))
+                if color_by_identity:
+                    identity = (
+                        rec.residue_matches / rec.alignment_block_len
+                        if rec.alignment_block_len > 0
+                        else 1.0
+                    )
+                    color = cmap(norm(identity))  # type: ignore[misc]
+                else:
+                    color = rc_color if rec.strand == '-' else dot_color
                 if rec.strand == '-':
                     xs = [rec.target_end, rec.target_start]
                 else:
