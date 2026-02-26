@@ -14,7 +14,7 @@ name = "rusty-dot"
 path = "src/main.rs"
 
 [dependencies]
-pyo3 = { version = "0.22", features = ["extension-module"] }
+pyo3 = { version = "0.28", features = ["extension-module"] }
 # needletail is optional so that wasm32-unknown-emscripten builds (which use
 # --no-default-features) can exclude it entirely.  emcc cannot link needletail
 # even without its C compression backends because it tries to produce a
