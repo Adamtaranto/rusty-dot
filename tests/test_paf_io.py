@@ -207,6 +207,28 @@ class TestPafAlignment:
         assert len(filtered) == 1
         assert filtered.records[0].query_aligned_len == 50
 
+    def test_sequence_names_includes_all(self):
+        # SIMPLE_PAF has query1, query2 as queries and target1 as target
+        names = set(self.aln.sequence_names())
+        assert names == {'query1', 'query2', 'target1'}
+
+    def test_sequence_names_no_duplicates(self):
+        # target1 appears in 3 records but should only appear once
+        names = self.aln.sequence_names()
+        assert len(names) == len(set(names))
+
+    def test_get_sequence_length_query(self):
+        # query1 has query_len=100 in SIMPLE_PAF
+        assert self.aln.get_sequence_length('query1') == 100
+
+    def test_get_sequence_length_target(self):
+        # target1 has target_len=200 in SIMPLE_PAF
+        assert self.aln.get_sequence_length('target1') == 200
+
+    def test_get_sequence_length_missing_raises(self):
+        with pytest.raises(KeyError):
+            self.aln.get_sequence_length('nonexistent')
+
 
 # ---------------------------------------------------------------------------
 # compute_gravity_contigs

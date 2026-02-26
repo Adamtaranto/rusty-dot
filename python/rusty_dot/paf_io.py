@@ -572,6 +572,54 @@ class PafAlignment:
             seen[rec.target_name] = None
         return list(seen)
 
+    def sequence_names(self) -> list[str]:
+        """Return a deduplicated list of all query and target sequence names.
+
+        The list contains each name at most once, in the order it was first
+        encountered (queries before targets within each record).  This method
+        makes :class:`PafAlignment` compatible with :class:`~rusty_dot.dotplot.DotPlotter`.
+
+        Returns
+        -------
+        list[str]
+            All unique sequence names across query and target fields.
+        """
+        seen: dict[str, None] = {}
+        for rec in self.records:
+            seen[rec.query_name] = None
+            seen[rec.target_name] = None
+        return list(seen)
+
+    def get_sequence_length(self, name: str) -> int:
+        """Return the length of a sequence by name as stored in PAF records.
+
+        Looks up *name* in the ``query_name`` and ``target_name`` fields of
+        every record and returns the corresponding ``query_len`` or
+        ``target_len``.  This method makes :class:`PafAlignment` compatible
+        with :class:`~rusty_dot.dotplot.DotPlotter`.
+
+        Parameters
+        ----------
+        name : str
+            Sequence name to look up.
+
+        Returns
+        -------
+        int
+            Length of the sequence.
+
+        Raises
+        ------
+        KeyError
+            If *name* is not found in any record.
+        """
+        for rec in self.records:
+            if rec.query_name == name:
+                return rec.query_len
+            if rec.target_name == name:
+                return rec.target_len
+        raise KeyError(f'Sequence {name!r} not found in PAF records.')
+
     def __len__(self) -> int:
         """Return the number of records.
 

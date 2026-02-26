@@ -4,39 +4,29 @@ This module provides classes and helpers for reading, writing, and reordering
 [PAF (Pairwise mApping Format)](https://github.com/lh3/miniasm/blob/master/PAF.md)
 alignment records.
 
-## CrossIndex — Multi-group cross-index
+## PafAlignment — Alignment record collection
 
-`CrossIndex` manages sequences divided into named
-groups and computes cross-group pairwise comparisons. It is compatible with
-:class:`~rusty_dot.dotplot.DotPlotter`.
-
-### Alignment scope by number of groups
-
-* **2 groups** — alignments between the two groups only.
-* **3+ groups** — all non-self ordered pairs of groups.
-  Use the `group_pairs` argument of `get_paf` to restrict to specific pairs.
-
-### DotPlotter usage
+`PafAlignment` wraps a list of :class:`~rusty_dot.paf_io.PafRecord` objects
+and provides filtering, contig reordering, and sequence-length lookup
+utilities.  It can be passed directly to
+:class:`~rusty_dot.dotplot.DotPlotter` — no
+:class:`~rusty_dot.SequenceIndex` is required:
 
 ```python
-from rusty_dot.paf_io import CrossIndex
+from rusty_dot.paf_io import PafAlignment
 from rusty_dot.dotplot import DotPlotter
 
-cross = CrossIndex(k=15)
-cross.load_fasta("assembly_a.fasta", group="a")
-cross.load_fasta("assembly_b.fasta", group="b")
+aln = PafAlignment.from_file("alignments.paf")
+q_order, t_order = aln.reorder_contigs()
 
-plotter = DotPlotter(cross)
+plotter = DotPlotter(aln)
 plotter.plot(
-    query_names=cross.sequence_names(group="a"),
-    target_names=cross.sequence_names(group="b"),
-    output_path="cross_plot.png",
+    query_names=q_order,
+    target_names=t_order,
+    output_path="dotplot.png",
+    scale_sequences=True,
 )
 ```
-
-::: rusty_dot.paf_io.CrossIndex
-
-## PafAlignment — Alignment record collection
 
 ::: rusty_dot.paf_io.PafRecord
 
