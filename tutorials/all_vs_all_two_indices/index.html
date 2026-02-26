@@ -676,10 +676,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-build-a-crossindexpaf" class="md-nav__link">
+  <a href="#2-build-a-crossindex" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Build a CrossIndexPaf
+        2. Build a CrossIndex
       
     </span>
   </a>
@@ -1035,10 +1035,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-build-a-crossindexpaf" class="md-nav__link">
+  <a href="#2-build-a-crossindex" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Build a CrossIndexPaf
+        2. Build a CrossIndex
       
     </span>
   </a>
@@ -1847,9 +1847,9 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h1 id="all-vs-all-dotplot-between-two-sequence-indices">All-vs-All Dotplot Between Two Sequence Indices<a class="anchor-link" href="#all-vs-all-dotplot-between-two-sequence-indices">¶</a></h1><p>This tutorial demonstrates how to compare sequences from <strong>two separate FASTA files</strong> (e.g. two genome assemblies) using <code>CrossIndexPaf</code>.  Each FASTA file is assigned to its own group, and pairwise alignments are computed between all sequences in group A and all sequences in group B.</p>
+<h1 id="all-vs-all-dotplot-between-two-sequence-indices">All-vs-All Dotplot Between Two Sequence Indices<a class="anchor-link" href="#all-vs-all-dotplot-between-two-sequence-indices">¶</a></h1><p>This tutorial demonstrates how to compare sequences from <strong>two separate FASTA files</strong> (e.g. two genome assemblies) using <code>CrossIndex</code>.  Each FASTA file is assigned to its own group, and pairwise alignments are computed between all sequences in group A and all sequences in group B.</p>
 <h2 id="overview">Overview<a class="anchor-link" href="#overview">¶</a></h2><ol>
-<li>Create a <code>CrossIndexPaf</code> and load two FASTA files into groups A and B.</li>
+<li>Create a <code>CrossIndex</code> and load two FASTA files into groups A and B.</li>
 <li>Retrieve all cross-group PAF alignments with <code>get_paf_all()</code>.</li>
 <li>Build a <code>PafAlignment</code> from those records for contig reordering.</li>
 <li>Plot the sorted all-vs-all dotplot with <code>DotPlotter</code>.</li>
@@ -1878,11 +1878,11 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot</span><span class="w"> </span><span class="kn">import</span> <span class="n">SequenceIndex</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.dotplot</span><span class="w"> </span><span class="kn">import</span> <span class="n">DotPlotter</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.paf_io</span><span class="w"> </span><span class="kn">import</span> <span class="n">CrossIndexPaf</span><span class="p">,</span> <span class="n">PafAlignment</span><span class="p">,</span> <span class="n">PafRecord</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.paf_io</span><span class="w"> </span><span class="kn">import</span> <span class="n">CrossIndex</span><span class="p">,</span> <span class="n">PafAlignment</span><span class="p">,</span> <span class="n">PafRecord</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-1">from rusty_dot import SequenceIndex
 from rusty_dot.dotplot import DotPlotter
-from rusty_dot.paf_io import CrossIndexPaf, PafAlignment, PafRecord</div>
+from rusty_dot.paf_io import CrossIndex, PafAlignment, PafRecord</div>
 </div>
 </div>
 </div>
@@ -1957,7 +1957,7 @@ genome_b = {
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="2-build-a-crossindexpaf">2. Build a CrossIndexPaf<a class="anchor-link" href="#2-build-a-crossindexpaf">¶</a></h2><p><code>CrossIndexPaf</code> holds one internal <code>SequenceIndex</code> that contains sequences from <em>both</em> groups, using internal prefixes (<code>a:</code> / <code>b:</code>) to prevent name collisions.</p>
+<h2 id="2-build-a-crossindex">2. Build a CrossIndex<a class="anchor-link" href="#2-build-a-crossindex">¶</a></h2><p><code>CrossIndex</code> holds one internal <code>SequenceIndex</code> that contains sequences from <em>both</em> groups, using internal prefixes (<code>a:</code> / <code>b:</code>) to prevent name collisions.</p>
 </div>
 </div>
 </div>
@@ -1980,7 +1980,7 @@ genome_b = {
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">cross</span> <span class="o">=</span> <span class="n">CrossIndexPaf</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">cross</span> <span class="o">=</span> <span class="n">CrossIndex</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 
 <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">seq</span> <span class="ow">in</span> <span class="n">genome_a</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
     <span class="n">cross</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">seq</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="s1">'a'</span><span class="p">)</span>
@@ -1990,7 +1990,7 @@ genome_b = {
 
 <span class="nb">print</span><span class="p">(</span><span class="n">cross</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-3">cross = CrossIndexPaf(k=10)
+<div class="clipboard-copy-txt" id="cell-3">cross = CrossIndex(k=10)
 
 for name, seq in genome_a.items():
     cross.add_sequence(name, seq, group='a')
@@ -2181,6 +2181,7 @@ print(combined_idx)</div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h2 id="6-plot-the-all-vs-all-dotplot-with-relative-scaling">6. Plot the all-vs-all dotplot with relative scaling<a class="anchor-link" href="#6-plot-the-all-vs-all-dotplot-with-relative-scaling">¶</a></h2><p>Pass <code>scale_sequences=True</code> so that each subplot's width and height are proportional to the lengths of the compared sequences.</p>
+<p><code>plot()</code> returns a <code>matplotlib.figure.Figure</code>, so the plot is displayed inline in Jupyter automatically.  Pass <code>output_path</code> to also save it to disk.</p>
 </div>
 </div>
 </div>
@@ -2203,37 +2204,33 @@ print(combined_idx)</div>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">plotter</span> <span class="o">=</span> <span class="n">DotPlotter</span><span class="p">(</span><span class="n">combined_idx</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 
-<span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+<span class="n">plotter</span> <span class="o">=</span> <span class="n">DotPlotter</span><span class="p">(</span><span class="n">combined_idx</span><span class="p">)</span>
+
+<span class="n">fig</span> <span class="o">=</span> <span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
     <span class="n">query_names</span><span class="o">=</span><span class="n">q_sorted</span><span class="p">,</span>
     <span class="n">target_names</span><span class="o">=</span><span class="n">t_sorted</span><span class="p">,</span>
-    <span class="n">output_path</span><span class="o">=</span><span class="s1">'/tmp/cross_index_dotplot.png'</span><span class="p">,</span>
     <span class="n">figsize_per_panel</span><span class="o">=</span><span class="mf">4.0</span><span class="p">,</span>
     <span class="n">scale_sequences</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="n">title</span><span class="o">=</span><span class="s1">'Genome A vs Genome B — collinearity-sorted contigs'</span><span class="p">,</span>
     <span class="n">dpi</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
 <span class="p">)</span>
-
-<span class="kn">from</span><span class="w"> </span><span class="nn">IPython.display</span><span class="w"> </span><span class="kn">import</span> <span class="n">Image</span>
-
-<span class="n">Image</span><span class="p">(</span><span class="s1">'/tmp/cross_index_dotplot.png'</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>  <span class="c1"># free memory when no longer needed</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-7">plotter = DotPlotter(combined_idx)
+<div class="clipboard-copy-txt" id="cell-7">import matplotlib.pyplot as plt
 
-plotter.plot(
+plotter = DotPlotter(combined_idx)
+
+fig = plotter.plot(
     query_names=q_sorted,
     target_names=t_sorted,
-    output_path='/tmp/cross_index_dotplot.png',
     figsize_per_panel=4.0,
     scale_sequences=True,
     title='Genome A vs Genome B — collinearity-sorted contigs',
     dpi=100,
 )
-
-from IPython.display import Image
-
-Image('/tmp/cross_index_dotplot.png')</div>
+plt.close(fig)  # free memory when no longer needed</div>
 </div>
 </div>
 </div>
@@ -2246,7 +2243,7 @@ Image('/tmp/cross_index_dotplot.png')</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="using-crossindexpafreorder_contigs-directly">Using <code>CrossIndexPaf.reorder_contigs</code> directly<a class="anchor-link" href="#using-crossindexpafreorder_contigs-directly">¶</a></h2><p>A convenience wrapper is also available on the <code>CrossIndexPaf</code> object itself, which internally calls <code>SequenceIndex.optimal_contig_order</code>.</p>
+<h2 id="using-crossindexreorder_contigs-directly">Using <code>CrossIndex.reorder_contigs</code> directly<a class="anchor-link" href="#using-crossindexreorder_contigs-directly">¶</a></h2><p>A convenience wrapper is also available on the <code>CrossIndex</code> object itself, which internally calls <code>SequenceIndex.optimal_contig_order</code>.</p>
 </div>
 </div>
 </div>
