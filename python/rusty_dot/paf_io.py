@@ -1221,5 +1221,3 @@ class CrossIndex:
             lines.append(f'  Group {g!r:12s}: {len(names):>6d} sequences')
         lines.append(f'  PAF records     : {len(self._paf_records)}')
         return '\n'.join(lines)
-
-

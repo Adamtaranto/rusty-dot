@@ -514,6 +514,7 @@ class TestCrossIndex:
         )
         assert out.exists()
 
+
 # ---------------------------------------------------------------------------
 # compute_gravity_contigs: unmatched sorted by descending length
 # ---------------------------------------------------------------------------
