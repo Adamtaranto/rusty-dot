@@ -678,41 +678,42 @@ def _make_paf_alignment_index():
     """Build a PafAlignment suitable for use as a DotPlotter index."""
     from rusty_dot.paf_io import PafAlignment, PafRecord
 
-    return PafAlignment([
-        PafRecord(
-            query_name='contigA',
-            query_len=100,
-            query_start=0,
-            query_end=80,
-            strand='+',
-            target_name='contigB',
-            target_len=90,
-            target_start=0,
-            target_end=80,
-            residue_matches=78,
-            alignment_block_len=80,
-            mapping_quality=60,
-        ),
-        PafRecord(
-            query_name='contigA',
-            query_len=100,
-            query_start=5,
-            query_end=40,
-            strand='-',
-            target_name='contigC',
-            target_len=50,
-            target_start=10,
-            target_end=45,
-            residue_matches=33,
-            alignment_block_len=35,
-            mapping_quality=60,
-        ),
-    ])
+    return PafAlignment(
+        [
+            PafRecord(
+                query_name='contigA',
+                query_len=100,
+                query_start=0,
+                query_end=80,
+                strand='+',
+                target_name='contigB',
+                target_len=90,
+                target_start=0,
+                target_end=80,
+                residue_matches=78,
+                alignment_block_len=80,
+                mapping_quality=60,
+            ),
+            PafRecord(
+                query_name='contigA',
+                query_len=100,
+                query_start=5,
+                query_end=40,
+                strand='-',
+                target_name='contigC',
+                target_len=50,
+                target_start=10,
+                target_end=45,
+                residue_matches=33,
+                alignment_block_len=35,
+                mapping_quality=60,
+            ),
+        ]
+    )
 
 
 def test_paf_alignment_as_index_sequence_names():
     """PafAlignment.sequence_names() returns all unique query+target names."""
-    from rusty_dot.paf_io import PafAlignment, PafRecord
 
     aln = _make_paf_alignment_index()
     names = aln.sequence_names()
