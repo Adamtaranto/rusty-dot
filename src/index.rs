@@ -121,14 +121,14 @@ impl SequenceIndex {
     ///     If the FM-index cannot be built (e.g., invalid characters).
     pub fn add_sequence(&mut self, py: Python<'_>, name: &str, seq: &str) -> PyResult<()> {
         if self.sequences.contains_key(name) {
-            let warnings = py.import_bound("warnings")?;
+            let warnings = py.import("warnings")?;
             warnings.call_method1(
                 "warn",
                 (
                     format!(
                         "Sequence name '{name}' already exists in the index and will be overwritten."
                     ),
-                    py.get_type_bound::<pyo3::exceptions::PyUserWarning>(),
+                    py.get_type::<pyo3::exceptions::PyUserWarning>(),
                 ),
             )?;
         }
@@ -188,7 +188,7 @@ impl SequenceIndex {
         use std::collections::{HashMap, HashSet};
         use std::path::Path;
 
-        let warnings = py.import_bound("warnings")?;
+        let warnings = py.import("warnings")?;
         let mut names: Vec<String> = Vec::new();
         let mut seen_in_file: HashSet<String> = HashSet::new();
         let mut temp: HashMap<String, SequenceData> = HashMap::new();
@@ -238,7 +238,7 @@ impl SequenceIndex {
                         format!(
                             "Sequence name '{name}' already exists in the index and will be overwritten."
                         ),
-                        py.get_type_bound::<pyo3::exceptions::PyUserWarning>(),
+                        py.get_type::<pyo3::exceptions::PyUserWarning>(),
                     ),
                 )?;
             }
