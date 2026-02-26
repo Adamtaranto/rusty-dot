@@ -139,10 +139,10 @@ plot an all-vs-all grid with subpanels scaled by relative sequence length.
 ```python
 from rusty_dot import SequenceIndex
 from rusty_dot.dotplot import DotPlotter
-from rusty_dot.paf_io import CrossIndexPaf, PafAlignment, PafRecord
+from rusty_dot.paf_io import CrossIndex, PafAlignment, PafRecord
 
 # --- Build a cross-index for two assemblies ---
-cross = CrossIndexPaf(k=15)
+cross = CrossIndex(k=15)
 cross.load_fasta("genome_a.fasta", group="a")   # query sequences (rows)
 cross.load_fasta("genome_b.fasta", group="b")   # target sequences (columns)
 
@@ -150,7 +150,7 @@ cross.load_fasta("genome_b.fasta", group="b")   # target sequences (columns)
 paf_lines = cross.get_paf_all()
 
 # --- Sort contigs for maximum collinearity ---
-# Option 1: via CrossIndexPaf (delegates to SequenceIndex.optimal_contig_order)
+# Option 1: via CrossIndex (delegates to SequenceIndex.optimal_contig_order)
 q_sorted, t_sorted = cross.reorder_contigs()
 
 # Option 2: via PafAlignment gravity-centre algorithm

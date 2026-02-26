@@ -4,9 +4,9 @@ This module provides classes and helpers for reading, writing, and reordering
 [PAF (Pairwise mApping Format)](https://github.com/lh3/miniasm/blob/master/PAF.md)
 alignment records.
 
-## CrossIdx — Multi-group cross-index
+## CrossIndex — Multi-group cross-index
 
-`CrossIdx` (formerly `CrossIndexPaf`) manages sequences divided into named
+`CrossIndex` manages sequences divided into named
 groups and computes cross-group pairwise comparisons. It is compatible with
 :class:`~rusty_dot.dotplot.DotPlotter`.
 
@@ -19,10 +19,10 @@ groups and computes cross-group pairwise comparisons. It is compatible with
 ### DotPlotter usage
 
 ```python
-from rusty_dot.paf_io import CrossIdx
+from rusty_dot.paf_io import CrossIndex
 from rusty_dot.dotplot import DotPlotter
 
-cross = CrossIdx(k=15)
+cross = CrossIndex(k=15)
 cross.load_fasta("assembly_a.fasta", group="a")
 cross.load_fasta("assembly_b.fasta", group="b")
 
@@ -34,7 +34,7 @@ plotter.plot(
 )
 ```
 
-::: rusty_dot.paf_io.CrossIdx
+::: rusty_dot.paf_io.CrossIndex
 
 ## PafAlignment — Alignment record collection
 

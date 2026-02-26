@@ -23,23 +23,24 @@ import matplotlib.pyplot as plt
 from rusty_dot._rusty_dot import SequenceIndex
 
 if TYPE_CHECKING:
-    from rusty_dot.paf_io import CrossIdx, PafAlignment
+    from rusty_dot.paf_io import CrossIndex, PafAlignment
 
 _log = logging.getLogger(__name__)
+
 
 
 class DotPlotter:
     """Generate all-vs-all dotplots for sets of DNA sequences.
 
     Accepts a :class:`~rusty_dot.SequenceIndex` (single sequence collection),
-    a :class:`~rusty_dot.paf_io.CrossIdx` (multi-group collection), or a
+    a :class:`~rusty_dot.paf_io.CrossIndex` (multi-group collection), or a
     :class:`~rusty_dot.paf_io.PafAlignment` (alignments loaded from a PAF
     file).
 
-    When using a ``CrossIdx``, pass group-specific names via ``query_names``
+    When using a ``CrossIndex``, pass group-specific names via ``query_names``
     and ``target_names``::
 
-        cross = CrossIdx(k=15)
+        cross = CrossIndex(k=15)
         cross.load_fasta("assembly_a.fasta", group="a")
         cross.load_fasta("assembly_b.fasta", group="b")
 
@@ -66,7 +67,7 @@ class DotPlotter:
 
     Parameters
     ----------
-    index : SequenceIndex, CrossIdx, or PafAlignment
+    index : SequenceIndex, CrossIndex, or PafAlignment
         A populated index or PAF alignment instance.
 
     Examples
@@ -80,12 +81,12 @@ class DotPlotter:
     >>> plotter.plot(output_path="dotplot.png")
     """
 
-    def __init__(self, index: Union[SequenceIndex, 'CrossIdx', 'PafAlignment']) -> None:
+    def __init__(self, index: Union[SequenceIndex, 'CrossIndex', 'PafAlignment']) -> None:
         """Initialise the DotPlotter.
 
         Parameters
         ----------
-        index : SequenceIndex, CrossIdx, or PafAlignment
+        index : SequenceIndex, CrossIndex, or PafAlignment
             A populated index or PAF alignment instance.
         """
         self.index = index
