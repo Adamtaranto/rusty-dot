@@ -2,6 +2,8 @@
 
 import os
 
+import matplotlib.figure
+import matplotlib.pyplot as plt
 import pytest
 
 from rusty_dot._rusty_dot import SequenceIndex
@@ -298,3 +300,61 @@ def test_plot_single_min_length_parameter_accepted(dotplot_index, tmp_path):
     assert axes[nrows - 1][ncols - 1].get_ylabel() == '', (
         'bottom-right should not have y-label'
     )
+
+
+# ---------------------------------------------------------------------------
+# Inline / return-value tests (Jupyter notebook support)
+# ---------------------------------------------------------------------------
+
+
+def test_plot_returns_figure(dotplot_index, tmp_path):
+    """plot() returns a matplotlib Figure instance."""
+    plotter = DotPlotter(dotplot_index)
+    fig = plotter.plot(output_path=str(tmp_path / 'out.png'))
+    assert isinstance(fig, matplotlib.figure.Figure)
+    plt.close(fig)
+
+
+def test_plot_single_returns_figure(dotplot_index, tmp_path):
+    """plot_single() returns a matplotlib Figure instance."""
+    plotter = DotPlotter(dotplot_index)
+    fig = plotter.plot_single('seq1', 'seq2', output_path=str(tmp_path / 'out.png'))
+    assert isinstance(fig, matplotlib.figure.Figure)
+    plt.close(fig)
+
+
+def test_plot_no_output_path_returns_figure(dotplot_index):
+    """plot() with output_path=None returns a Figure and writes no file."""
+    plotter = DotPlotter(dotplot_index)
+    fig = plotter.plot()
+    assert isinstance(fig, matplotlib.figure.Figure)
+    plt.close(fig)
+
+
+def test_plot_single_no_output_path_returns_figure(dotplot_index):
+    """plot_single() with output_path=None returns a Figure and writes no file."""
+    plotter = DotPlotter(dotplot_index)
+    fig = plotter.plot_single('seq1', 'seq2')
+    assert isinstance(fig, matplotlib.figure.Figure)
+    plt.close(fig)
+
+
+def test_plot_no_output_path_creates_no_file(dotplot_index, tmp_path, monkeypatch):
+    """plot() with output_path=None does not create any file."""
+    monkeypatch.chdir(tmp_path)
+    plotter = DotPlotter(dotplot_index)
+    fig = plotter.plot()
+    plt.close(fig)
+    # No files should have been created in the working directory
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_plot_single_no_output_path_creates_no_file(
+    dotplot_index, tmp_path, monkeypatch
+):
+    """plot_single() with output_path=None does not create any file."""
+    monkeypatch.chdir(tmp_path)
+    plotter = DotPlotter(dotplot_index)
+    fig = plotter.plot_single('seq1', 'seq2')
+    plt.close(fig)
+    assert list(tmp_path.iterdir()) == []
