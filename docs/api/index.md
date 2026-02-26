@@ -8,7 +8,7 @@ rusty-dot exposes its functionality through the following classes and functions.
 |-------|--------|-------------|
 | [`SequenceIndex`](sequence_index.md) | `rusty_dot` | Rust-backed FM-index for sequence comparison |
 | [`DotPlotter`](dotplot.md) | `rusty_dot.dotplot` | All-vs-all dotplot visualisation |
-| [`CrossIdx`](paf_io.md#rusty_dot.paf_io.CrossIdx) | `rusty_dot.paf_io` | Multi-group cross-index for cross-group pairwise comparisons; DotPlotter-compatible |
+| [`CrossIndex`](paf_io.md#rusty_dot.paf_io.CrossIndex) | `rusty_dot.paf_io` | Multi-group cross-index for cross-group pairwise comparisons; DotPlotter-compatible |
 | [`PafRecord`](paf_io.md#rusty_dot.paf_io.PafRecord) | `rusty_dot.paf_io` | Single PAF alignment record |
 | [`PafAlignment`](paf_io.md#rusty_dot.paf_io.PafAlignment) | `rusty_dot.paf_io` | Collection of PAF records with reordering utilities |
 
