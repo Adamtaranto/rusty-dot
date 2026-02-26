@@ -185,12 +185,13 @@ impl SequenceIndex {
     pub fn load_fasta(&mut self, py: Python<'_>, path: &str) -> PyResult<Vec<String>> {
         use crate::error::RustyDotError;
         use needletail::parse_fastx_file;
-        use std::collections::HashSet;
+        use std::collections::{HashMap, HashSet};
         use std::path::Path;
 
         let warnings = py.import_bound("warnings")?;
         let mut names: Vec<String> = Vec::new();
         let mut seen_in_file: HashSet<String> = HashSet::new();
+        let mut temp: HashMap<String, SequenceData> = HashMap::new();
 
         let mut reader = parse_fastx_file(Path::new(path))
             .map_err(|e| -> pyo3::PyErr { RustyDotError::FastaParse(e.to_string()).into() })?;
@@ -211,6 +212,25 @@ impl SequenceIndex {
                 ))
                 .into());
             }
+            let text = sequence_to_index_text(&seq);
+            let fm = FmIdx::new(text).map_err(|e| -> pyo3::PyErr { e.into() })?;
+            let kmer_set = build_kmer_set(&seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
+            let seq_len = seq.len();
+            let seq_bytes = seq.as_bytes().to_vec();
+            temp.insert(
+                name.clone(),
+                SequenceData {
+                    fm,
+                    kmer_set,
+                    seq_bytes,
+                    seq_len,
+                },
+            );
+            names.push(name);
+        }
+
+        // No errors — merge the fully-validated batch into self.sequences.
+        for name in &names {
             if self.sequences.contains_key(name.as_str()) {
                 warnings.call_method1(
                     "warn",
@@ -222,21 +242,9 @@ impl SequenceIndex {
                     ),
                 )?;
             }
-            let text = sequence_to_index_text(&seq);
-            let fm = FmIdx::new(text).map_err(|e| -> pyo3::PyErr { e.into() })?;
-            let kmer_set = build_kmer_set(&seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
-            let seq_len = seq.len();
-            let seq_bytes = seq.as_bytes().to_vec();
-            self.sequences.insert(
-                name.clone(),
-                SequenceData {
-                    fm,
-                    kmer_set,
-                    seq_bytes,
-                    seq_len,
-                },
-            );
-            names.push(name);
+            if let Some(data) = temp.remove(name) {
+                self.sequences.insert(name.clone(), data);
+            }
         }
         Ok(names)
     }
