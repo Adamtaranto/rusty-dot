@@ -1102,6 +1102,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../cross_index/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CrossIndex
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../paf_io/" class="md-nav__link">
         
   
@@ -2924,7 +2952,7 @@ gravity centre.</p>
     <div class="doc doc-contents ">
 
         <p>Serialise the index to a binary file.</p>
-<p>Stores the original sequence bytes and k-mer sets using bincode.
+<p>Stores the original sequence bytes and k-mer sets using postcard.
 The FM-index is rebuilt from the sequence bytes when the file is
 loaded, so the on-disk format is compact and version-independent.</p>
 
