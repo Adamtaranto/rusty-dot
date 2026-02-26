@@ -411,7 +411,7 @@ class SequenceIndex:
     def save(self, path: str) -> None:
         """Serialise the index to a binary file.
 
-        Stores the original sequence bytes and k-mer sets using bincode.
+        Stores the original sequence bytes and k-mer sets using postcard.
         The FM-index is rebuilt from the sequence bytes when the file is
         loaded, so the on-disk format is compact and version-independent.
 
@@ -761,7 +761,7 @@ def py_save_index(path: str, sequences: dict[str, str], k: int) -> None:
     """Build and serialise an index collection to a binary file.
 
     Constructs FM-indexes and k-mer sets for all provided sequences and
-    writes them to a compact bincode file.
+    writes them to a compact postcard binary file.
 
     Parameters
     ----------
@@ -782,7 +782,7 @@ def py_save_index(path: str, sequences: dict[str, str], k: int) -> None:
 def py_load_index(path: str) -> tuple[dict[str, list[str]], int]:
     """Load a previously serialised index collection from a binary file.
 
-    Reads a bincode file written by ``py_save_index`` and returns the
+    Reads a postcard binary file written by ``py_save_index`` and returns the
     k-mer sets and k-mer length stored in it.  The FM-indexes themselves
     are not returned; use :class:`SequenceIndex` with ``load`` for a
     fully functional in-memory index.

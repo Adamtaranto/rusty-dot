@@ -17,7 +17,7 @@ At its core, it builds an [FM-index](https://en.wikipedia.org/wiki/FM-index) (vi
 - **Complete RC hit coverage**: two patterns merged independently — anti-diagonal (standard inverted repeat) and co-diagonal (both arms same direction)
 - **Unified merge API** (`py_merge_runs`) handles all orientation cases with a single call
 - **PAF format output** for alignment records
-- **FM-index serialization/deserialization** with [serde](https://docs.rs/serde) + bincode
+- **FM-index serialization/deserialization** with [serde](https://docs.rs/serde) + postcard
 - **All-vs-all dotplot visualization** with matplotlib: forward hits in blue, RC hits in red; edge-only axis labels in grid plots; subpanels scaled by sequence length by default (`scale_sequences=True`)
 - **SVG vector output** via the `format` parameter (`format='svg'`) or by using a `.svg` file extension — suitable for publication-quality figures
 - **Minimum alignment length filter** (`min_length`) on `DotPlotter.plot()` / `plot_single()` — suppresses short or spurious alignment hits before rendering

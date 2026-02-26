@@ -1,4 +1,4 @@
-//! FM-index serialization and deserialization using serde + bincode.
+//! FM-index serialization and deserialization using serde + postcard.
 //!
 //! Rather than serializing the FM-index data structures directly (which may
 //! not implement serde traits), we store only the original sequence text
@@ -12,7 +12,7 @@ use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Read};
 use std::path::Path;
 
 /// Serializable representation of a single indexed sequence.
@@ -37,7 +37,7 @@ pub struct IndexCollection {
     pub k: usize,
 }
 
-/// Save an `IndexCollection` to a binary file using bincode.
+/// Save an `IndexCollection` to a binary file using postcard.
 ///
 /// # Arguments
 ///
@@ -51,12 +51,12 @@ pub fn save_index(collection: &IndexCollection, path: &str) -> Result<(), RustyD
     let file =
         File::create(Path::new(path)).map_err(|e| RustyDotError::Serialization(e.to_string()))?;
     let writer = BufWriter::new(file);
-    bincode::serialize_into(writer, collection)
+    postcard::to_io(collection, writer)
         .map_err(|e| RustyDotError::Serialization(e.to_string()))?;
     Ok(())
 }
 
-/// Load an `IndexCollection` from a binary file using bincode.
+/// Load an `IndexCollection` from a binary file using postcard.
 ///
 /// # Arguments
 ///
@@ -72,8 +72,12 @@ pub fn save_index(collection: &IndexCollection, path: &str) -> Result<(), RustyD
 pub fn load_index(path: &str) -> Result<IndexCollection, RustyDotError> {
     let file =
         File::open(Path::new(path)).map_err(|e| RustyDotError::Serialization(e.to_string()))?;
-    let reader = BufReader::new(file);
-    bincode::deserialize_from(reader).map_err(|e| RustyDotError::Serialization(e.to_string()))
+    let mut reader = BufReader::new(file);
+    let mut bytes = Vec::new();
+    reader
+        .read_to_end(&mut bytes)
+        .map_err(|e| RustyDotError::Serialization(e.to_string()))?;
+    postcard::from_bytes(&bytes).map_err(|e| RustyDotError::Serialization(e.to_string()))
 }
 
 /// Rebuild an `FmIdx` from stored sequence bytes.

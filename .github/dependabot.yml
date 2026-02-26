@@ -9,8 +9,6 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
-    ignore:
-      - dependency-name: "bincode"
   - package-ecosystem: "github-actions"
     directory: "/" # Location of GitHub Actions workflows (.github/workflows)
     schedule:
