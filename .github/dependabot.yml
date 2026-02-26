@@ -13,7 +13,7 @@ updates:
     directory: "/" # Location of GitHub Actions workflows (.github/workflows)
     schedule:
       interval: "weekly"
-  - package-ecosystem: "pip"
-    directory: "/" # Location of pyproject.toml for Python dependencies
-    schedule:
-      interval: "weekly"
+#  - package-ecosystem: "pip"
+#    directory: "/" # Location of pyproject.toml for Python dependencies
+#    schedule:
+#      interval: "weekly"
