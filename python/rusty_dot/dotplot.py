@@ -15,11 +15,13 @@ from typing import TYPE_CHECKING, Optional, Union
 
 import matplotlib.colors as mcolors
 import matplotlib.figure
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 
 from rusty_dot._rusty_dot import SequenceIndex
 
 if TYPE_CHECKING:
+    from rusty_dot.annotation import GffAnnotation
     from rusty_dot.paf_io import CrossIndex, PafAlignment
 
 _log = logging.getLogger(__name__)
@@ -110,6 +112,7 @@ class DotPlotter:
         min_length: int = 0,
         color_by_identity: bool = False,
         identity_palette: str = 'viridis',
+        annotation: Optional['GffAnnotation'] = None,
     ) -> matplotlib.figure.Figure:
         """Plot an all-vs-all dotplot grid.
 
@@ -177,6 +180,11 @@ class DotPlotter:
             Matplotlib colormap name used to map identity values (0–1) to
             colours when ``color_by_identity=True``.  Default is
             ``'viridis'``.
+        annotation : GffAnnotation, optional
+            Feature annotations to overlay on self-vs-self diagonal panels.
+            Each feature is drawn as a coloured square at its genomic
+            position.  Sequence names in *annotation* that are absent from
+            the index emit a warning.  Default is ``None``.
 
         Returns
         -------
@@ -193,6 +201,18 @@ class DotPlotter:
             query_names = sorted(all_names)
         if target_names is None:
             target_names = sorted(all_names)
+
+        # Warn about annotation sequences missing from the index.
+        if annotation is not None:
+            index_seqs = set(all_names)
+            for ann_seq in annotation.sequence_names():
+                if ann_seq not in index_seqs:
+                    _log.warning(
+                        'Annotation contains features for sequence %r which is '
+                        'not present in the index. These features will not be '
+                        'plotted.',
+                        ann_seq,
+                    )
 
         nrows = len(query_names)
         ncols = len(target_names)
@@ -239,12 +259,27 @@ class DotPlotter:
                     rc_color=rc_color,
                     merge=merge,
                     min_length=min_length,
-                    # Only label the leftmost column (y) and bottom row (x)
-                    show_xlabel=(row_idx == nrows - 1),
+                    # Sequence name labels: y-label on leftmost column only;
+                    # column (x) labels are shown as titles on the top row.
+                    show_xlabel=False,
                     show_ylabel=(col_idx == 0),
                     color_by_identity=color_by_identity,
                     identity_palette=identity_palette,
                 )
+
+                # Column label at top of each column (top row only), rotated.
+                if row_idx == 0:
+                    ax.set_title(t_name, fontsize=8, rotation=45, ha='left', va='bottom')
+
+                # Suppress redundant tick labels on internal panels.
+                if row_idx < nrows - 1:
+                    ax.tick_params(axis='x', labelbottom=False)
+                if col_idx > 0:
+                    ax.tick_params(axis='y', labelleft=False)
+
+                # Annotation squares on self-vs-self (diagonal) panels.
+                if annotation is not None and q_name == t_name:
+                    self._draw_annotation_squares(ax, q_name, annotation)
 
         if title:
             fig.suptitle(title, fontsize=14, y=1.01)
@@ -380,6 +415,91 @@ class DotPlotter:
         ax.tick_params(axis='both', labelsize=6)
         ax.set_aspect('auto')
 
+    def _draw_annotation_squares(
+        self,
+        ax: plt.Axes,
+        seq_name: str,
+        annotation: 'GffAnnotation',
+    ) -> None:
+        """Overlay annotation feature squares on a self-vs-self panel.
+
+        Each feature ``[start, end)`` is drawn as a filled square at position
+        ``(start, start)`` to ``(end, end)`` in the dotplot coordinate system.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The axes of the self-vs-self panel.
+        seq_name : str
+            Sequence name whose features should be drawn.
+        annotation : GffAnnotation
+            The annotation object providing features and colours.
+        """
+        features = annotation.get_features_for_sequence(seq_name)
+        for feat in features:
+            width = feat.end - feat.start
+            rect = mpatches.Rectangle(
+                (feat.start, feat.start),
+                width,
+                width,
+                facecolor=annotation.get_color(feat.feature_type),
+                edgecolor='none',
+                alpha=0.35,
+            )
+            ax.add_patch(rect)
+
+    def plot_annotation_legend(
+        self,
+        annotation: 'GffAnnotation',
+        output_path: Optional[Union[str, Path]] = None,
+        figsize: tuple[float, float] = (3.0, 4.0),
+        dpi: int = 150,
+        format: Optional[str] = None,
+    ) -> matplotlib.figure.Figure:
+        """Render the annotation feature-type legend as a standalone figure.
+
+        Produces a figure containing only a colour legend that maps each
+        feature type to its assigned colour.  This is intended to be
+        displayed alongside dotplots produced with an *annotation* argument.
+
+        Parameters
+        ----------
+        annotation : GffAnnotation
+            The annotation object whose feature-type colours are displayed.
+        output_path : str or Path, optional
+            Output image file path.  When ``None`` (default) the figure is
+            not saved to disk.
+        figsize : tuple[float, float], optional
+            Figure size as ``(width, height)`` in inches.
+            Default is ``(3.0, 4.0)``.
+        dpi : int, optional
+            Output image resolution. Default is ``150``.
+        format : str, optional
+            Output image format (e.g. ``'png'``, ``'svg'``, ``'pdf'``).
+            When ``None`` (default), the format is inferred from the
+            ``output_path`` file extension.
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+            A figure containing only the legend.
+        """
+        handles = [
+            mpatches.Patch(
+                facecolor=annotation.get_color(ft),
+                edgecolor='none',
+                label=ft,
+            )
+            for ft in annotation.feature_types()
+        ]
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.set_visible(False)
+        fig.legend(handles=handles, loc='center', fontsize=10, frameon=True)
+        plt.tight_layout()
+        if output_path is not None:
+            plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
+        return fig
+
     def plot_single(
         self,
         query_name: str,
@@ -396,8 +516,14 @@ class DotPlotter:
         min_length: int = 0,
         color_by_identity: bool = False,
         identity_palette: str = 'viridis',
+        annotation: Optional['GffAnnotation'] = None,
+        annotation_track_size: float = 0.4,
     ) -> matplotlib.figure.Figure:
         """Plot a single pairwise dotplot.
+
+        When *annotation* is provided, a linear annotation track is drawn
+        below the x-axis (target sequence features) and to the left of the
+        y-axis (query sequence features).
 
         Parameters
         ----------
@@ -410,7 +536,9 @@ class DotPlotter:
             not saved to disk.  Use a ``.svg`` extension (or set
             ``format='svg'``) to produce an SVG vector image.
         figsize : tuple[float, float], optional
-            Figure size as (width, height) in inches. Default is ``(6, 6)``.
+            Figure size as (width, height) in inches for the main dotplot
+            panel.  When annotation tracks are added the overall figure will
+            be slightly larger.  Default is ``(6, 6)``.
         dot_size : float, optional
             Marker/line size for each match. Default is ``0.5``.
         dot_color : str, optional
@@ -442,6 +570,15 @@ class DotPlotter:
             Matplotlib colormap name used to map identity values (0–1) to
             colours when ``color_by_identity=True``.  Default is
             ``'viridis'``.
+        annotation : GffAnnotation, optional
+            Feature annotations to display as linear tracks flanking the
+            dotplot.  Target features are drawn below the x-axis; query
+            features are drawn to the left of the y-axis.  Sequence names
+            in *annotation* absent from the index emit a warning.
+            Default is ``None``.
+        annotation_track_size : float, optional
+            Height/width in inches of each annotation track.
+            Default is ``0.4``.
 
         Returns
         -------
@@ -450,9 +587,54 @@ class DotPlotter:
             displayed inline automatically; call ``matplotlib.pyplot.close``
             on the returned object when it is no longer needed.
         """
-        fig, ax = plt.subplots(figsize=figsize)
+        import matplotlib.gridspec as gridspec
+
+        if annotation is not None:
+            # Warn about annotation sequences not in the index.
+            index_seqs = set(self.index.sequence_names())
+            for ann_seq in annotation.sequence_names():
+                if ann_seq not in index_seqs:
+                    _log.warning(
+                        'Annotation contains features for sequence %r which is '
+                        'not present in the index. These features will not be '
+                        'plotted.',
+                        ann_seq,
+                    )
+            x_feats = annotation.get_features_for_sequence(target_name)
+            y_feats = annotation.get_features_for_sequence(query_name)
+            has_tracks = True
+        else:
+            x_feats = []
+            y_feats = []
+            has_tracks = False
+
+        if has_tracks:
+            fw, fh = figsize
+            ts = annotation_track_size
+            # GridSpec layout:
+            #   rows: [main (fh), x-track (ts)]
+            #   cols: [y-track (ts), main (fw)]
+            total_w = fw + ts
+            total_h = fh + ts
+            fig = plt.figure(figsize=(total_w, total_h))
+            gs = gridspec.GridSpec(
+                2,
+                2,
+                width_ratios=[ts, fw],
+                height_ratios=[fh, ts],
+                hspace=0.02,
+                wspace=0.02,
+            )
+            main_ax = fig.add_subplot(gs[0, 1])
+            y_track_ax = fig.add_subplot(gs[0, 0], sharey=main_ax)
+            x_track_ax = fig.add_subplot(gs[1, 1], sharex=main_ax)
+            corner_ax = fig.add_subplot(gs[1, 0])
+            corner_ax.set_visible(False)
+        else:
+            fig, main_ax = plt.subplots(figsize=figsize)
+
         self._plot_panel(
-            ax,
+            main_ax,
             query_name,
             target_name,
             dot_size=dot_size,
@@ -463,10 +645,54 @@ class DotPlotter:
             color_by_identity=color_by_identity,
             identity_palette=identity_palette,
         )
+
+        if has_tracks:
+            t_len = self.index.get_sequence_length(target_name)
+
+            # Hide main-axis tick labels that duplicate the track labels.
+            plt.setp(main_ax.get_xticklabels(), visible=False)
+            plt.setp(main_ax.get_yticklabels(), visible=False)
+
+            # ---- x-annotation track (below x-axis: target features) ----
+            x_track_ax.set_xlim(0, t_len)
+            x_track_ax.set_ylim(0, 1)
+            x_track_ax.set_yticks([])
+            x_track_ax.tick_params(axis='x', labelsize=6)
+            x_track_ax.set_xlabel(target_name, fontsize=8)
+            for feat in x_feats:
+                rect = mpatches.Rectangle(
+                    (feat.start, 0.1),
+                    feat.end - feat.start,
+                    0.8,
+                    facecolor=annotation.get_color(feat.feature_type),  # type: ignore[union-attr]
+                    edgecolor='none',
+                )
+                x_track_ax.add_patch(rect)
+
+            # ---- y-annotation track (left of y-axis: query features) ----
+            # The main axes y-axis is inverted, so sharey keeps inversion.
+            y_track_ax.set_xlim(1, 0)  # reversed so features face main plot
+            y_track_ax.set_xticks([])
+            y_track_ax.tick_params(axis='y', labelsize=6)
+            y_track_ax.set_ylabel(query_name, fontsize=8)
+            for feat in y_feats:
+                rect = mpatches.Rectangle(
+                    (0.1, feat.start),
+                    0.8,
+                    feat.end - feat.start,
+                    facecolor=annotation.get_color(feat.feature_type),  # type: ignore[union-attr]
+                    edgecolor='none',
+                )
+                y_track_ax.add_patch(rect)
+
         if title is None:
             title = f'{query_name} vs {target_name}'
-        ax.set_title(title, fontsize=10)
-        plt.tight_layout()
+        main_ax.set_title(title, fontsize=10)
+
+        if has_tracks:
+            fig.subplots_adjust(hspace=0.02, wspace=0.02)
+        else:
+            plt.tight_layout()
         if output_path is not None:
             plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
         return fig
