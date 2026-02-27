@@ -687,10 +687,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-retrieve-all-cross-group-paf-alignments" class="md-nav__link">
+  <a href="#3-compute-cross-group-k-mer-matches" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Retrieve all cross-group PAF alignments
+        3. Compute cross-group k-mer matches
       
     </span>
   </a>
@@ -709,10 +709,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-build-a-combined-index-for-plotting" class="md-nav__link">
+  <a href="#5-build-a-combined-index-for-plotting-optional" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Build a combined index for plotting
+        5. Build a combined index for plotting (optional)
       
     </span>
   </a>
@@ -720,10 +720,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-plot-the-all-vs-all-dotplot-with-relative-scaling" class="md-nav__link">
+  <a href="#6-plot-the-all-vs-all-dotplot-with-directly" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Plot the all-vs-all dotplot with relative scaling
+        6. Plot the all-vs-all dotplot with directly
       
     </span>
   </a>
@@ -1074,10 +1074,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-retrieve-all-cross-group-paf-alignments" class="md-nav__link">
+  <a href="#3-compute-cross-group-k-mer-matches" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Retrieve all cross-group PAF alignments
+        3. Compute cross-group k-mer matches
       
     </span>
   </a>
@@ -1096,10 +1096,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-build-a-combined-index-for-plotting" class="md-nav__link">
+  <a href="#5-build-a-combined-index-for-plotting-optional" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Build a combined index for plotting
+        5. Build a combined index for plotting (optional)
       
     </span>
   </a>
@@ -1107,10 +1107,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-plot-the-all-vs-all-dotplot-with-relative-scaling" class="md-nav__link">
+  <a href="#6-plot-the-all-vs-all-dotplot-with-directly" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Plot the all-vs-all dotplot with relative scaling
+        6. Plot the all-vs-all dotplot with directly
       
     </span>
   </a>
@@ -1878,7 +1878,8 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 <h1 id="all-vs-all-dotplot-between-two-sequence-indices">All-vs-All Dotplot Between Two Sequence Indices<a class="anchor-link" href="#all-vs-all-dotplot-between-two-sequence-indices">¶</a></h1><p>This tutorial demonstrates how to compare sequences from <strong>two separate FASTA files</strong> (e.g. two genome assemblies) using <code>CrossIndex</code>.  Each FASTA file is assigned to its own group, and pairwise alignments are computed between all sequences in group A and all sequences in group B.</p>
 <h2 id="overview">Overview<a class="anchor-link" href="#overview">¶</a></h2><ol>
 <li>Create a <code>CrossIndex</code> and load two FASTA files into groups A and B.</li>
-<li>Retrieve all cross-group PAF alignments with <code>get_paf_all()</code>.</li>
+<li>Compute cross-group k-mer matches with <code>compute_matches()</code>.</li>
+<li>Retrieve PAF alignments with <code>get_paf()</code> and optionally export them.</li>
 <li>Build a <code>PafAlignment</code> from those records for contig reordering.</li>
 <li>Plot the sorted all-vs-all dotplot with <code>DotPlotter</code>.</li>
 </ol>
@@ -2039,7 +2040,9 @@ print(cross)</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="3-retrieve-all-cross-group-paf-alignments">3. Retrieve all cross-group PAF alignments<a class="anchor-link" href="#3-retrieve-all-cross-group-paf-alignments">¶</a></h2>
+<h2 id="3-compute-cross-group-k-mer-matches">3. Compute cross-group k-mer matches<a class="anchor-link" href="#3-compute-cross-group-k-mer-matches">¶</a></h2><p>Call <code>compute_matches()</code> before retrieving PAF lines or reordering contigs.
+This is the explicit computation step — matches are <strong>not</strong> calculated automatically
+when loading sequences.</p>
 </div>
 </div>
 </div>
@@ -2062,17 +2065,26 @@ print(cross)</div>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">paf_lines</span> <span class="o">=</span> <span class="n">cross</span><span class="o">.</span><span class="n">get_paf_all</span><span class="p">(</span><span class="n">merge</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">cross</span><span class="o">.</span><span class="n">compute_matches</span><span class="p">()</span>  <span class="c1"># compute k-mer matches between group 'a' and group 'b'</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s1">'Computed group pairs:'</span><span class="p">,</span> <span class="n">cross</span><span class="o">.</span><span class="n">computed_group_pairs</span><span class="p">)</span>
+
+<span class="n">paf_lines</span> <span class="o">=</span> <span class="n">cross</span><span class="o">.</span><span class="n">get_paf</span><span class="p">(</span><span class="n">merge</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Total PAF lines: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">paf_lines</span><span class="p">)</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
 <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">paf_lines</span><span class="p">[:</span><span class="mi">5</span><span class="p">]:</span>
     <span class="nb">print</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-4">paf_lines = cross.get_paf_all(merge=True)
+<div class="clipboard-copy-txt" id="cell-4">cross.compute_matches()  # compute k-mer matches between group 'a' and group 'b'
+
+print('Computed group pairs:', cross.computed_group_pairs)
+
+paf_lines = cross.get_paf(merge=True)
 
 print(f'Total PAF lines: {len(paf_lines)}')
 for line in paf_lines[:5]:
-    print(line)</div>
+    print(line)
+</div>
 </div>
 </div>
 </div>
@@ -2154,7 +2166,14 @@ print('Sorted target (genome B) contigs:', t_sorted)</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="5-build-a-combined-index-for-plotting">5. Build a combined index for plotting<a class="anchor-link" href="#5-build-a-combined-index-for-plotting">¶</a></h2><p><code>DotPlotter</code> requires a single <code>SequenceIndex</code> containing all sequences to be plotted.  We create one by adding sequences from both genomes.</p>
+<h2 id="5-build-a-combined-index-for-plotting-optional">5. Build a combined index for plotting (optional)<a class="anchor-link" href="#5-build-a-combined-index-for-plotting-optional">¶</a></h2><blockquote>
+<p><strong>Note:</strong> You can now plot directly from a <code>CrossIndex</code> using <code>query_group</code> and
+<code>target_group</code> parameters — see step 6.  The combined index below is only needed
+when using <code>DotPlotter</code> without group params.</p>
+</blockquote>
+<p><code>DotPlotter</code> requires a single <code>SequenceIndex</code> containing all sequences to be
+plotted when not using the group-based API.  The cell below creates one from both
+genomes.</p>
 </div>
 </div>
 </div>
@@ -2208,8 +2227,11 @@ print(combined_idx)</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="6-plot-the-all-vs-all-dotplot-with-relative-scaling">6. Plot the all-vs-all dotplot with relative scaling<a class="anchor-link" href="#6-plot-the-all-vs-all-dotplot-with-relative-scaling">¶</a></h2><p>Pass <code>scale_sequences=True</code> so that each subplot's width and height are proportional to the lengths of the compared sequences.</p>
-<p><code>plot()</code> returns a <code>matplotlib.figure.Figure</code>, so the plot is displayed inline in Jupyter automatically.  Pass <code>output_path</code> to also save it to disk.</p>
+<h2 id="6-plot-the-all-vs-all-dotplot-with-crossindex-directly">6. Plot the all-vs-all dotplot with <code>CrossIndex</code> directly<a class="anchor-link" href="#6-plot-the-all-vs-all-dotplot-with-crossindex-directly">¶</a></h2><p><code>DotPlotter</code> now accepts <code>query_group</code> and <code>target_group</code> parameters so you can
+plot directly from a <code>CrossIndex</code> without building a separate combined index.
+Pre-computed merged alignments from <code>compute_matches()</code> are used automatically.</p>
+<p>Pass <code>scale_sequences=True</code> so that each subplot's width and height are proportional
+to the lengths of the compared sequences.</p>
 </div>
 </div>
 </div>
@@ -2234,11 +2256,12 @@ print(combined_idx)</div>
 </div>
 <div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
 
-<span class="n">plotter</span> <span class="o">=</span> <span class="n">DotPlotter</span><span class="p">(</span><span class="n">combined_idx</span><span class="p">)</span>
+<span class="c1"># Plot directly from CrossIndex — no separate combined_idx needed</span>
+<span class="n">plotter</span> <span class="o">=</span> <span class="n">DotPlotter</span><span class="p">(</span><span class="n">cross</span><span class="p">)</span>
 
 <span class="n">fig</span> <span class="o">=</span> <span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
-    <span class="n">query_names</span><span class="o">=</span><span class="n">q_sorted</span><span class="p">,</span>
-    <span class="n">target_names</span><span class="o">=</span><span class="n">t_sorted</span><span class="p">,</span>
+    <span class="n">query_group</span><span class="o">=</span><span class="s1">'a'</span><span class="p">,</span>     <span class="c1"># sequence names looked up from group 'a'</span>
+    <span class="n">target_group</span><span class="o">=</span><span class="s1">'b'</span><span class="p">,</span>    <span class="c1"># sequence names looked up from group 'b'</span>
     <span class="n">figsize_per_panel</span><span class="o">=</span><span class="mf">4.0</span><span class="p">,</span>
     <span class="n">scale_sequences</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="n">title</span><span class="o">=</span><span class="s1">'Genome A vs Genome B — collinearity-sorted contigs'</span><span class="p">,</span>
@@ -2248,17 +2271,19 @@ print(combined_idx)</div>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-7">import matplotlib.pyplot as plt
 
-plotter = DotPlotter(combined_idx)
+# Plot directly from CrossIndex — no separate combined_idx needed
+plotter = DotPlotter(cross)
 
 fig = plotter.plot(
-    query_names=q_sorted,
-    target_names=t_sorted,
+    query_group='a',     # sequence names looked up from group 'a'
+    target_group='b',    # sequence names looked up from group 'b'
     figsize_per_panel=4.0,
     scale_sequences=True,
     title='Genome A vs Genome B — collinearity-sorted contigs',
     dpi=100,
 )
-plt.close(fig)  # free memory when no longer needed</div>
+plt.close(fig)  # free memory when no longer needed
+</div>
 </div>
 </div>
 </div>
@@ -2271,7 +2296,7 @@ plt.close(fig)  # free memory when no longer needed</div>
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="using-crossindexreorder_contigs-directly">Using <code>CrossIndex.reorder_contigs</code> directly<a class="anchor-link" href="#using-crossindexreorder_contigs-directly">¶</a></h2><p>A convenience wrapper is also available on the <code>CrossIndex</code> object itself, which internally calls <code>SequenceIndex.optimal_contig_order</code>.</p>
+<h2 id="using-crossindexreorder_contigs-directly">Using <code>CrossIndex.reorder_contigs</code> directly<a class="anchor-link" href="#using-crossindexreorder_contigs-directly">¶</a></h2><p>A convenience wrapper is available on the <code>CrossIndex</code> object itself.  <code>compute_matches()</code> must have been called first — it is the explicit step that computes and caches k-mer matches between groups.</p>
 </div>
 </div>
 </div>
@@ -2294,13 +2319,16 @@ plt.close(fig)  # free memory when no longer needed</div>
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">q_opt</span><span class="p">,</span> <span class="n">t_opt</span> <span class="o">=</span> <span class="n">cross</span><span class="o">.</span><span class="n">reorder_contigs</span><span class="p">()</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="c1"># compute_matches was already called above; calling reorder_contigs</span>
+<span class="n">q_opt</span><span class="p">,</span> <span class="n">t_opt</span> <span class="o">=</span> <span class="n">cross</span><span class="o">.</span><span class="n">reorder_contigs</span><span class="p">()</span>
 <span class="nb">print</span><span class="p">(</span><span class="s1">'Optimal query order:'</span><span class="p">,</span> <span class="n">q_opt</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="s1">'Optimal target order:'</span><span class="p">,</span> <span class="n">t_opt</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-8">q_opt, t_opt = cross.reorder_contigs()
+<div class="clipboard-copy-txt" id="cell-8"># compute_matches was already called above; calling reorder_contigs
+q_opt, t_opt = cross.reorder_contigs()
 print('Optimal query order:', q_opt)
-print('Optimal target order:', t_opt)</div>
+print('Optimal target order:', t_opt)
+</div>
 </div>
 </div>
 </div>
