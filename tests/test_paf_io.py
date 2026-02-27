@@ -838,9 +838,7 @@ class TestPafAlignmentGroups:
     def test_reorder_contigs_by_group(self):
         """reorder_contigs respects query_group and target_group params."""
         self.aln.set_groups({'q': ['query1', 'query2'], 't': ['target1']})
-        q_sorted, t_sorted = self.aln.reorder_contigs(
-            query_group='q', target_group='t'
-        )
+        q_sorted, t_sorted = self.aln.reorder_contigs(query_group='q', target_group='t')
         assert set(q_sorted) == {'query1', 'query2'}
         assert set(t_sorted) == {'target1'}
 
@@ -854,7 +852,6 @@ class TestPafAlignmentGroups:
         q_sorted, t_sorted = self.aln.reorder_contigs()
         assert set(q_sorted) == set(self.aln.query_names)
         assert set(t_sorted) == set(self.aln.target_names)
-
 
 
 class TestComputeGravityContigsUnmatchedLength:

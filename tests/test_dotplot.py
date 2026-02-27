@@ -851,9 +851,11 @@ def test_dotplotter_paf_as_index_identity_coloring(tmp_path):
 def _make_cross_index():
     """Build a small CrossIndex with two groups and pre-computed matches."""
     import matplotlib
+
     matplotlib.use('Agg')
 
     from rusty_dot.paf_io import CrossIndex
+
     cross = CrossIndex(k=4)
     cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='group_a')
     cross.add_sequence('q2', 'TACGTACGTACGTACG', group='group_a')
@@ -864,6 +866,7 @@ def _make_cross_index():
 def test_dotplotter_cross_index_query_group_param(tmp_path):
     """DotPlotter.plot() with query_group/target_group resolves names from CrossIndex."""
     import matplotlib
+
     matplotlib.use('Agg')
 
     cross = _make_cross_index()
@@ -892,9 +895,11 @@ def test_dotplotter_cross_index_group_not_cross_raises():
 def test_dotplotter_cross_index_uses_precomputed_records():
     """When compute_matches() was called, DotPlotter uses the cached records."""
     import matplotlib
+
     matplotlib.use('Agg')
 
     from rusty_dot.paf_io import CrossIndex, PafAlignment
+
     cross = CrossIndex(k=4)
     cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
     cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
@@ -916,9 +921,11 @@ def test_dotplotter_cross_index_uses_precomputed_records():
 def test_dotplotter_cross_index_label_strips_prefix():
     """Axis labels should not contain the group prefix 'group:' for CrossIndex."""
     import matplotlib
+
     matplotlib.use('Agg')
 
     from rusty_dot.paf_io import CrossIndex
+
     cross = CrossIndex(k=4)
     cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='grp_a')
     cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='grp_b')
@@ -951,9 +958,11 @@ def test_dotplotter_cross_index_strip_group_prefix_static():
 def test_dotplotter_cross_index_plot_single_with_groups(tmp_path):
     """plot_single() with query_group/target_group works for CrossIndex."""
     import matplotlib
+
     matplotlib.use('Agg')
 
     from rusty_dot.paf_io import CrossIndex
+
     cross = CrossIndex(k=4)
     cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='grp_a')
     cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='grp_b')

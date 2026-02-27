@@ -144,6 +144,7 @@ class DotPlotter:
     def _index_is_cross(self) -> bool:
         """Return ``True`` when *index* is a :class:`~rusty_dot.paf_io.CrossIndex`."""
         from rusty_dot.paf_io import CrossIndex
+
         return isinstance(self.index, CrossIndex)
 
     @staticmethod
@@ -587,7 +588,11 @@ class DotPlotter:
         #   records), use it for rendering.
         # • When index has a k-mer engine but color_by_identity is requested
         #   without a PafAlignment, fall back to k-mer matches with a warning.
-        use_paf = color_by_identity or self._index_is_paf() or (paf_alignment_override is not None)
+        use_paf = (
+            color_by_identity
+            or self._index_is_paf()
+            or (paf_alignment_override is not None)
+        )
 
         if use_paf and effective_paf is None:
             _log.warning(

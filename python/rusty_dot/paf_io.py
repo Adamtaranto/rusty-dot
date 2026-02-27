@@ -779,9 +779,9 @@ class PafAlignment:
         """
         current = self._groups if self._groups is not None else self.groups
         if old_name not in current:
-            raise KeyError(f"Group {old_name!r} not found.")
+            raise KeyError(f'Group {old_name!r} not found.')
         if new_name in current and new_name != old_name:
-            raise ValueError(f"Group {new_name!r} already exists.")
+            raise ValueError(f'Group {new_name!r} already exists.')
         self._groups = {
             (new_name if k == old_name else k): v for k, v in current.items()
         }
@@ -834,14 +834,14 @@ class PafAlignment:
         current_groups = self.groups
         if query_group is not None:
             if query_group not in current_groups:
-                raise KeyError(f"Group {query_group!r} not found.")
+                raise KeyError(f'Group {query_group!r} not found.')
             q = current_groups[query_group]
         else:
             q = query_names if query_names is not None else self.query_names
 
         if target_group is not None:
             if target_group not in current_groups:
-                raise KeyError(f"Group {target_group!r} not found.")
+                raise KeyError(f'Group {target_group!r} not found.')
             t = current_groups[target_group]
         else:
             t = target_names if target_names is not None else self.target_names
@@ -1033,8 +1033,8 @@ class CrossIndex:
         """Emit warnings if *name* already exists in the same or another group."""
         if name in self._groups.get(group, []):
             _log.warning(
-                "CrossIndex: sequence %r already exists in group %r; "
-                "its FM-index will be overwritten",
+                'CrossIndex: sequence %r already exists in group %r; '
+                'its FM-index will be overwritten',
                 name,
                 group,
             )
@@ -1042,8 +1042,8 @@ class CrossIndex:
             for other_g, other_names in self._groups.items():
                 if other_g != group and name in other_names:
                     _log.warning(
-                        "CrossIndex: sequence %r already exists in group %r; "
-                        "adding the same name to group %r may cause confusion",
+                        'CrossIndex: sequence %r already exists in group %r; '
+                        'adding the same name to group %r may cause confusion',
                         name,
                         other_g,
                         group,
@@ -1076,7 +1076,7 @@ class CrossIndex:
             raise ValueError(f"Group name must not contain ':', got {group!r}")
         self._check_name_collision(name, group)
         _log.debug(
-            "CrossIndex: adding sequence %r (len=%d) to group %r",
+            'CrossIndex: adding sequence %r (len=%d) to group %r',
             name,
             len(seq),
             group,
@@ -1120,7 +1120,7 @@ class CrossIndex:
             raise ValueError(f"Group name must not contain ':', got {group!r}")
         from rusty_dot._rusty_dot import py_read_fasta
 
-        _log.info("CrossIndex: loading sequences from %r into group %r", path, group)
+        _log.info('CrossIndex: loading sequences from %r into group %r', path, group)
         seqs = py_read_fasta(path)
         if group not in self._groups:
             self._groups[group] = []
@@ -1129,7 +1129,7 @@ class CrossIndex:
         for name, seq in seqs.items():
             self._check_name_collision(name, group)
             _log.debug(
-                "CrossIndex: adding sequence %r (len=%d) to group %r",
+                'CrossIndex: adding sequence %r (len=%d) to group %r',
                 name,
                 len(seq),
                 group,
@@ -1140,7 +1140,7 @@ class CrossIndex:
                 self._groups[group].append(name)
             names.append(name)
         _log.info(
-            "CrossIndex: loaded %d sequence(s) from %r into group %r",
+            'CrossIndex: loaded %d sequence(s) from %r into group %r',
             len(names),
             path,
             group,
@@ -1287,11 +1287,11 @@ class CrossIndex:
             If *new_name* contains ``':'`` or already exists as a group label.
         """
         if old_name not in self._groups:
-            raise KeyError(f"Group {old_name!r} not found.")
+            raise KeyError(f'Group {old_name!r} not found.')
         if ':' in new_name:
             raise ValueError(f"Group name must not contain ':', got {new_name!r}")
         if new_name in self._groups and new_name != old_name:
-            raise ValueError(f"Group {new_name!r} already exists.")
+            raise ValueError(f'Group {new_name!r} already exists.')
         # Rebuild _groups preserving insertion order
         self._groups = {
             (new_name if k == old_name else k): v for k, v in self._groups.items()
@@ -1324,12 +1324,12 @@ class CrossIndex:
         Logs a warning for every name that is also present in another group.
         """
         if group not in self._groups:
-            raise KeyError(f"Group {group!r} not found.")
+            raise KeyError(f'Group {group!r} not found.')
         for n in names:
             for other_g, other_ns in self._groups.items():
                 if other_g != group and n in other_ns:
                     _log.warning(
-                        "CrossIndex: sequence %r is assigned to both group %r and group %r",
+                        'CrossIndex: sequence %r is assigned to both group %r and group %r',
                         n,
                         other_g,
                         group,
@@ -1384,8 +1384,8 @@ class CrossIndex:
         pair = (query_group, target_group)
         if pair not in self._records_by_pair:
             raise ValueError(
-                f"No matches computed for group pair {pair!r}. "
-                "Call compute_matches() for this pair first."
+                f'No matches computed for group pair {pair!r}. '
+                'Call compute_matches() for this pair first.'
             )
         q_internal = [
             self._make_internal(query_group, n) for n in self._groups[query_group]
@@ -1460,22 +1460,20 @@ class CrossIndex:
         if query_group is None and target_group is None:
             pairs = self._get_default_group_pairs()
         elif (query_group is None) ^ (target_group is None):
-            raise ValueError(
-                'Provide both query_group and target_group, or neither.'
-            )
+            raise ValueError('Provide both query_group and target_group, or neither.')
         else:
             if query_group not in self._groups:
-                raise KeyError(f"Group {query_group!r} not found.")
+                raise KeyError(f'Group {query_group!r} not found.')
             if target_group not in self._groups:
-                raise KeyError(f"Group {target_group!r} not found.")
+                raise KeyError(f'Group {target_group!r} not found.')
             pairs = [(query_group, target_group)]
 
         for qg, tg in pairs:
             q_seqs = self._groups.get(qg, [])
             t_seqs = self._groups.get(tg, [])
             _log.info(
-                "CrossIndex.compute_matches: computing matches between "
-                "group %r (%d sequence(s)) and group %r (%d sequence(s))",
+                'CrossIndex.compute_matches: computing matches between '
+                'group %r (%d sequence(s)) and group %r (%d sequence(s))',
                 qg,
                 len(q_seqs),
                 tg,
@@ -1487,8 +1485,8 @@ class CrossIndex:
                     q_int = self._make_internal(qg, q_orig)
                     t_int = self._make_internal(tg, t_orig)
                     _log.debug(
-                        "CrossIndex.compute_matches: comparing %r (group %r) "
-                        "vs %r (group %r)",
+                        'CrossIndex.compute_matches: comparing %r (group %r) '
+                        'vs %r (group %r)',
                         q_orig,
                         qg,
                         t_orig,
@@ -1502,7 +1500,7 @@ class CrossIndex:
                         pair_records.append(PafRecord.from_line('\t'.join(fields)))
             self._records_by_pair[(qg, tg)] = pair_records
             _log.info(
-                "CrossIndex.compute_matches: stored %d record(s) for pair (%r, %r)",
+                'CrossIndex.compute_matches: stored %d record(s) for pair (%r, %r)',
                 len(pair_records),
                 qg,
                 tg,
@@ -1553,7 +1551,7 @@ class CrossIndex:
                     q_int = self._make_internal(query_group, q_orig)
                     t_int = self._make_internal(target_group, t_orig)
                     _log.debug(
-                        "CrossIndex.get_paf: comparing %r (group %r) vs %r (group %r)",
+                        'CrossIndex.get_paf: comparing %r (group %r) vs %r (group %r)',
                         q_orig,
                         query_group,
                         t_orig,
@@ -1713,9 +1711,7 @@ class CrossIndex:
                     'reorder_for_colinearity for full control.'
                 )
         elif (query_group is None) ^ (target_group is None):
-            raise ValueError(
-                'Provide both query_group and target_group, or neither.'
-            )
+            raise ValueError('Provide both query_group and target_group, or neither.')
         else:
             _log.info(
                 'CrossIndex.reorder_contigs: using groups '
@@ -1727,14 +1723,12 @@ class CrossIndex:
         pair = (query_group, target_group)
         if pair not in self._records_by_pair:
             raise ValueError(
-                f"No matches computed for group pair {pair!r}. "
-                "Call compute_matches() for this pair first."
+                f'No matches computed for group pair {pair!r}. '
+                'Call compute_matches() for this pair first.'
             )
 
         q_names = (
-            query_names
-            if query_names is not None
-            else list(self._groups[query_group])
+            query_names if query_names is not None else list(self._groups[query_group])
         )
         t_names = (
             target_names
