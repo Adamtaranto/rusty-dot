@@ -53,17 +53,19 @@ class DotPlotter:
             output_path="dotplot.png",
         )
 
-    When using a ``CrossIndex``, pass group-specific names via
-    ``query_names`` and ``target_names``::
+    When using a ``CrossIndex``, use *query_group* and *target_group* in
+    :meth:`plot` and :meth:`plot_single` so that sequence names are resolved
+    automatically and pre-computed merged alignments are used for rendering::
 
         cross = CrossIndex(k=15)
         cross.load_fasta("assembly_a.fasta", group="a")
         cross.load_fasta("assembly_b.fasta", group="b")
+        cross.compute_matches()  # pre-compute merged alignments
 
         plotter = DotPlotter(cross)
         plotter.plot(
-            query_names=cross.sequence_names(group="a"),
-            target_names=cross.sequence_names(group="b"),
+            query_group="a",   # sequence names looked up from group 'a'
+            target_group="b",  # sequence names looked up from group 'b'
             output_path="cross_plot.png",
         )
 
@@ -139,10 +141,137 @@ class DotPlotter:
         """
         return isinstance(self.index, PafAlignment)
 
+    def _index_is_cross(self) -> bool:
+        """Return ``True`` when *index* is a :class:`~rusty_dot.paf_io.CrossIndex`."""
+        from rusty_dot.paf_io import CrossIndex
+        return isinstance(self.index, CrossIndex)
+
+    @staticmethod
+    def _strip_group_prefix(name: str) -> str:
+        """Strip the ``'group:'`` prefix from a CrossIndex internal name.
+
+        For a ``SequenceIndex`` or ``PafAlignment`` name that contains no
+        ``':'``, the name is returned unchanged.
+
+        Parameters
+        ----------
+        name : str
+            Sequence name, possibly in ``'group:name'`` format.
+
+        Returns
+        -------
+        str
+            The un-prefixed name.
+        """
+        _, sep, suffix = name.partition(':')
+        return suffix if sep else name
+
+    def _get_paf_override(
+        self,
+        query_group: Optional[str],
+        target_group: Optional[str],
+    ) -> Optional['PafAlignment']:
+        """Return a :class:`PafAlignment` built from pre-computed CrossIndex records.
+
+        Parameters
+        ----------
+        query_group : str or None
+        target_group : str or None
+
+        Returns
+        -------
+        PafAlignment or None
+            ``None`` when no pre-computed records exist for the pair or when
+            either group is ``None``.
+        """
+        if query_group is None or target_group is None or not self._index_is_cross():
+            return None
+        cross = self.index  # type: ignore[assignment]
+        pair = (query_group, target_group)
+        if pair in cross.computed_group_pairs:
+            records = cross.get_records_for_pair(query_group, target_group)
+            paf = PafAlignment(records)
+            _log.debug(
+                'DotPlotter: using %d pre-computed record(s) from pair %r',
+                len(records),
+                pair,
+            )
+            return paf
+        _log.debug(
+            'DotPlotter: no pre-computed records for pair %r; '
+            'will compute k-mer matches on demand',
+            pair,
+        )
+        return None
+
+    def _resolve_group_names(
+        self,
+        query_group: Optional[str],
+        target_group: Optional[str],
+        query_names: Optional[list[str]],
+        target_names: Optional[list[str]],
+    ) -> tuple[Optional[list[str]], Optional[list[str]], Optional['PafAlignment']]:
+        """Resolve sequence name lists and an optional cached PAF alignment.
+
+        When *query_group* / *target_group* are provided and *index* is a
+        :class:`~rusty_dot.paf_io.CrossIndex`:
+
+        * Query and target name lists are populated from the group's internal
+          (``'group:name'``) identifiers, overriding any explicitly provided
+          *query_names* / *target_names*.
+        * If the group pair has pre-computed matches (via
+          :meth:`~rusty_dot.paf_io.CrossIndex.compute_matches`), a
+          :class:`~rusty_dot.paf_io.PafAlignment` is built from those records
+          and returned so that :meth:`_plot_panel` can use them directly.
+
+        Parameters
+        ----------
+        query_group : str or None
+            Group label for query sequences.
+        target_group : str or None
+            Group label for target sequences.
+        query_names : list[str] or None
+            Caller-supplied query names (used when groups are not provided).
+        target_names : list[str] or None
+            Caller-supplied target names.
+
+        Returns
+        -------
+        tuple of (list[str] | None, list[str] | None, PafAlignment | None)
+            Resolved ``(query_names, target_names, paf_override)``.
+            *paf_override* is ``None`` when no pre-computed records are found.
+
+        Raises
+        ------
+        ValueError
+            If *query_group* / *target_group* are provided but *index* is not
+            a ``CrossIndex``.
+        """
+        if query_group is None and target_group is None:
+            return query_names, target_names, None
+
+        if not self._index_is_cross():
+            raise ValueError(
+                'query_group and target_group can only be used when index is '
+                'a CrossIndex.'
+            )
+
+        cross = self.index  # type: ignore[assignment]
+
+        if query_group is not None:
+            query_names = cross.sequence_names(group=query_group)
+        if target_group is not None:
+            target_names = cross.sequence_names(group=target_group)
+
+        paf_override = self._get_paf_override(query_group, target_group)
+        return query_names, target_names, paf_override
+
     def plot(
         self,
         query_names: Optional[list[str]] = None,
         target_names: Optional[list[str]] = None,
+        query_group: Optional[str] = None,
+        target_group: Optional[str] = None,
         output_path: Optional[Union[str, Path]] = None,
         figsize_per_panel: float = 4.0,
         dot_size: float = 0.5,
@@ -165,6 +294,15 @@ class DotPlotter:
         (columns). If only one set is provided, or neither, all pairwise
         combinations within the available sequences are plotted.
 
+        When *index* is a :class:`~rusty_dot.paf_io.CrossIndex`, use
+        *query_group* and *target_group* to specify which groups supply the
+        query and target sequences.  The corresponding internal
+        (``'group:name'``) identifiers are looked up automatically and used
+        for sequence-length queries and k-mer comparisons.  If
+        :meth:`~rusty_dot.paf_io.CrossIndex.compute_matches` has already been
+        called for that pair, the pre-computed merged alignments are used for
+        rendering rather than recomputing on the fly.
+
         The figure is always returned so it can be displayed inline in a
         Jupyter notebook.  When ``output_path`` is provided the figure is
         also saved to disk.
@@ -173,10 +311,20 @@ class DotPlotter:
         ----------
         query_names : list[str], optional
             Sequence names for the y-axis (rows). If ``None``, uses all
-            sequences in the index.
+            sequences in the index.  Ignored when *query_group* is provided
+            and *index* is a ``CrossIndex``.
         target_names : list[str], optional
             Sequence names for the x-axis (columns). If ``None``, uses all
-            sequences in the index.
+            sequences in the index.  Ignored when *target_group* is provided
+            and *index* is a ``CrossIndex``.
+        query_group : str or None, optional
+            Group label whose sequences are used as query (rows).  When
+            provided, the group's sequences are looked up from *index*
+            (which must be a ``CrossIndex``) and *query_names* is ignored.
+        target_group : str or None, optional
+            Group label whose sequences are used as target (columns).  When
+            provided, the group's sequences are looked up from *index*
+            (which must be a ``CrossIndex``) and *target_names* is ignored.
         output_path : str or Path, optional
             Output image file path.  When ``None`` (default) the figure is
             not saved to disk.  Use a ``.svg`` extension (or set
@@ -236,7 +384,18 @@ class DotPlotter:
             The generated figure.  In a Jupyter notebook the figure is
             displayed inline automatically; call ``matplotlib.pyplot.close``
             on the returned object when it is no longer needed.
+
+        Raises
+        ------
+        ValueError
+            If *query_group* / *target_group* are provided but *index* is
+            not a ``CrossIndex``.
         """
+        # Resolve group names and optional pre-computed PAF records.
+        query_names, target_names, paf_override = self._resolve_group_names(
+            query_group, target_group, query_names, target_names
+        )
+
         all_names = self.index.sequence_names()
         if not all_names:
             raise ValueError('No sequences in the index.')
@@ -245,6 +404,10 @@ class DotPlotter:
             query_names = sorted(all_names)
         if target_names is None:
             target_names = sorted(all_names)
+
+        # Use the per-call override if available, otherwise fall back to the
+        # paf_alignment set at construction time.
+        effective_paf = paf_override if paf_override is not None else self.paf_alignment
 
         # Warn about annotation sequences missing from the index.
         if annotation is not None:
@@ -309,12 +472,18 @@ class DotPlotter:
                     show_ylabel=(col_idx == 0),
                     color_by_identity=color_by_identity,
                     identity_palette=identity_palette,
+                    paf_alignment_override=effective_paf,
                 )
 
                 # Column label at top of each column (top row only), rotated.
+                # Use the display name (strip group prefix for CrossIndex).
                 if row_idx == 0:
                     ax.set_title(
-                        t_name, fontsize=8, rotation=45, ha='left', va='bottom'
+                        self._strip_group_prefix(t_name),
+                        fontsize=8,
+                        rotation=45,
+                        ha='left',
+                        va='bottom',
                     )
 
                 # Suppress redundant tick labels on internal panels.
@@ -349,6 +518,7 @@ class DotPlotter:
         show_ylabel: bool = True,
         color_by_identity: bool = False,
         identity_palette: str = 'viridis',
+        paf_alignment_override: Optional['PafAlignment'] = None,
     ) -> None:
         """Render a single comparison panel onto the given Axes.
 
@@ -357,9 +527,12 @@ class DotPlotter:
         ax : matplotlib.axes.Axes
             The axes to draw on.
         query_name : str
-            Name of the query sequence (y-axis).
+            Name of the query sequence (y-axis).  For a
+            :class:`~rusty_dot.paf_io.CrossIndex` this is the internal
+            (``'group:name'``) identifier; the group prefix is stripped for
+            axis labels and PAF record lookup.
         target_name : str
-            Name of the target sequence (x-axis).
+            Name of the target sequence (x-axis).  Same note as *query_name*.
         dot_size : float, optional
             Marker size. Default is ``0.5``.
         dot_color : str, optional
@@ -379,24 +552,44 @@ class DotPlotter:
             Default is ``True``.
         color_by_identity : bool, optional
             When ``True``, colour alignments by sequence identity using
-            *identity_palette*.  Requires ``self.paf_alignment`` to be set;
+            *identity_palette*.  Requires a PAF alignment (either
+            ``paf_alignment_override`` or ``self.paf_alignment``) to be set;
             if not, a warning is logged and strand colours are used instead.
             Default is ``False``.
         identity_palette : str, optional
             Matplotlib colormap name for identity-based colouring.
             Default is ``'viridis'``.
+        paf_alignment_override : PafAlignment or None, optional
+            Pre-computed PAF alignments to use for this panel.  When
+            provided, this takes precedence over ``self.paf_alignment`` for
+            record lookup.  Typically supplied from pre-computed
+            :class:`~rusty_dot.paf_io.CrossIndex` records.
+            Default is ``None``.
         """
         q_len = self.index.get_sequence_length(query_name)
         t_len = self.index.get_sequence_length(target_name)
 
+        # Display names: strip 'group:' prefix for CrossIndex internal names.
+        display_q = self._strip_group_prefix(query_name)
+        display_t = self._strip_group_prefix(target_name)
+
+        # Effective PAF alignment: per-call override takes precedence.
+        effective_paf = (
+            paf_alignment_override
+            if paf_alignment_override is not None
+            else self.paf_alignment
+        )
+
         # Determine rendering mode:
         # • When index is a PafAlignment (no k-mer index), always draw from
         #   PAF records using strand colours unless color_by_identity is set.
+        # • When a paf_alignment_override is provided (CrossIndex pre-computed
+        #   records), use it for rendering.
         # • When index has a k-mer engine but color_by_identity is requested
         #   without a PafAlignment, fall back to k-mer matches with a warning.
-        use_paf = color_by_identity or self._index_is_paf()
+        use_paf = color_by_identity or self._index_is_paf() or (paf_alignment_override is not None)
 
-        if use_paf and self.paf_alignment is None:
+        if use_paf and effective_paf is None:
             _log.warning(
                 'color_by_identity=True requires a PafAlignment; k-mer matches '
                 'are always 100% identity. Pass paf_alignment= to DotPlotter '
@@ -406,12 +599,14 @@ class DotPlotter:
 
         if use_paf:
             # Use PAF records for this sequence pair.
+            # Records from CrossIndex.compute_matches() store un-prefixed names;
+            # use display names (prefix stripped) for the lookup.
             cmap = plt.get_cmap(identity_palette) if color_by_identity else None
             norm = mcolors.Normalize(vmin=0, vmax=1) if color_by_identity else None
             records = [
                 r
-                for r in self.paf_alignment.records  # type: ignore[union-attr]
-                if r.query_name == query_name and r.target_name == target_name
+                for r in effective_paf.records  # type: ignore[union-attr]
+                if r.query_name == display_q and r.target_name == display_t
             ]
             for rec in records:
                 if min_length > 0 and rec.query_aligned_len < min_length:
@@ -465,9 +660,9 @@ class DotPlotter:
         ax.set_ylim(0, q_len)
         ax.invert_yaxis()
         if show_xlabel:
-            ax.set_xlabel(target_name, fontsize=8)
+            ax.set_xlabel(display_t, fontsize=8)
         if show_ylabel:
-            ax.set_ylabel(query_name, fontsize=8)
+            ax.set_ylabel(display_q, fontsize=8)
         ax.tick_params(axis='both', labelsize=6)
         ax.set_aspect('auto')
 
@@ -560,6 +755,8 @@ class DotPlotter:
         self,
         query_name: str,
         target_name: str,
+        query_group: Optional[str] = None,
+        target_group: Optional[str] = None,
         output_path: Optional[Union[str, Path]] = None,
         figsize: tuple[float, float] = (6.0, 6.0),
         dot_size: float = 0.5,
@@ -581,12 +778,27 @@ class DotPlotter:
         below the x-axis (target sequence features) and to the left of the
         y-axis (query sequence features).
 
+        When *index* is a :class:`~rusty_dot.paf_io.CrossIndex`, supply
+        *query_group* and *target_group* to have the sequence names resolved
+        to internal (``'group:name'``) identifiers automatically, and to
+        render from pre-computed records when available.
+
         Parameters
         ----------
         query_name : str
-            Name of the query sequence (y-axis).
+            Name of the query sequence (y-axis).  When *query_group* is
+            provided and *index* is a ``CrossIndex``, this is treated as an
+            un-prefixed name and the internal identifier is looked up.
         target_name : str
-            Name of the target sequence (x-axis).
+            Name of the target sequence (x-axis).  Same note as *query_name*.
+        query_group : str or None, optional
+            Group label for the query sequence.  When provided and *index* is
+            a ``CrossIndex``, the internal name is resolved as
+            ``'{query_group}:{query_name}'``.
+        target_group : str or None, optional
+            Group label for the target sequence.  When provided and *index*
+            is a ``CrossIndex``, the internal name is resolved as
+            ``'{target_group}:{target_name}'``.
         output_path : str or Path, optional
             Output image file path.  When ``None`` (default) the figure is
             not saved to disk.  Use a ``.svg`` extension (or set
@@ -642,7 +854,30 @@ class DotPlotter:
             The generated figure.  In a Jupyter notebook the figure is
             displayed inline automatically; call ``matplotlib.pyplot.close``
             on the returned object when it is no longer needed.
+
+        Raises
+        ------
+        ValueError
+            If *query_group* / *target_group* are provided but *index* is
+            not a ``CrossIndex``.
         """
+        # Resolve group-prefixed names for CrossIndex.
+        if query_group is not None or target_group is not None:
+            if not self._index_is_cross():
+                raise ValueError(
+                    'query_group and target_group can only be used when index '
+                    'is a CrossIndex.'
+                )
+            cross = self.index  # type: ignore[assignment]
+            if query_group is not None:
+                query_name = cross.make_internal_name(query_group, query_name)
+            if target_group is not None:
+                target_name = cross.make_internal_name(target_group, target_name)
+
+        # Use pre-computed records when available (via shared helper).
+        paf_override = self._get_paf_override(query_group, target_group)
+        effective_paf = paf_override if paf_override is not None else self.paf_alignment
+
         import matplotlib.gridspec as gridspec
 
         if annotation is not None:
@@ -700,6 +935,7 @@ class DotPlotter:
             min_length=min_length,
             color_by_identity=color_by_identity,
             identity_palette=identity_palette,
+            paf_alignment_override=effective_paf,
         )
 
         if has_tracks:
@@ -709,12 +945,16 @@ class DotPlotter:
             plt.setp(main_ax.get_xticklabels(), visible=False)
             plt.setp(main_ax.get_yticklabels(), visible=False)
 
+            # Display names for track axis labels (strip group prefix).
+            display_t = self._strip_group_prefix(target_name)
+            display_q = self._strip_group_prefix(query_name)
+
             # ---- x-annotation track (below x-axis: target features) ----
             x_track_ax.set_xlim(0, t_len)
             x_track_ax.set_ylim(0, 1)
             x_track_ax.set_yticks([])
             x_track_ax.tick_params(axis='x', labelsize=6)
-            x_track_ax.set_xlabel(target_name, fontsize=8)
+            x_track_ax.set_xlabel(display_t, fontsize=8)
             for feat in x_feats:
                 rect = mpatches.Rectangle(
                     (feat.start, 0.1),
@@ -730,7 +970,7 @@ class DotPlotter:
             y_track_ax.set_xlim(1, 0)  # reversed so features face main plot
             y_track_ax.set_xticks([])
             y_track_ax.tick_params(axis='y', labelsize=6)
-            y_track_ax.set_ylabel(query_name, fontsize=8)
+            y_track_ax.set_ylabel(display_q, fontsize=8)
             for feat in y_feats:
                 rect = mpatches.Rectangle(
                     (0.1, feat.start),
@@ -741,8 +981,11 @@ class DotPlotter:
                 )
                 y_track_ax.add_patch(rect)
 
+        # Title: use display names (strip group prefix for CrossIndex).
         if title is None:
-            title = f'{query_name} vs {target_name}'
+            dq = self._strip_group_prefix(query_name)
+            dt = self._strip_group_prefix(target_name)
+            title = f'{dq} vs {dt}'
         main_ax.set_title(title, fontsize=10)
 
         if has_tracks:

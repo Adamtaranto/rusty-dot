@@ -11,6 +11,7 @@ Loading sequences and computing matches are **separate explicit steps**:
 1. Load sequences with `add_sequence()` or `load_fasta()`.
 2. Call `compute_matches()` to compute k-mer matches between groups.
 3. Call `reorder_contigs()` or `reorder_for_colinearity()` (requires step 2).
+4. Plot with `DotPlotter` using `query_group` / `target_group` to specify groups.
 
 Progress is logged at `INFO` level for each loading and computation step.
 Warnings are emitted when a sequence name already exists in the same or
@@ -40,11 +41,11 @@ print("Computed pairs:", cross.computed_group_pairs)
 # Sort contigs for maximum collinearity
 q_sorted, t_sorted = cross.reorder_contigs()
 
-# Plot
+# Plot directly from CrossIndex — sequence names resolved via group params
 plotter = DotPlotter(cross)
 plotter.plot(
-    query_names=cross.sequence_names(group="a"),
-    target_names=cross.sequence_names(group="b"),
+    query_group="a",   # sequences from group 'a' as rows
+    target_group="b",  # sequences from group 'b' as columns
     output_path="cross_plot.png",
 )
 ```
@@ -58,6 +59,14 @@ cross.load_fasta("genome_b.fasta", group="Group_B")
 
 cross.compute_matches()  # auto-detects the two groups
 q_sorted, t_sorted = cross.reorder_contigs()
+
+# Plot with explicit group names
+plotter = DotPlotter(cross)
+plotter.plot(
+    query_group="Group_A",
+    target_group="Group_B",
+    output_path="cross_plot.png",
+)
 
 # Or rename groups and use explicitly
 cross.rename_group("Group_A", "query")

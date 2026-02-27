@@ -961,6 +961,48 @@ class CrossIndex:
         """
         return list(self._records_by_pair.keys())
 
+    def get_records_for_pair(
+        self, query_group: str, target_group: str
+    ) -> list['PafRecord']:
+        """Return the cached :class:`PafRecord` list for a computed group pair.
+
+        Parameters
+        ----------
+        query_group : str
+            Query group label.
+        target_group : str
+            Target group label.
+
+        Returns
+        -------
+        list[PafRecord]
+            Cached PAF records for the pair.  Returns an empty list if
+            :meth:`compute_matches` has not been called for this pair.
+        """
+        return list(self._records_by_pair.get((query_group, target_group), []))
+
+    def make_internal_name(self, group: str, name: str) -> str:
+        """Construct the internal (``'group:name'``) identifier for a sequence.
+
+        This is the public counterpart of the internal :meth:`_make_internal`
+        helper and is suitable for use by external code such as
+        :class:`~rusty_dot.dotplot.DotPlotter`.
+
+        Parameters
+        ----------
+        group : str
+            Group label.
+        name : str
+            Un-prefixed sequence name.
+
+        Returns
+        -------
+        str
+            Internal identifier in ``'group:name'`` form, with any
+            ``rename_group`` remapping applied.
+        """
+        return self._make_internal(group, name)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
