@@ -376,6 +376,7 @@ class TestCrossIndex:
         cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
         cross.add_sequence('q2', 'TACGTACGTACGTACG', group='a')
         cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+        cross.compute_matches()
         q_sorted, t_sorted = cross.reorder_contigs()
         assert set(q_sorted) == {'q1', 'q2'}
         assert set(t_sorted) == {'t1'}
@@ -423,6 +424,7 @@ class TestCrossIndex:
         cross.add_sequence('q2', 'TTTTACGTACGT' * 4, group='a')
         cross.add_sequence('t1', 'ACGTACGTACGT' * 4, group='b')
         orig_a = list(cross.contig_order['a'])
+        cross.compute_matches('a', 'b')
         cross.reorder_for_colinearity('a', 'b')
         # Order may or may not change, but both groups must be present
         assert set(cross.contig_order['a']) == set(orig_a)
@@ -468,17 +470,6 @@ class TestCrossIndex:
             fields = line.split('\t')
             assert fields[0] == 'q1'
             assert fields[5] == 't1'
-
-    def test_run_merge_populates_paf_records(self):
-        """run_merge populates _paf_records."""
-        from rusty_dot.paf_io import CrossIndex
-
-        cross = CrossIndex(k=4)
-        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
-        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
-        assert len(cross._paf_records) == 0
-        cross.run_merge()
-        assert len(cross._paf_records) > 0
 
     def test_str_summary(self):
         """__str__ includes group stats."""
@@ -536,10 +527,331 @@ class TestCrossIndex:
         )
         assert out.exists()
 
+    def test_reorder_contigs_custom_group_names(self):
+        """reorder_contigs works when groups have non-default names."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='Group_A')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='Group_B')
+        cross.compute_matches()
+        q_sorted, t_sorted = cross.reorder_contigs()
+        assert set(q_sorted) == {'q1'}
+        assert set(t_sorted) == {'t1'}
+
+    def test_reorder_contigs_explicit_group_params(self):
+        """reorder_contigs accepts explicit query_group and target_group."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='g1')
+        cross.add_sequence('q2', 'TACGTACGTACGTACG', group='g1')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='g2')
+        cross.add_sequence('t2', 'ACGTACGTACGTACGT', group='g3')
+        # Explicitly compute and compare g1 vs g2 even though there are 3 groups
+        cross.compute_matches(query_group='g1', target_group='g2')
+        q_sorted, t_sorted = cross.reorder_contigs(query_group='g1', target_group='g2')
+        assert set(q_sorted) == {'q1', 'q2'}
+        assert set(t_sorted) == {'t1'}
+
+    def test_reorder_contigs_raises_three_groups_no_params(self):
+        """reorder_contigs raises ValueError with 3 groups and no explicit params."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('s1', 'ACGTACGTACGTACGT', group='g1')
+        cross.add_sequence('s2', 'ACGTACGTACGTACGT', group='g2')
+        cross.add_sequence('s3', 'ACGTACGTACGTACGT', group='g3')
+        with pytest.raises(ValueError, match='query_group'):
+            cross.reorder_contigs()
+
+    def test_reorder_contigs_raises_one_group_param_only(self):
+        """reorder_contigs raises when only one of query_group/target_group given."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+        with pytest.raises(ValueError, match='both'):
+            cross.reorder_contigs(query_group='a')
+
+    def test_rename_group_updates_label(self):
+        """rename_group changes the group label while preserving sequences."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='old_name')
+        cross.rename_group('old_name', 'new_name')
+        assert 'new_name' in cross.group_names
+        assert 'old_name' not in cross.group_names
+        assert cross.contig_order['new_name'] == ['q1']
+
+    def test_rename_group_allows_subsequent_reorder(self):
+        """After rename_group, compute_matches and reorder_contigs still work."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='Group_A')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='Group_B')
+        cross.rename_group('Group_A', 'query')
+        cross.rename_group('Group_B', 'target')
+        cross.compute_matches()
+        q_sorted, t_sorted = cross.reorder_contigs()
+        assert set(q_sorted) == {'q1'}
+        assert set(t_sorted) == {'t1'}
+        # PAF output should still produce un-prefixed names
+        lines = cross.get_paf()
+        assert any('q1' in line.split('\t')[0] for line in lines)
+
+    def test_rename_group_raises_unknown_group(self):
+        """rename_group raises KeyError for unknown old_name."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('s1', 'ACGT', group='a')
+        with pytest.raises(KeyError):
+            cross.rename_group('no_such_group', 'x')
+
+    def test_rename_group_raises_duplicate_new_name(self):
+        """rename_group raises ValueError when new_name already exists."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('s1', 'ACGT', group='a')
+        cross.add_sequence('s2', 'ACGT', group='b')
+        with pytest.raises(ValueError, match='already exists'):
+            cross.rename_group('a', 'b')
+
+    def test_rename_group_raises_colon_in_name(self):
+        """rename_group raises ValueError when new_name contains ':'."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('s1', 'ACGT', group='a')
+        with pytest.raises(ValueError, match="must not contain ':'"):
+            cross.rename_group('a', 'bad:name')
+
+    def test_set_group_members_updates_list(self):
+        """set_group_members replaces the sequence list for a group."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('s1', 'ACGT' * 4, group='g')
+        cross.add_sequence('s2', 'ACGT' * 4, group='g')
+        cross.add_sequence('s3', 'ACGT' * 4, group='g')
+        cross.set_group_members('g', ['s1', 's3'])
+        assert cross.contig_order['g'] == ['s1', 's3']
+
+    def test_set_group_members_warns_on_overlap(self, caplog):
+        """set_group_members logs a warning when a name appears in another group."""
+        import logging
+
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('shared', 'ACGT' * 4, group='g1')
+        cross.add_sequence('shared', 'ACGT' * 4, group='g2')
+        with caplog.at_level(logging.WARNING):
+            cross.set_group_members('g2', ['shared'])
+        assert any('shared' in msg for msg in caplog.messages)
+
+    def test_set_group_members_raises_unknown_group(self):
+        """set_group_members raises KeyError for unknown group."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        with pytest.raises(KeyError):
+            cross.set_group_members('no_such', ['s1'])
+
+    def test_compute_matches_populates_records(self):
+        """compute_matches stores PAF records for the computed pair."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+        assert len(cross._paf_records) == 0
+        cross.compute_matches()
+        assert len(cross._paf_records) > 0
+
+    def test_computed_group_pairs_empty_before_compute(self):
+        """computed_group_pairs is empty before compute_matches is called."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+        assert cross.computed_group_pairs == []
+
+    def test_computed_group_pairs_after_compute(self):
+        """computed_group_pairs reflects pairs after compute_matches."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+        cross.compute_matches()
+        assert ('a', 'b') in cross.computed_group_pairs
+
+    def test_reorder_contigs_raises_without_compute_matches(self):
+        """reorder_contigs raises if compute_matches was not called first."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+        with pytest.raises(ValueError, match='compute_matches'):
+            cross.reorder_contigs()
+
+    def test_reorder_for_colinearity_raises_without_compute_matches(self):
+        """reorder_for_colinearity raises if compute_matches was not called."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('q1', 'ACGT' * 4, group='a')
+        cross.add_sequence('t1', 'ACGT' * 4, group='b')
+        with pytest.raises(ValueError, match='compute_matches'):
+            cross.reorder_for_colinearity('a', 'b')
+
+    def test_compute_matches_explicit_groups(self):
+        """compute_matches with explicit group names stores the correct pair."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('s1', 'ACGTACGTACGTACGT', group='g1')
+        cross.add_sequence('s2', 'ACGTACGTACGTACGT', group='g2')
+        cross.add_sequence('s3', 'TTTTTTTTTTTTTTTT', group='g3')
+        cross.compute_matches(query_group='g1', target_group='g2')
+        assert ('g1', 'g2') in cross.computed_group_pairs
+        assert ('g1', 'g3') not in cross.computed_group_pairs
+
+    def test_compute_matches_logs_messages(self, caplog):
+        """compute_matches emits INFO-level log messages."""
+        import logging
+
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+        with caplog.at_level(logging.INFO, logger='rusty_dot.paf_io'):
+            cross.compute_matches()
+        assert any('compute_matches' in msg for msg in caplog.messages)
+
+    def test_add_sequence_logs_debug(self, caplog):
+        """add_sequence emits DEBUG-level log messages."""
+        import logging
+
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        with caplog.at_level(logging.DEBUG, logger='rusty_dot.paf_io'):
+            cross.add_sequence('q1', 'ACGT' * 4, group='a')
+        assert any('q1' in msg for msg in caplog.messages)
+
+    def test_add_sequence_warns_same_group_duplicate(self, caplog):
+        """add_sequence warns when adding a name that exists in the same group."""
+        import logging
+
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('dup', 'ACGT' * 4, group='a')
+        with caplog.at_level(logging.WARNING, logger='rusty_dot.paf_io'):
+            cross.add_sequence('dup', 'TTTT' * 4, group='a')
+        assert any('dup' in msg for msg in caplog.messages)
+
+    def test_add_sequence_warns_cross_group_duplicate(self, caplog):
+        """add_sequence warns when adding a name that exists in another group."""
+        import logging
+
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('seq1', 'ACGT' * 4, group='a')
+        with caplog.at_level(logging.WARNING, logger='rusty_dot.paf_io'):
+            cross.add_sequence('seq1', 'TTTT' * 4, group='b')
+        assert any('seq1' in msg for msg in caplog.messages)
+
+    def test_run_merge_populates_paf_records(self):
+        """run_merge populates _paf_records (via compute_matches)."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=4)
+        cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
+        cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+        assert len(cross._paf_records) == 0
+        cross.run_merge()
+        assert len(cross._paf_records) > 0
+
 
 # ---------------------------------------------------------------------------
-# compute_gravity_contigs: unmatched sorted by descending length
+# PafAlignment group management
 # ---------------------------------------------------------------------------
+
+
+class TestPafAlignmentGroups:
+    def setup_method(self):
+        self.aln = PafAlignment.from_records(
+            [PafRecord.from_line(line) for line in SIMPLE_PAF.strip().splitlines()]
+        )
+
+    def test_groups_default_returns_a_b(self):
+        """Default groups map query_names → 'a' and target_names → 'b'."""
+        g = self.aln.groups
+        assert set(g['a']) == set(self.aln.query_names)
+        assert set(g['b']) == set(self.aln.target_names)
+
+    def test_set_groups_custom(self):
+        """set_groups stores custom group assignments."""
+        self.aln.set_groups({'q': ['query1', 'query2'], 't': ['target1']})
+        g = self.aln.groups
+        assert set(g['q']) == {'query1', 'query2'}
+        assert set(g['t']) == {'target1'}
+
+    def test_set_groups_warns_on_overlap(self, caplog):
+        """set_groups warns when a name appears in two groups."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            self.aln.set_groups({'g1': ['query1'], 'g2': ['query1', 'target1']})
+        assert any('query1' in msg for msg in caplog.messages)
+
+    def test_rename_group_updates_label(self):
+        """rename_group changes a group label."""
+        self.aln.rename_group('a', 'queries')
+        g = self.aln.groups
+        assert 'queries' in g
+        assert 'a' not in g
+        assert set(g['queries']) == set(self.aln.query_names)
+
+    def test_rename_group_raises_unknown(self):
+        """rename_group raises KeyError for an unknown group."""
+        with pytest.raises(KeyError):
+            self.aln.rename_group('no_such', 'x')
+
+    def test_rename_group_raises_existing_label(self):
+        """rename_group raises ValueError if new name already exists."""
+        with pytest.raises(ValueError, match='already exists'):
+            self.aln.rename_group('a', 'b')
+
+    def test_reorder_contigs_by_group(self):
+        """reorder_contigs respects query_group and target_group params."""
+        self.aln.set_groups({'q': ['query1', 'query2'], 't': ['target1']})
+        q_sorted, t_sorted = self.aln.reorder_contigs(query_group='q', target_group='t')
+        assert set(q_sorted) == {'query1', 'query2'}
+        assert set(t_sorted) == {'target1'}
+
+    def test_reorder_contigs_group_unknown_raises(self):
+        """reorder_contigs raises KeyError for unknown group label."""
+        with pytest.raises(KeyError):
+            self.aln.reorder_contigs(query_group='no_such', target_group='b')
+
+    def test_reorder_contigs_backwards_compat(self):
+        """reorder_contigs default behavior unchanged (no group params)."""
+        q_sorted, t_sorted = self.aln.reorder_contigs()
+        assert set(q_sorted) == set(self.aln.query_names)
+        assert set(t_sorted) == set(self.aln.target_names)
 
 
 class TestComputeGravityContigsUnmatchedLength:

@@ -841,3 +841,166 @@ def test_dotplotter_paf_as_index_identity_coloring(tmp_path):
     plt.close(fig)
     assert os.path.exists(output)
     assert os.path.getsize(output) > 0
+
+
+# ---------------------------------------------------------------------------
+# DotPlotter + CrossIndex integration (query_group / target_group)
+# ---------------------------------------------------------------------------
+
+
+def _make_cross_index():
+    """Build a small CrossIndex with two groups and pre-computed matches."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    from rusty_dot.paf_io import CrossIndex
+
+    cross = CrossIndex(k=4)
+    cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='group_a')
+    cross.add_sequence('q2', 'TACGTACGTACGTACG', group='group_a')
+    cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='group_b')
+    return cross
+
+
+def test_dotplotter_cross_index_query_group_param(tmp_path):
+    """DotPlotter.plot() with query_group/target_group resolves names from CrossIndex."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    cross = _make_cross_index()
+    cross.compute_matches()
+    plotter = DotPlotter(cross)
+    output = str(tmp_path / 'cross_group.png')
+    fig = plotter.plot(
+        query_group='group_a',
+        target_group='group_b',
+        output_path=output,
+    )
+    plt.close(fig)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_dotplotter_cross_index_group_not_cross_raises():
+    """query_group/target_group raises ValueError when index is not CrossIndex."""
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('s1', 'ACGT' * 4)
+    plotter = DotPlotter(idx)
+    with pytest.raises(ValueError, match='CrossIndex'):
+        plotter.plot(query_group='a', target_group='b')
+
+
+def test_dotplotter_cross_index_uses_precomputed_records():
+    """When compute_matches() was called, DotPlotter uses the cached records."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    from rusty_dot.paf_io import CrossIndex, PafAlignment
+
+    cross = CrossIndex(k=4)
+    cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='a')
+    cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='b')
+    cross.compute_matches()
+    plotter = DotPlotter(cross)
+
+    fig, ax_pre = plt.subplots()
+    plotter._plot_panel(
+        ax_pre,
+        'a:q1',
+        'b:t1',
+        paf_alignment_override=PafAlignment(cross.get_records_for_pair('a', 'b')),
+    )
+    plt.close(fig)
+    # The panel rendered without error and axes have correct limits
+    assert ax_pre.get_xlim()[1] > 0
+
+
+def test_dotplotter_cross_index_label_strips_prefix():
+    """Axis labels should not contain the group prefix 'group:' for CrossIndex."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    from rusty_dot.paf_io import CrossIndex
+
+    cross = CrossIndex(k=4)
+    cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='grp_a')
+    cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='grp_b')
+    cross.compute_matches()
+    plotter = DotPlotter(cross)
+
+    fig, ax = plt.subplots()
+    plotter._plot_panel(ax, 'grp_a:q1', 'grp_b:t1', show_xlabel=True, show_ylabel=True)
+    plt.close(fig)
+
+    # Labels should be plain names, not prefixed names
+    assert ax.get_xlabel() == 't1', f'Expected "t1", got {ax.get_xlabel()!r}'
+    assert ax.get_ylabel() == 'q1', f'Expected "q1", got {ax.get_ylabel()!r}'
+
+
+def test_dotplotter_cross_index_strip_group_prefix_static():
+    """_strip_group_prefix helper correctly strips 'group:' prefix."""
+    plotter = DotPlotter(SequenceIndex(k=4))
+    assert plotter._strip_group_prefix('group_a:seq1') == 'seq1'
+    assert plotter._strip_group_prefix('seq1') == 'seq1'
+    # Only the first ':' is treated as the group separator; subsequent colons
+    # are part of the unprefixed name.
+    assert plotter._strip_group_prefix('a:b:c') == 'b:c'
+    # A name with a colon but no group prefix still returns everything after
+    # the first colon — callers should only pass CrossIndex internal names or
+    # plain names to this helper.
+    assert plotter._strip_group_prefix('name:with:colons') == 'with:colons'
+
+
+def test_dotplotter_cross_index_plot_single_with_groups(tmp_path):
+    """plot_single() with query_group/target_group works for CrossIndex."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    from rusty_dot.paf_io import CrossIndex
+
+    cross = CrossIndex(k=4)
+    cross.add_sequence('q1', 'ACGTACGTACGTACGT', group='grp_a')
+    cross.add_sequence('t1', 'ACGTACGTACGTACGT', group='grp_b')
+    cross.compute_matches()
+    plotter = DotPlotter(cross)
+    output = str(tmp_path / 'cross_single.png')
+    fig = plotter.plot_single(
+        'q1',
+        't1',
+        query_group='grp_a',
+        target_group='grp_b',
+        output_path=output,
+    )
+    plt.close(fig)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 0
+
+
+def test_dotplotter_cross_index_plot_single_group_not_cross_raises():
+    """plot_single() with groups raises ValueError when index is not CrossIndex."""
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('s1', 'ACGT' * 4)
+    plotter = DotPlotter(idx)
+    with pytest.raises(ValueError, match='CrossIndex'):
+        plotter.plot_single('s1', 's1', query_group='a', target_group='b')
+
+
+def test_dotplotter_resolve_group_names_no_groups():
+    """_resolve_group_names returns inputs unchanged when no groups provided."""
+    plotter = DotPlotter(SequenceIndex(k=4))
+    q, t, paf = plotter._resolve_group_names(None, None, ['a'], ['b'])
+    assert q == ['a']
+    assert t == ['b']
+    assert paf is None
+
+
+def test_dotplotter_resolve_group_names_raises_for_non_cross():
+    """_resolve_group_names raises ValueError when groups given but index is not CrossIndex."""
+    plotter = DotPlotter(SequenceIndex(k=4))
+    with pytest.raises(ValueError, match='CrossIndex'):
+        plotter._resolve_group_names('x', 'y', None, None)
