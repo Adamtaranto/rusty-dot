@@ -10,7 +10,8 @@ Written in Rust with PyO3 python bindings.
 - Read FASTA / gzipped FASTA files via [needletail](https://docs.rs/needletail)
 - Build FM-indexes per sequence using [rust-bio](https://docs.rs/bio)
 - K-mer set intersection for efficient shared k-mer lookup
-- **Both-strand k-mer matching**: forward (`+`) and reverse-complement (`-`) hits detected via `compare_sequences_stranded`
+- **Both-strand k-mer matching**: forward (`+`) and reverse-complement (`-`)
+hits detected via `compare_sequences_stranded`
 - Merge sequential k-mer runs into contiguous match blocks for both orientations:
   - Forward-strand co-linear diagonal merging (`py_merge_kmer_runs`)
   - RC anti-diagonal merging — standard inverted repeats (`py_merge_rev_runs`)
@@ -23,7 +24,8 @@ Written in Rust with PyO3 python bindings.
   - Reverse-complement hits drawn in **red** (configurable via `rc_color`)
   - Sequence names rendered once — at the bottom of each column and left of each row
   - **SVG vector output** in addition to PNG/PDF via the `format` parameter
-  - **Minimum alignment length filter** (`min_length`) to suppress short/spurious hits before rendering
+  - **Minimum alignment length filter** (`min_length`) to suppress
+  short/spurious hits before rendering
 - Cross-index comparisons between two sequence sets (e.g. two genome assemblies)
 - Relative sequence scaling in dotplot subpanels
 - Gravity-centre contig ordering for maximum collinearity
@@ -50,10 +52,17 @@ maturin develop --release
 
 ## Quick Start — single multi-FASTA index
 
-Each sequence added to a `SequenceIndex` gets its **own independent FM-index** (rust-bio FM-indexes are read-only once built and cannot be extended).
-Calling `add_sequence` or `load_fasta` multiple times **accumulates** sequences — it never merges or replaces the existing collection.
-Re-using an existing sequence name emits a `UserWarning` and **overwrites** that entry.
-If a FASTA file contains duplicate sequence names, `load_fasta` raises a `ValueError` before adding any sequences.
+Each sequence added to a `SequenceIndex` gets its **own independent FM-index**
+(rust-bio FM-indexes are read-only once built and cannot be extended).
+
+Calling `add_sequence` or `load_fasta` multiple times **accumulates** sequences
+— it never merges or replaces the existing collection.
+
+Re-using an existing sequence name emits a `UserWarning` and **overwrites** that
+entry.
+
+If a FASTA file contains duplicate sequence names, `load_fasta` raises a
+`ValueError` before adding any sequences.
 
 ```python
 from rusty_dot import SequenceIndex
@@ -94,50 +103,12 @@ plotter.plot(output_path="filtered.png", min_length=500)
 plotter.plot_single("contig1", "contig2", output_path="pair.png")
 ```
 
-## Stranded (both-strand) Sequence Comparison
-
-`compare_sequences_stranded` returns both forward (`+`) and
-reverse-complement (`-`) k-mer matches, each labelled with a strand field.
-
-```python
-from rusty_dot import SequenceIndex
-
-idx = SequenceIndex(k=10)
-idx.add_sequence("seq_fwd", "AAACAAACAAAC" * 10)
-idx.add_sequence("seq_rc",  "GTTTGTTTGTTT" * 10)   # RC of seq_fwd
-
-# Returns list of (query_start, query_end, target_start, target_end, strand)
-hits = idx.compare_sequences_stranded("seq_fwd", "seq_rc", merge=True)
-for qs, qe, ts, te, strand in hits:
-    print(f"  {strand}  q[{qs}:{qe}]  t[{ts}:{te}]")
-# strand is '+' for forward matches, '-' for reverse-complement matches
-```
-
-### Inverted-repeat detection
-
-Two RC alignment patterns are recognised and merged independently:
-
-| Pattern | Merge function | Condition |
-|---------|---------------|-----------|
-| Anti-diagonal | `py_merge_rev_runs` | query advances +1, RC target *decreases* by 1 per step; the sum `q + t_rc` remains constant — arms face each other |
-| Co-diagonal | `py_merge_rev_fwd_runs` | query advances +1, RC target *also advances* by 1 per step; the difference `t_rc - q` remains constant — both arms run in the same direction |
-
-```python
-from rusty_dot._rusty_dot import py_merge_runs
-
-# Unified merge: handles forward, anti-diagonal RC, and co-diagonal RC in one call
-fwd_hits = py_merge_runs(target_coords, query_coords, k=10, strand="+")
-rev_hits = py_merge_runs(target_rc_coords, query_coords, k=10, strand="-")
-# Each result is (query_start, query_end, target_start, target_end, strand)
-```
-
-## All-vs-All Dotplot Between Two Indexes
+## All-vs-All Dotplot Between Two Genomes
 
 Compare sequences from two separate FASTA files (e.g. two genome assemblies) and
 plot an all-vs-all grid with subpanels scaled by relative sequence length.
 
 ```python
-from rusty_dot import SequenceIndex
 from rusty_dot.dotplot import DotPlotter
 from rusty_dot.paf_io import CrossIndex, PafAlignment, PafRecord
 
@@ -146,14 +117,14 @@ cross = CrossIndex(k=15)
 cross.load_fasta("genome_a.fasta", group="a")   # query sequences (rows)
 cross.load_fasta("genome_b.fasta", group="b")   # target sequences (columns)
 
-# Retrieve all cross-group PAF lines
-paf_lines = cross.get_paf_all()
-
 # --- Sort contigs for maximum collinearity ---
 # Option 1: via CrossIndex (delegates to SequenceIndex.optimal_contig_order)
 q_sorted, t_sorted = cross.reorder_contigs()
 
 # Option 2: via PafAlignment gravity-centre algorithm
+# Retrieve all cross-group PAF lines
+paf_lines = cross.get_paf_all()
+
 records = [PafRecord.from_line(line) for line in paf_lines]
 aln = PafAlignment.from_records(records)
 q_sorted, t_sorted = aln.reorder_contigs(
@@ -163,12 +134,8 @@ q_sorted, t_sorted = aln.reorder_contigs(
 # Unmatched contigs are placed at the end, sorted by descending length.
 
 # --- Plot with relative scaling ---
-# Build a combined SequenceIndex containing sequences from both assemblies
-idx = SequenceIndex(k=15)
-idx.load_fasta("genome_a.fasta")
-idx.load_fasta("genome_b.fasta")
 
-plotter = DotPlotter(idx)
+plotter = DotPlotter(cross)
 plotter.plot(
     query_names=q_sorted,
     target_names=t_sorted,
@@ -199,10 +166,10 @@ plotter.plot(
 
 ## Filtering PAF Alignments by Length
 
-Use `PafAlignment.filter_by_min_length` to remove short alignment records after loading a PAF
-file. This is particularly useful for cleaned-up visualisations when alignments have been
-merged from k-mer runs (which can be longer than the k-mer size) or when working with a
-pre-computed PAF file.
+Use `PafAlignment.filter_by_min_length` to remove short alignment records after
+loading a PAF file. This is particularly useful for cleaned-up visualisations
+when alignments have been merged from k-mer runs (which can be longer than the
+k-mer size) or when working with a pre-computed PAF file.
 
 ```python
 from rusty_dot.paf_io import PafAlignment
@@ -212,17 +179,6 @@ aln = PafAlignment.from_file("alignments.paf")
 # Keep only alignments of at least 500 bp on the query
 aln_long = aln.filter_by_min_length(500)
 print(f"Records before: {len(aln)}, after: {len(aln_long)}")
-```
-
-## Saving and Loading Indexes
-
-```python
-# Save the current index to a compact binary file
-idx.save("my_index.bin")
-
-# Load into a new index (k must match the saved index)
-idx2 = SequenceIndex(k=15)
-idx2.load("my_index.bin")
 ```
 
 ## Writing PAF Lines to a File
@@ -237,4 +193,15 @@ paf_lines = idx.get_paf("contig1", "contig2", merge=True)
 with open("alignments.paf", "w") as f:
     for line in paf_lines:
         f.write(line + "\n")
+```
+
+## Saving and Loading Indexes
+
+```python
+# Save the current index to a compact binary file
+idx.save("my_index.bin")
+
+# Load into a new index (k must match the saved index)
+idx2 = SequenceIndex(k=15)
+idx2.load("my_index.bin")
 ```
