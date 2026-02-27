@@ -503,6 +503,9 @@ class PafAlignment:
 
     def __init__(self, records: list[PafRecord]) -> None:
         self.records: list[PafRecord] = records
+        # Custom group assignments.  None means use the default (query_names
+        # → 'a', target_names → 'b') which is computed lazily from records.
+        self._groups: dict[str, list[str]] | None = None
 
     # ------------------------------------------------------------------
     # Constructors
@@ -704,6 +707,87 @@ class PafAlignment:
         )
 
     # ------------------------------------------------------------------
+    # Group management
+    # ------------------------------------------------------------------
+
+    @property
+    def groups(self) -> dict[str, list[str]]:
+        """Return the current group assignments.
+
+        If groups have not been set explicitly via :meth:`set_groups` or
+        :meth:`rename_group`, returns the default: all query sequence names
+        in group ``'a'`` and all target sequence names in group ``'b'``.
+
+        Returns
+        -------
+        dict[str, list[str]]
+            Mapping of group label → list of sequence names.
+        """
+        if self._groups is not None:
+            return dict(self._groups)
+        return {'a': self.query_names, 'b': self.target_names}
+
+    def set_groups(self, groups: dict[str, list[str]]) -> None:
+        """Set custom group assignments for sequence names.
+
+        Parameters
+        ----------
+        groups : dict[str, list[str]]
+            Mapping of group label → list of sequence names belonging to
+            that group.
+
+        Warns
+        -----
+        Logs a warning for every sequence name that appears in more than one
+        group.
+        """
+        seen: dict[str, str] = {}
+        for group, names in groups.items():
+            for name in names:
+                if name in seen:
+                    _log.warning(
+                        'PafAlignment.set_groups: sequence %r is assigned to '
+                        'both group %r and group %r',
+                        name,
+                        seen[name],
+                        group,
+                    )
+                else:
+                    seen[name] = group
+        self._groups = {g: list(ns) for g, ns in groups.items()}
+
+    def rename_group(self, old_name: str, new_name: str) -> None:
+        """Rename a group label.
+
+        If custom groups have not been set yet, the default assignment
+        (``'a'`` → query names, ``'b'`` → target names) is materialised
+        first.
+
+        Parameters
+        ----------
+        old_name : str
+            Current group label.
+        new_name : str
+            New group label.
+
+        Raises
+        ------
+        KeyError
+            If *old_name* is not a known group.
+        ValueError
+            If *new_name* already exists as a different group label.
+        """
+        current = self._groups if self._groups is not None else self.groups
+        if old_name not in current:
+            raise KeyError(f"Group {old_name!r} not found.")
+        if new_name in current and new_name != old_name:
+            raise ValueError(f"Group {new_name!r} already exists.")
+        self._groups = {
+            (new_name if k == old_name else k): v for k, v in current.items()
+        }
+        _log.info('PafAlignment: renamed group %r → %r', old_name, new_name)
+
+    # ------------------------------------------------------------------
     # Contig reordering
     # ------------------------------------------------------------------
 
@@ -711,6 +795,8 @@ class PafAlignment:
         self,
         query_names: list[str] | None = None,
         target_names: list[str] | None = None,
+        query_group: str | None = None,
+        target_group: str | None = None,
     ) -> tuple[list[str], list[str]]:
         """Sort query and target contigs to maximise collinearity in the dotplot.
 
@@ -721,17 +807,45 @@ class PafAlignment:
         Parameters
         ----------
         query_names : list[str] or None, optional
-            Query contigs to reorder.  Defaults to :attr:`query_names`.
+            Query contigs to reorder.  Ignored when *query_group* is given.
+            Defaults to :attr:`query_names`.
         target_names : list[str] or None, optional
-            Target contigs to reorder.  Defaults to :attr:`target_names`.
+            Target contigs to reorder.  Ignored when *target_group* is given.
+            Defaults to :attr:`target_names`.
+        query_group : str or None, optional
+            Group label whose members are used as query contigs.  When
+            provided, the corresponding entry in :attr:`groups` is used and
+            *query_names* is ignored.
+        target_group : str or None, optional
+            Group label whose members are used as target contigs.  When
+            provided, the corresponding entry in :attr:`groups` is used and
+            *target_names* is ignored.
 
         Returns
         -------
         tuple[list[str], list[str]]
             ``(sorted_query_names, sorted_target_names)``.
+
+        Raises
+        ------
+        KeyError
+            If a supplied group label is not present in :attr:`groups`.
         """
-        q = query_names if query_names is not None else self.query_names
-        t = target_names if target_names is not None else self.target_names
+        current_groups = self.groups
+        if query_group is not None:
+            if query_group not in current_groups:
+                raise KeyError(f"Group {query_group!r} not found.")
+            q = current_groups[query_group]
+        else:
+            q = query_names if query_names is not None else self.query_names
+
+        if target_group is not None:
+            if target_group not in current_groups:
+                raise KeyError(f"Group {target_group!r} not found.")
+            t = current_groups[target_group]
+        else:
+            t = target_names if target_names is not None else self.target_names
+
         return compute_gravity_contigs(self.records, q, t)
 
 
@@ -800,6 +914,8 @@ class CrossIndex:
         self._index: SequenceIndex = SequenceIndex(k=k)
         # group_label -> ordered list of original (un-prefixed) sequence names
         self._groups: dict[str, list[str]] = {}
+        # group_label -> internal prefix used in _index (supports rename_group)
+        self._internal_group: dict[str, str] = {}
         # Cached PAF records from the last :meth:`run_merge` call
         self._paf_records: list[PafRecord] = []
 
@@ -807,10 +923,17 @@ class CrossIndex:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _make_internal(group: str, name: str) -> str:
-        """Format an internal (prefixed) name for use in SequenceIndex."""
-        return f'{group}:{name}'
+    def _make_internal(self, group: str, name: str) -> str:
+        """Format an internal (prefixed) name for use in SequenceIndex.
+
+        Uses :attr:`_internal_group` to resolve the actual internal prefix,
+        which may differ from *group* after a :meth:`rename_group` call.
+        The ``get(group, group)`` fallback is safe because every call to
+        :meth:`add_sequence` or :meth:`load_fasta` immediately registers the
+        new group in ``_internal_group`` before any internal name is formed.
+        """
+        prefix = self._internal_group.get(group, group)
+        return f'{prefix}:{name}'
 
     @staticmethod
     def _split_internal(internal: str) -> tuple[str, str]:
@@ -847,6 +970,7 @@ class CrossIndex:
         self._index.add_sequence(internal, seq)
         if group not in self._groups:
             self._groups[group] = []
+            self._internal_group[group] = group
         self._groups[group].append(name)
 
     def load_fasta(self, path: str, group: str = 'a') -> list[str]:
@@ -878,6 +1002,7 @@ class CrossIndex:
         seqs = py_read_fasta(path)
         if group not in self._groups:
             self._groups[group] = []
+            self._internal_group[group] = group
         names: list[str] = []
         for name, seq in seqs.items():
             internal = self._make_internal(group, name)
@@ -1004,6 +1129,76 @@ class CrossIndex:
     # ------------------------------------------------------------------
     # Contig reordering
     # ------------------------------------------------------------------
+
+    def rename_group(self, old_name: str, new_name: str) -> None:
+        """Rename a group label without re-indexing sequences.
+
+        The internal prefix used in the underlying :class:`SequenceIndex` is
+        preserved; only the public-facing group label is changed.
+
+        Parameters
+        ----------
+        old_name : str
+            Current group label to rename.
+        new_name : str
+            New group label.  Must not contain ``':'``.
+
+        Raises
+        ------
+        KeyError
+            If *old_name* is not a known group.
+        ValueError
+            If *new_name* contains ``':'`` or already exists as a group label.
+        """
+        if old_name not in self._groups:
+            raise KeyError(f"Group {old_name!r} not found.")
+        if ':' in new_name:
+            raise ValueError(f"Group name must not contain ':', got {new_name!r}")
+        if new_name in self._groups and new_name != old_name:
+            raise ValueError(f"Group {new_name!r} already exists.")
+        # Rebuild _groups preserving insertion order
+        self._groups = {
+            (new_name if k == old_name else k): v for k, v in self._groups.items()
+        }
+        # Update the internal-prefix mapping
+        self._internal_group[new_name] = self._internal_group.pop(old_name)
+        _log.info('CrossIndex: renamed group %r → %r', old_name, new_name)
+
+    def set_group_members(self, group: str, names: list[str]) -> None:
+        """Assign a custom list of sequence names to an existing group.
+
+        Only the logical membership list is updated; sequences already indexed
+        are not moved or removed from the underlying
+        :class:`~rusty_dot.SequenceIndex`.
+
+        Parameters
+        ----------
+        group : str
+            Group label to update.  The group must already exist.
+        names : list[str]
+            New ordered list of un-prefixed sequence names for the group.
+
+        Raises
+        ------
+        KeyError
+            If *group* is not a known group.
+
+        Warns
+        -----
+        Logs a warning for every name that is also present in another group.
+        """
+        if group not in self._groups:
+            raise KeyError(f"Group {group!r} not found.")
+        for n in names:
+            for other_g, other_ns in self._groups.items():
+                if other_g != group and n in other_ns:
+                    _log.warning(
+                        "CrossIndex: sequence %r is assigned to both group %r and group %r",
+                        n,
+                        other_g,
+                        group,
+                    )
+        self._groups[group] = list(names)
 
     def reorder_by_length(self, group: str | None = None) -> None:
         """Reorder contigs within one or all groups by descending sequence length.
@@ -1192,45 +1387,96 @@ class CrossIndex:
         self,
         query_names: list[str] | None = None,
         target_names: list[str] | None = None,
+        query_group: str | None = None,
+        target_group: str | None = None,
     ) -> tuple[list[str], list[str]]:
-        """Sort contigs for maximum collinearity (backward-compatible, requires groups a and b).
+        """Sort contigs for maximum collinearity.
+
+        When *query_group* and *target_group* are not provided the method
+        auto-detects the two groups to compare:
+
+        * If there are **exactly two groups**, those two groups are used
+          (regardless of their labels) and an info-level log message records
+          which groups were selected and the order of the returned tuple.
+        * Otherwise a :exc:`ValueError` is raised and the caller must supply
+          explicit group labels via *query_group* / *target_group*.
 
         Parameters
         ----------
         query_names : list[str] or None, optional
-            Original (un-prefixed) names for group ``'a'`` to reorder.
-            Defaults to all group-a sequences.
+            Explicit un-prefixed names within *query_group* to reorder.
+            Defaults to all sequences in *query_group*.
         target_names : list[str] or None, optional
-            Original (un-prefixed) names for group ``'b'`` to reorder.
-            Defaults to all group-b sequences.
+            Explicit un-prefixed names within *target_group* to reorder.
+            Defaults to all sequences in *target_group*.
+        query_group : str or None, optional
+            Group label for the query (first element of the returned tuple).
+            When ``None`` the group is auto-detected (requires exactly two
+            groups).
+        target_group : str or None, optional
+            Group label for the target (second element of the returned tuple).
+            When ``None`` the group is auto-detected (requires exactly two
+            groups).
 
         Returns
         -------
         tuple[list[str], list[str]]
-            ``(sorted_query_names, sorted_target_names)`` — both using original
-            un-prefixed names.
+            ``(sorted_query_names, sorted_target_names)`` — both using
+            original un-prefixed names.  The log output names the groups
+            in the same order as the tuple elements.
 
         Raises
         ------
         ValueError
-            If group ``'b'`` is empty.  Use :meth:`reorder_for_colinearity` for
-            explicit group names.
+            If groups cannot be auto-detected (i.e. there are not exactly two
+            groups and no explicit group labels were supplied), or if only one
+            of *query_group* / *target_group* is given.
+        KeyError
+            If an explicitly supplied group label is not present.
         """
-        if 'b' not in self._groups or not self._groups['b']:
+        groups = list(self._groups.keys())
+
+        if query_group is None and target_group is None:
+            if len(groups) == 2:
+                query_group, target_group = groups[0], groups[1]
+                _log.info(
+                    'CrossIndex.reorder_contigs: auto-selected groups '
+                    '%r (query / first) and %r (target / second)',
+                    query_group,
+                    target_group,
+                )
+            else:
+                raise ValueError(
+                    'reorder_contigs requires exactly two groups when query_group '
+                    'and target_group are not specified; '
+                    f'found {len(groups)} group(s): {groups!r}. '
+                    'Provide query_group and target_group explicitly, or use '
+                    'reorder_for_colinearity for full control.'
+                )
+        elif (query_group is None) ^ (target_group is None):
             raise ValueError(
-                "reorder_contigs requires group 'b' sequences; "
-                'use reorder_for_colinearity for explicit group names.'
+                'Provide both query_group and target_group, or neither.'
             )
+        else:
+            _log.info(
+                'CrossIndex.reorder_contigs: using groups '
+                '%r (query / first) and %r (target / second)',
+                query_group,
+                target_group,
+            )
+
         q_names = (
-            query_names if query_names is not None else list(self._groups.get('a', []))
+            query_names
+            if query_names is not None
+            else list(self._groups[query_group])
         )
         t_names = (
             target_names
             if target_names is not None
-            else list(self._groups.get('b', []))
+            else list(self._groups[target_group])
         )
-        q_internal = [self._make_internal('a', n) for n in q_names]
-        t_internal = [self._make_internal('b', n) for n in t_names]
+        q_internal = [self._make_internal(query_group, n) for n in q_names]
+        t_internal = [self._make_internal(target_group, n) for n in t_names]
         sorted_q_int, sorted_t_int = self._index.optimal_contig_order(
             q_internal, t_internal
         )
