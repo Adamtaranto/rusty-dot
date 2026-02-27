@@ -863,12 +863,26 @@ class CrossIndex:
     which keeps names unique even when the same sequence identifier appears
     in multiple groups.
 
+    **Workflow**
+
+    Loading sequences and computing matches are separate, explicit steps:
+
+    1. Load sequences via :meth:`add_sequence` or :meth:`load_fasta`.
+       Each sequence addition is logged at ``DEBUG`` level.  A ``WARNING``
+       is emitted if the name already exists in the same group (FM-index
+       overwritten) or in a different group.
+    2. Call :meth:`compute_matches` to find k-mer matches between groups.
+       This must be done before calling :meth:`reorder_contigs` or
+       :meth:`reorder_for_colinearity`.
+    3. Inspect :attr:`computed_group_pairs` to verify which pairs have been
+       computed.
+
     **Alignment scope by number of groups**
 
-    * **2 groups** — alignments are computed between the two groups only.
-    * **3+ groups** — alignments are computed for every non-self ordered pair
-      of groups.  Use the *group_pairs* argument of :meth:`get_paf` to
-      restrict to specific pairs.
+    * **2 groups** — :meth:`compute_matches` compares the two groups by
+      default.
+    * **3+ groups** — all non-self ordered pairs by default.  Use the
+      *query_group* / *target_group* arguments to restrict to a specific pair.
 
     **DotPlotter compatibility**
 
@@ -879,6 +893,7 @@ class CrossIndex:
         cross = CrossIndex(k=15)
         cross.load_fasta("assembly_a.fasta", group="a")
         cross.load_fasta("assembly_b.fasta", group="b")
+        cross.compute_matches()
 
         from rusty_dot.dotplot import DotPlotter
         plotter = DotPlotter(cross)
@@ -899,6 +914,7 @@ class CrossIndex:
     >>> cross = CrossIndex(k=10)
     >>> cross.load_fasta("genome_a.fasta", group="a")
     >>> cross.load_fasta("genome_b.fasta", group="b")
+    >>> cross.compute_matches()
     >>> paf_lines = cross.get_paf()
     """
 
@@ -916,8 +932,34 @@ class CrossIndex:
         self._groups: dict[str, list[str]] = {}
         # group_label -> internal prefix used in _index (supports rename_group)
         self._internal_group: dict[str, str] = {}
-        # Cached PAF records from the last :meth:`run_merge` call
-        self._paf_records: list[PafRecord] = []
+        # (query_group, target_group) -> list[PafRecord] from compute_matches
+        self._records_by_pair: dict[tuple[str, str], list[PafRecord]] = {}
+
+    @property
+    def _paf_records(self) -> list[PafRecord]:
+        """All cached PAF records across every computed group pair (flat list).
+
+        Note: this property rebuilds the list on every access.  Avoid calling
+        it repeatedly in a tight loop; assign to a local variable instead.
+        """
+        result: list[PafRecord] = []
+        for recs in self._records_by_pair.values():
+            result.extend(recs)
+        return result
+
+    @property
+    def computed_group_pairs(self) -> list[tuple[str, str]]:
+        """Group pairs for which k-mer matches have been computed.
+
+        Returns
+        -------
+        list[tuple[str, str]]
+            List of ``(query_group, target_group)`` pairs that have had
+            :meth:`compute_matches` run on them.  Use this to confirm that
+            the required pair is ready before calling
+            :meth:`reorder_contigs`.
+        """
+        return list(self._records_by_pair.keys())
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -945,8 +987,32 @@ class CrossIndex:
     # Adding sequences
     # ------------------------------------------------------------------
 
+    def _check_name_collision(self, name: str, group: str) -> None:
+        """Emit warnings if *name* already exists in the same or another group."""
+        if name in self._groups.get(group, []):
+            _log.warning(
+                "CrossIndex: sequence %r already exists in group %r; "
+                "its FM-index will be overwritten",
+                name,
+                group,
+            )
+        else:
+            for other_g, other_names in self._groups.items():
+                if other_g != group and name in other_names:
+                    _log.warning(
+                        "CrossIndex: sequence %r already exists in group %r; "
+                        "adding the same name to group %r may cause confusion",
+                        name,
+                        other_g,
+                        group,
+                    )
+
     def add_sequence(self, name: str, seq: str, group: str = 'a') -> None:
         """Add a single sequence to the specified group.
+
+        Logs a ``DEBUG``-level message for every sequence loaded, and a
+        ``WARNING`` if *name* already exists in the same group (its FM-index
+        will be overwritten) or in a different group (potential confusion).
 
         Parameters
         ----------
@@ -966,15 +1032,28 @@ class CrossIndex:
         """
         if ':' in group:
             raise ValueError(f"Group name must not contain ':', got {group!r}")
-        internal = self._make_internal(group, name)
-        self._index.add_sequence(internal, seq)
+        self._check_name_collision(name, group)
+        _log.debug(
+            "CrossIndex: adding sequence %r (len=%d) to group %r",
+            name,
+            len(seq),
+            group,
+        )
         if group not in self._groups:
             self._groups[group] = []
             self._internal_group[group] = group
-        self._groups[group].append(name)
+        internal = self._make_internal(group, name)
+        self._index.add_sequence(internal, seq)
+        if name not in self._groups[group]:
+            self._groups[group].append(name)
 
     def load_fasta(self, path: str, group: str = 'a') -> list[str]:
         """Load sequences from a FASTA file into the specified group.
+
+        Logs an ``INFO``-level message when opening the file, a ``DEBUG``
+        message for each sequence loaded (including sequence name and length),
+        and a ``WARNING`` if any sequence name already exists in the same or
+        another group.
 
         Parameters
         ----------
@@ -999,16 +1078,31 @@ class CrossIndex:
             raise ValueError(f"Group name must not contain ':', got {group!r}")
         from rusty_dot._rusty_dot import py_read_fasta
 
+        _log.info("CrossIndex: loading sequences from %r into group %r", path, group)
         seqs = py_read_fasta(path)
         if group not in self._groups:
             self._groups[group] = []
             self._internal_group[group] = group
         names: list[str] = []
         for name, seq in seqs.items():
+            self._check_name_collision(name, group)
+            _log.debug(
+                "CrossIndex: adding sequence %r (len=%d) to group %r",
+                name,
+                len(seq),
+                group,
+            )
             internal = self._make_internal(group, name)
             self._index.add_sequence(internal, seq)
-            self._groups[group].append(name)
+            if name not in self._groups[group]:
+                self._groups[group].append(name)
             names.append(name)
+        _log.info(
+            "CrossIndex: loaded %d sequence(s) from %r into group %r",
+            len(names),
+            path,
+            group,
+        )
         return names
 
     # ------------------------------------------------------------------
@@ -1226,6 +1320,10 @@ class CrossIndex:
         :meth:`~rusty_dot.SequenceIndex.optimal_contig_order`.  Updates
         :attr:`contig_order` in-place for both groups.
 
+        .. note::
+            :meth:`compute_matches` must be called for ``(query_group,
+            target_group)`` before calling this method.
+
         Parameters
         ----------
         query_group : str
@@ -1237,7 +1335,16 @@ class CrossIndex:
         ------
         KeyError
             If either group label is not present in the index.
+        ValueError
+            If :meth:`compute_matches` has not been called for this group
+            pair.
         """
+        pair = (query_group, target_group)
+        if pair not in self._records_by_pair:
+            raise ValueError(
+                f"No matches computed for group pair {pair!r}. "
+                "Call compute_matches() for this pair first."
+            )
         q_internal = [
             self._make_internal(query_group, n) for n in self._groups[query_group]
         ]
@@ -1251,7 +1358,7 @@ class CrossIndex:
         self._groups[target_group] = [self._split_internal(n)[1] for n in sorted_t_int]
 
     # ------------------------------------------------------------------
-    # PAF output
+    # PAF output and match computation
     # ------------------------------------------------------------------
 
     def _get_default_group_pairs(self) -> list[tuple[str, str]]:
@@ -1266,6 +1373,98 @@ class CrossIndex:
         return [
             (a, b) for i, a in enumerate(groups) for j, b in enumerate(groups) if i != j
         ]
+
+    def compute_matches(
+        self,
+        query_group: str | None = None,
+        target_group: str | None = None,
+        merge: bool = True,
+    ) -> None:
+        """Compute k-mer matches between groups and cache the results.
+
+        This is the primary computation step and must be called **before**
+        :meth:`reorder_contigs` or :meth:`reorder_for_colinearity`.  Matches
+        are computed only between groups — not within a single group.
+
+        When *query_group* and *target_group* are both ``None``:
+
+        * **2 groups** — the single cross-group pair is used.
+        * **3+ groups** — all non-self ordered pairs are computed.
+
+        The computed records are stored internally, keyed by
+        ``(query_group, target_group)``, and the pair is added to
+        :attr:`computed_group_pairs`.
+
+        Parameters
+        ----------
+        query_group : str or None, optional
+            Group label for query sequences.  When ``None`` (default) the
+            groups are auto-detected (see above).
+        target_group : str or None, optional
+            Group label for target sequences.  When ``None`` (default) the
+            groups are auto-detected.
+        merge : bool, optional
+            Whether to merge consecutive co-linear k-mer runs into single
+            alignment blocks.  Default is ``True``.
+
+        Raises
+        ------
+        ValueError
+            If group auto-detection fails (≠2 groups, no explicit params), or
+            if only one of *query_group* / *target_group* is supplied.
+        KeyError
+            If an explicit group label is not present in the index.
+        """
+        if query_group is None and target_group is None:
+            pairs = self._get_default_group_pairs()
+        elif (query_group is None) ^ (target_group is None):
+            raise ValueError(
+                'Provide both query_group and target_group, or neither.'
+            )
+        else:
+            if query_group not in self._groups:
+                raise KeyError(f"Group {query_group!r} not found.")
+            if target_group not in self._groups:
+                raise KeyError(f"Group {target_group!r} not found.")
+            pairs = [(query_group, target_group)]
+
+        for qg, tg in pairs:
+            q_seqs = self._groups.get(qg, [])
+            t_seqs = self._groups.get(tg, [])
+            _log.info(
+                "CrossIndex.compute_matches: computing matches between "
+                "group %r (%d sequence(s)) and group %r (%d sequence(s))",
+                qg,
+                len(q_seqs),
+                tg,
+                len(t_seqs),
+            )
+            pair_records: list[PafRecord] = []
+            for q_orig in q_seqs:
+                for t_orig in t_seqs:
+                    q_int = self._make_internal(qg, q_orig)
+                    t_int = self._make_internal(tg, t_orig)
+                    _log.debug(
+                        "CrossIndex.compute_matches: comparing %r (group %r) "
+                        "vs %r (group %r)",
+                        q_orig,
+                        qg,
+                        t_orig,
+                        tg,
+                    )
+                    lines = self._index.get_paf(q_int, t_int, merge)
+                    for line in lines:
+                        fields = line.split('\t')
+                        fields[0] = q_orig
+                        fields[5] = t_orig
+                        pair_records.append(PafRecord.from_line('\t'.join(fields)))
+            self._records_by_pair[(qg, tg)] = pair_records
+            _log.info(
+                "CrossIndex.compute_matches: stored %d record(s) for pair (%r, %r)",
+                len(pair_records),
+                qg,
+                tg,
+            )
 
     def get_paf(
         self,
@@ -1296,20 +1495,28 @@ class CrossIndex:
 
         paf_lines: list[str] = []
         for query_group, target_group in group_pairs:
+            q_seqs = self._groups.get(query_group, [])
+            t_seqs = self._groups.get(target_group, [])
             _log.info(
-                'CrossIndex: computing %d x %d pairwise alignments '
-                'between group %r (%d sequences) and group %r (%d sequences)',
-                len(self._groups.get(query_group, [])),
-                len(self._groups.get(target_group, [])),
+                'CrossIndex.get_paf: on-demand computation of %d x %d alignments '
+                'between group %r and group %r '
+                '(tip: call compute_matches() first to pre-cache results)',
+                len(q_seqs),
+                len(t_seqs),
                 query_group,
-                len(self._groups.get(query_group, [])),
                 target_group,
-                len(self._groups.get(target_group, [])),
             )
-            for q_orig in self._groups.get(query_group, []):
-                for t_orig in self._groups.get(target_group, []):
+            for q_orig in q_seqs:
+                for t_orig in t_seqs:
                     q_int = self._make_internal(query_group, q_orig)
                     t_int = self._make_internal(target_group, t_orig)
+                    _log.debug(
+                        "CrossIndex.get_paf: comparing %r (group %r) vs %r (group %r)",
+                        q_orig,
+                        query_group,
+                        t_orig,
+                        target_group,
+                    )
                     lines = self._index.get_paf(q_int, t_int, merge)
                     for line in lines:
                         fields = line.split('\t')
@@ -1324,18 +1531,22 @@ class CrossIndex:
     ) -> None:
         """Compute merged alignments and store the result as :attr:`_paf_records`.
 
-        Runs :meth:`get_paf` with ``merge=True`` and populates
-        ``self._paf_records`` so that the results can be inspected or passed
-        to a :class:`PafAlignment`.
+        .. deprecated::
+            Use :meth:`compute_matches` instead.  ``run_merge`` now delegates
+            to ``compute_matches`` and is retained only for backward
+            compatibility.
 
         Parameters
         ----------
         group_pairs : list of (str, str) or None, optional
-            Group pairs to compare (same semantics as :meth:`get_paf`).
+            Group pairs to compare (same semantics as :meth:`compute_matches`).
             Defaults to all cross-group pairs.
         """
-        paf_lines = self.get_paf(group_pairs=group_pairs, merge=True)
-        self._paf_records = [PafRecord.from_line(line) for line in paf_lines]
+        if group_pairs is None:
+            self.compute_matches(merge=True)
+        else:
+            for qg, tg in group_pairs:
+                self.compute_matches(query_group=qg, target_group=tg, merge=True)
 
     # ------------------------------------------------------------------
     # Backward-compatible API (two-group a/b model)
@@ -1392,6 +1603,10 @@ class CrossIndex:
     ) -> tuple[list[str], list[str]]:
         """Sort contigs for maximum collinearity.
 
+        .. note::
+            :meth:`compute_matches` must be called for the relevant group pair
+            before calling this method.
+
         When *query_group* and *target_group* are not provided the method
         auto-detects the two groups to compare:
 
@@ -1429,8 +1644,10 @@ class CrossIndex:
         ------
         ValueError
             If groups cannot be auto-detected (i.e. there are not exactly two
-            groups and no explicit group labels were supplied), or if only one
-            of *query_group* / *target_group* is given.
+            groups and no explicit group labels were supplied), if only one of
+            *query_group* / *target_group* is given, or if
+            :meth:`compute_matches` has not been called for the resolved group
+            pair.
         KeyError
             If an explicitly supplied group label is not present.
         """
@@ -1463,6 +1680,13 @@ class CrossIndex:
                 '%r (query / first) and %r (target / second)',
                 query_group,
                 target_group,
+            )
+
+        pair = (query_group, target_group)
+        if pair not in self._records_by_pair:
+            raise ValueError(
+                f"No matches computed for group pair {pair!r}. "
+                "Call compute_matches() for this pair first."
             )
 
         q_names = (
@@ -1505,13 +1729,20 @@ class CrossIndex:
         Returns
         -------
         str
-            Multi-line summary of groups, sequence counts, and cached PAF
-            record count.
+            Multi-line summary of groups, sequence counts, computed pairs,
+            and cached PAF record count.
         """
         n_total = sum(len(v) for v in self._groups.values())
         lines = [f'CrossIndex (k={self._k})']
         lines.append(f'  Total sequences : {n_total}')
         for g, names in self._groups.items():
             lines.append(f'  Group {g!r:12s}: {len(names):>6d} sequences')
+        if self._records_by_pair:
+            for (qg, tg), recs in self._records_by_pair.items():
+                lines.append(
+                    f'  Computed pair   : ({qg!r}, {tg!r}) → {len(recs)} record(s)'
+                )
+        else:
+            lines.append('  Computed pairs  : none (call compute_matches() first)')
         lines.append(f'  PAF records     : {len(self._paf_records)}')
         return '\n'.join(lines)
