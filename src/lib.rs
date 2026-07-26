@@ -15,6 +15,7 @@ pub mod error;
 pub mod fasta;
 pub mod index;
 pub mod kmer;
+pub mod kmer_hash;
 pub mod merge;
 pub mod paf;
 pub mod serialize;

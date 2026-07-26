@@ -6,19 +6,15 @@
 #![allow(clippy::useless_conversion)]
 
 use crate::error::RustyDotError;
-use crate::kmer::{
-    build_kmer_set, find_kmer_coords_in_index, find_rev_coords_in_index, sequence_to_index_text,
-    FmIdx,
-};
+use crate::kmer::build_kmer_set;
+use crate::kmer_hash::KmerIndex;
 use crate::merge::{
     merge_fwd_runs, merge_kmer_runs, merge_rev_fwd_runs, merge_rev_runs, CoordPair,
 };
 use crate::paf::coords_to_paf;
-use crate::serialize::{
-    load_index, rebuild_fm_from_bytes, save_index, IndexCollection, SerializableSequence,
-};
+use crate::serialize::{load_index, save_index, IndexCollection, SerializableSequence};
 use crate::strand::{revcomp, STRAND_REV};
-use ahash::AHashSet;
+use ahash::AHashMap;
 use pyo3::prelude::*;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -27,20 +23,21 @@ use std::collections::HashMap;
 /// Stranded match coordinates: (query_start, query_end, target_start, target_end, strand).
 type StrandedMatch = (usize, usize, usize, usize, String);
 
-/// Build the in-memory index data (FM-index + k-mer set) for a single sequence.
+/// Build the in-memory index data (rolling-hash k-mer index) for a single sequence.
 ///
-/// This is the CPU-heavy per-sequence work (suffix-array construction plus the
-/// k-mer scan).  It is a free function taking no `&self` so it can be called
-/// from a rayon parallel iterator while building many sequences concurrently.
+/// This is the CPU-heavy per-sequence work (a single O(n) ntHash scan building
+/// the forward and reverse-complement hash maps).  It is a free function taking
+/// no `&self` so it can be called from a rayon parallel iterator while building
+/// many sequences concurrently.
 fn build_sequence_data(seq: &str, k: usize) -> Result<SequenceData, RustyDotError> {
-    let text = sequence_to_index_text(seq);
-    let fm = FmIdx::new(text)?;
-    let kmer_set = build_kmer_set(seq, k)?;
-    let seq_len = seq.len();
+    if k == 0 {
+        return Err(RustyDotError::InvalidKmerLength(k));
+    }
     let seq_bytes = seq.as_bytes().to_vec();
+    let index = KmerIndex::build(&seq_bytes, k);
+    let seq_len = seq.len();
     Ok(SequenceData {
-        fm,
-        kmer_set,
+        index,
         seq_bytes,
         seq_len,
     })
@@ -74,11 +71,10 @@ fn build_many_sequence_data(
 
 /// In-memory store for a single sequence's index data.
 struct SequenceData {
-    /// FM-index for this sequence.
-    fm: FmIdx,
-    /// Set of unique k-mers in this sequence.
-    kmer_set: AHashSet<String>,
-    /// Original sequence bytes (without sentinel), for serialization.
+    /// Rolling-hash k-mer index (forward + reverse-complement hash maps).
+    index: KmerIndex,
+    /// Original sequence bytes (without sentinel), used for matching (byte
+    /// verification) and serialization.
     seq_bytes: Vec<u8>,
     /// Original sequence length.
     seq_len: usize,
@@ -127,28 +123,19 @@ fn compute_pair_fwd(
     target_name: &str,
     merge: bool,
 ) -> Vec<CoordPair> {
-    // Determine which k-mer set is smaller (use as probe set).
-    let probe_is_query =
-        sequences[query_name].kmer_set.len() <= sequences[target_name].kmer_set.len();
-    let (probe_name, other_name) = if probe_is_query {
-        (query_name, target_name)
-    } else {
-        (target_name, query_name)
-    };
-    let probe_set = &sequences[probe_name].kmer_set;
-    let other_set = &sequences[other_name].kmer_set;
-    let shared_set: AHashSet<String> = probe_set
-        .iter()
-        .filter(|k| other_set.contains(*k))
-        .cloned()
-        .collect();
+    let query = &sequences[query_name];
+    let target = &sequences[target_name];
+    let (query_coords, target_coords) = shared_fwd_coords(
+        &query.seq_bytes,
+        &query.index,
+        &target.seq_bytes,
+        &target.index,
+        k,
+    );
 
-    if shared_set.is_empty() {
+    if query_coords.is_empty() {
         return Vec::new();
     }
-
-    let query_coords = find_kmer_coords_in_index(&shared_set, &sequences[query_name].fm);
-    let target_coords = find_kmer_coords_in_index(&shared_set, &sequences[target_name].fm);
 
     if merge {
         merge_kmer_runs(&target_coords, &query_coords, k)
@@ -175,6 +162,105 @@ fn compute_pair_fwd(
     }
 }
 
+/// Build the shared forward-strand coordinate maps for two sequences.
+///
+/// Intersects the two forward hash indexes and, for every shared hash whose
+/// representative k-mer bytes match (rejecting the astronomically rare 64-bit
+/// hash collision), records that k-mer's positions in both sequences.  The
+/// returned maps are keyed by the k-mer string and are drop-in inputs for the
+/// `merge_*` functions — reproducing exactly what exact k-mer search produced.
+fn shared_fwd_coords(
+    q_seq: &[u8],
+    q_index: &KmerIndex,
+    t_seq: &[u8],
+    t_index: &KmerIndex,
+    k: usize,
+) -> (AHashMap<String, Vec<usize>>, AHashMap<String, Vec<usize>>) {
+    let mut query_coords: AHashMap<String, Vec<usize>> = AHashMap::new();
+    let mut target_coords: AHashMap<String, Vec<usize>> = AHashMap::new();
+
+    // Iterate the smaller forward map for efficiency.
+    let probe_is_query = q_index.fwd.len() <= t_index.fwd.len();
+    let (small, other) = if probe_is_query {
+        (&q_index.fwd, &t_index.fwd)
+    } else {
+        (&t_index.fwd, &q_index.fwd)
+    };
+
+    for (hash, small_pos) in small {
+        let Some(other_pos) = other.get(hash) else {
+            continue;
+        };
+        // Map probe/other back to query/target position lists.
+        let (q_pos, t_pos) = if probe_is_query {
+            (small_pos, other_pos)
+        } else {
+            (other_pos, small_pos)
+        };
+        // Verify one representative k-mer to reject hash collisions.
+        let q_rep = &q_seq[q_pos[0] as usize..q_pos[0] as usize + k];
+        let t_rep = &t_seq[t_pos[0] as usize..t_pos[0] as usize + k];
+        if q_rep != t_rep {
+            continue;
+        }
+        let kmer = String::from_utf8_lossy(q_rep).into_owned();
+        query_coords.insert(kmer.clone(), q_pos.iter().map(|&p| p as usize).collect());
+        target_coords.insert(kmer, t_pos.iter().map(|&p| p as usize).collect());
+    }
+
+    (query_coords, target_coords)
+}
+
+/// Build the shared reverse-strand coordinate maps for two sequences.
+///
+/// Finds query k-mers whose reverse complement occurs in the target by
+/// intersecting the query's reverse-complement hash map with the target's
+/// forward hash map (using the ntHash identity `rev_hash(Q) == fwd_hash(RC(Q))`).
+/// Returns `(target_rev_coords, query_rev_coords)` keyed by the *original* query
+/// k-mer, matching the inputs expected by `merge_rev_*`.
+fn shared_rev_coords(
+    q_seq: &[u8],
+    q_index: &KmerIndex,
+    t_seq: &[u8],
+    t_index: &KmerIndex,
+    k: usize,
+) -> (AHashMap<String, Vec<usize>>, AHashMap<String, Vec<usize>>) {
+    let mut query_rev: AHashMap<String, Vec<usize>> = AHashMap::new();
+    let mut target_rev: AHashMap<String, Vec<usize>> = AHashMap::new();
+
+    // Intersect the query's reverse map with the target's forward map, iterating
+    // whichever is smaller.
+    let probe_is_query = q_index.rev.len() <= t_index.fwd.len();
+    let (small, other) = if probe_is_query {
+        (&q_index.rev, &t_index.fwd)
+    } else {
+        (&t_index.fwd, &q_index.rev)
+    };
+
+    for (hash, small_pos) in small {
+        let Some(other_pos) = other.get(hash) else {
+            continue;
+        };
+        let (q_pos, t_pos) = if probe_is_query {
+            (small_pos, other_pos)
+        } else {
+            (other_pos, small_pos)
+        };
+        // The query k-mer and the target k-mer at their representatives; verify
+        // the target really is the reverse complement of the query k-mer.
+        let q_rep = &q_seq[q_pos[0] as usize..q_pos[0] as usize + k];
+        let t_rep = &t_seq[t_pos[0] as usize..t_pos[0] as usize + k];
+        if revcomp(q_rep) != t_rep {
+            continue;
+        }
+        let kmer = String::from_utf8_lossy(q_rep).into_owned();
+        query_rev.insert(kmer.clone(), q_pos.iter().map(|&p| p as usize).collect());
+        target_rev.insert(kmer, t_pos.iter().map(|&p| p as usize).collect());
+    }
+
+    (target_rev, query_rev)
+}
+
 /// Both-strand comparison of two sequences.
 ///
 /// The cache-free, `&self`-free core of
@@ -186,48 +272,20 @@ fn compute_pair_stranded(
     target_name: &str,
     merge: bool,
 ) -> Vec<CoordPair> {
-    // --- Forward (+ strand) shared k-mers ---
-    let fwd_shared: AHashSet<String> = {
-        let probe_is_query =
-            sequences[query_name].kmer_set.len() <= sequences[target_name].kmer_set.len();
-        let (probe, other) = if probe_is_query {
-            (query_name, target_name)
-        } else {
-            (target_name, query_name)
-        };
-        let probe_set = &sequences[probe].kmer_set;
-        let other_set = &sequences[other].kmer_set;
-        probe_set
-            .iter()
-            .filter(|k| other_set.contains(*k))
-            .cloned()
-            .collect()
-    };
-
-    // --- Reverse (- strand) k-mers: query kmers whose RC is in target ---
-    let rev_shared: AHashSet<String> = {
-        let q_set = &sequences[query_name].kmer_set;
-        let t_set = &sequences[target_name].kmer_set;
-        q_set
-            .iter()
-            .filter(|k| {
-                let rc_bytes = revcomp(k.as_bytes());
-                if let Ok(rc_str) = std::str::from_utf8(&rc_bytes) {
-                    t_set.contains(rc_str)
-                } else {
-                    false
-                }
-            })
-            .cloned()
-            .collect()
-    };
+    let query = &sequences[query_name];
+    let target = &sequences[target_name];
 
     let mut all_pairs: Vec<CoordPair> = Vec::new();
 
     // + strand hits
-    if !fwd_shared.is_empty() {
-        let query_fwd = find_kmer_coords_in_index(&fwd_shared, &sequences[query_name].fm);
-        let target_fwd = find_kmer_coords_in_index(&fwd_shared, &sequences[target_name].fm);
+    let (query_fwd, target_fwd) = shared_fwd_coords(
+        &query.seq_bytes,
+        &query.index,
+        &target.seq_bytes,
+        &target.index,
+        k,
+    );
+    if !query_fwd.is_empty() {
         if merge {
             all_pairs.extend(merge_fwd_runs(&target_fwd, &query_fwd, k));
         } else {
@@ -251,9 +309,14 @@ fn compute_pair_stranded(
     }
 
     // - strand hits
-    if !rev_shared.is_empty() {
-        let query_rev = find_kmer_coords_in_index(&rev_shared, &sequences[query_name].fm);
-        let target_rev = find_rev_coords_in_index(&rev_shared, &sequences[target_name].fm);
+    let (target_rev, query_rev) = shared_rev_coords(
+        &query.seq_bytes,
+        &query.index,
+        &target.seq_bytes,
+        &target.index,
+        k,
+    );
+    if !query_rev.is_empty() {
         if merge {
             // Apply both anti-diagonal and co-diagonal merging for RC hits,
             // deduplicating identical blocks that arise when a single RC pair
@@ -575,7 +638,14 @@ impl SequenceIndex {
     ///     If the sequence name is not found.
     pub fn get_kmer_set(&self, name: &str) -> PyResult<std::collections::HashSet<String>> {
         match self.sequences.get(name) {
-            Some(data) => Ok(data.kmer_set.iter().cloned().collect()),
+            // Regenerate the k-mer string set on demand from the retained bytes;
+            // the matching path uses the rolling-hash index instead of storing
+            // the (memory-heavy) string set.
+            Some(data) => {
+                let seq = String::from_utf8_lossy(&data.seq_bytes);
+                let set = build_kmer_set(&seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
+                Ok(set.into_iter().collect())
+            }
             None => Err(pyo3::exceptions::PyKeyError::new_err(format!(
                 "Sequence '{}' not found in index",
                 name
@@ -1016,10 +1086,11 @@ impl SequenceIndex {
                     seq_bytes: data.seq_bytes.clone(),
                 },
             );
-            kmer_sets_map.insert(
-                name.clone(),
-                data.kmer_set.iter().cloned().collect::<Vec<_>>(),
-            );
+            // Regenerate the k-mer string set from the retained bytes for the
+            // serialized form (the in-memory index no longer stores it).
+            let seq = String::from_utf8_lossy(&data.seq_bytes);
+            let kmer_set = build_kmer_set(&seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
+            kmer_sets_map.insert(name.clone(), kmer_set.into_iter().collect::<Vec<_>>());
         }
 
         let collection = IndexCollection {
@@ -1051,19 +1122,13 @@ impl SequenceIndex {
             )));
         }
         for (name, serializable) in collection.sequences {
-            let kmer_set: AHashSet<String> = collection
-                .kmer_sets
-                .get(&name)
-                .map(|v| v.iter().cloned().collect())
-                .unwrap_or_default();
             let seq_len = serializable.seq_bytes.len();
-            let fm = rebuild_fm_from_bytes(&serializable.seq_bytes)
-                .map_err(|e| -> pyo3::PyErr { e.into() })?;
+            // Rebuild the rolling-hash index from the stored bytes.
+            let index = KmerIndex::build(&serializable.seq_bytes, self.k);
             self.sequences.insert(
                 name,
                 SequenceData {
-                    fm,
-                    kmer_set,
+                    index,
                     seq_bytes: serializable.seq_bytes,
                     seq_len,
                 },
