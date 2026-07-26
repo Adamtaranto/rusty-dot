@@ -11,10 +11,10 @@ import matplotlib
 # Force a non-interactive backend before pyplot is imported anywhere.
 matplotlib.use('Agg')
 
+from _synth import homologous_pair
+
 from rusty_dot._rusty_dot import SequenceIndex
 from rusty_dot.dotplot import DotPlotter
-
-from ._synth import homologous_pair
 
 _K = 15
 _LEN = 4000

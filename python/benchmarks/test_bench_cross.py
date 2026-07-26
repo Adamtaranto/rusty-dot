@@ -8,9 +8,9 @@ and computing k-mer matches for every cross-group pair.
 
 from __future__ import annotations
 
-from rusty_dot.paf_io import CrossIndex
+from _synth import multi_contig_group
 
-from ._synth import multi_contig_group
+from rusty_dot.paf_io import CrossIndex
 
 # Kept modest so CodSpeed's instruction-count simulation stays quick while still
 # exercising many-contig parallel builds and an N x N pairwise match grid.
