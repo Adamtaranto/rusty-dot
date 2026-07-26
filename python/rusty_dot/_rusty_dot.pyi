@@ -6,27 +6,26 @@ All functions and classes in this module are implemented in Rust via PyO3.
 from __future__ import annotations
 
 class SequenceIndex:
-    """FM-index backed sequence comparison engine.
+    """Rolling-hash k-mer index for DNA sequence comparison.
 
-    Each sequence added to the index receives its **own independent FM-index**
-    built by rust-bio.  The FM-index is constructed once per sequence and
-    cannot be extended after construction, so adding more sequences never
-    modifies an existing FM-index — it only creates a new one for the
-    newly added sequence.
+    Each sequence added to the index receives its **own independent k-mer
+    index** — forward and reverse-complement ntHash maps built in a single
+    O(n) scan.  Indexes are built per sequence and independent of one another,
+    so adding more sequences never modifies an existing entry.
 
-    The index behaves as a **dictionary of per-sequence FM-indexes**:
+    The index behaves as a **dictionary of per-sequence k-mer indexes**:
 
     * :meth:`add_sequence` and :meth:`load_fasta` **add** new entries to
       the collection; calling either method multiple times accumulates
       sequences rather than replacing the collection.
     * If a sequence name already exists in the index, a ``UserWarning`` is
-      emitted and the existing entry is **overwritten** with a new FM-index
+      emitted and the existing entry is **overwritten** with a new index
       for the new sequence.
     * :meth:`load_fasta` raises ``ValueError`` if the FASTA file itself
       contains duplicate sequence names.
     * Pairwise comparisons (:meth:`compare_sequences`,
       :meth:`compare_sequences_stranded`) always operate on exactly two
-      independent FM-indexes.
+      independent k-mer indexes.
 
     The k-mer length ``k`` is fixed at construction time and applies to all
     sequences held in the index.
@@ -79,27 +78,26 @@ class SequenceIndex:
     def add_sequence(self, name: str, seq: str) -> None:
         """Add a single sequence to the index.
 
-        Builds a **new independent FM-index** for ``seq`` using rust-bio and
-        stores it alongside the k-mer set and raw sequence bytes.  Each call
-        creates a separate FM-index for that sequence only — the rust-bio
-        FM-index cannot be extended after construction, so adding sequences
-        never modifies existing FM-indexes.
+        Builds a **new independent k-mer index** for ``seq`` (forward and
+        reverse-complement ntHash maps) and stores it alongside the raw
+        sequence bytes.  Each call creates a separate index for that sequence
+        only; adding sequences never modifies existing indexes.
 
         Calling ``add_sequence`` does **not** affect any other sequence already
         in the index.  Sequences accumulate: calling this method *N* times with
-        *N* distinct names results in an index holding *N* independent
-        FM-indexes.
+        *N* distinct names results in an index holding *N* independent k-mer
+        indexes.
 
         If a sequence named ``name`` already exists in the index, a
         ``UserWarning`` is emitted and the existing entry is **overwritten**
-        with a new FM-index for the new ``seq``.
+        with a new index for the new ``seq``.
 
         Parameters
         ----------
         name : str
             Unique identifier for the sequence.  Re-using an existing name
             emits a :class:`UserWarning` and replaces that sequence (and its
-            FM-index).
+            index).
         seq : str
             DNA sequence string. Uppercase is recommended; lowercase
             input is accepted and treated as uppercase.
@@ -107,7 +105,7 @@ class SequenceIndex:
         Raises
         ------
         ValueError
-            If the FM-index cannot be built (e.g., invalid characters).
+            If ``k`` is invalid for the sequence.
 
         Warns
         -----
@@ -121,7 +119,8 @@ class SequenceIndex:
         """Load all sequences from a FASTA or gzipped FASTA file.
 
         Parses the file with needletail (automatic gzip detection) and
-        builds a fresh **independent FM-index** for each record.
+        builds a fresh **independent k-mer index** for each record.  Indexes
+        for the file's records are built in parallel across CPU cores.
 
         Sequences already in the index are **preserved** — ``load_fasta``
         only adds new entries (or overwrites entries whose name already exists
@@ -224,9 +223,9 @@ class SequenceIndex:
     ) -> list[tuple[int, int, int, int]]:
         """Find shared k-mer matches between two sequences.
 
-        Intersects the k-mer sets of the two sequences and looks up the
-        coordinates of each shared k-mer in both FM-indexes.  Uses the
-        smaller k-mer set as the probe for efficiency.
+        Intersects the k-mer hash indexes of the two sequences to find shared
+        k-mers and their coordinates in both, verifying representative bytes for
+        exactness.  Iterates the smaller index as the probe for efficiency.
 
         When ``merge=True`` (default) consecutive k-mer hits on the same
         co-linear diagonal are merged into a single coordinate block.
@@ -412,7 +411,7 @@ class SequenceIndex:
         """Serialise the index to a binary file.
 
         Stores the original sequence bytes and k-mer sets using postcard.
-        The FM-index is rebuilt from the sequence bytes when the file is
+        The k-mer index is rebuilt from the sequence bytes when the file is
         loaded, so the on-disk format is compact and version-independent.
 
         Parameters
@@ -431,7 +430,7 @@ class SequenceIndex:
         """Load sequences from a previously serialised index file.
 
         Deserialises sequence bytes and k-mer sets from a file written by
-        ``save``, then rebuilds the FM-index for each sequence in memory.
+        ``save``, then rebuilds the k-mer index for each sequence in memory.
 
         Parameters
         ----------
@@ -760,8 +759,8 @@ def py_coords_to_paf(
 def py_save_index(path: str, sequences: dict[str, str], k: int) -> None:
     """Build and serialise an index collection to a binary file.
 
-    Constructs FM-indexes and k-mer sets for all provided sequences and
-    writes them to a compact postcard binary file.
+    Constructs the k-mer sets for all provided sequences and writes them,
+    together with the sequence bytes, to a compact postcard binary file.
 
     Parameters
     ----------
@@ -783,8 +782,8 @@ def py_load_index(path: str) -> tuple[dict[str, list[str]], int]:
     """Load a previously serialised index collection from a binary file.
 
     Reads a postcard binary file written by ``py_save_index`` and returns the
-    k-mer sets and k-mer length stored in it.  The FM-indexes themselves
-    are not returned; use :class:`SequenceIndex` with ``load`` for a
+    k-mer sets and k-mer length stored in it.  The in-memory k-mer indexes
+    themselves are not returned; use :class:`SequenceIndex` with ``load`` for a
     fully functional in-memory index.
 
     Parameters

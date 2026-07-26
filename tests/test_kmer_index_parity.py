@@ -75,14 +75,14 @@ def _engine_forward(query: str, target: str, k: int):
     idx = SequenceIndex(k=k)
     idx.add_sequence('q', query)
     idx.add_sequence('t', target)
-    return set(tuple(m) for m in idx.compare_sequences('q', 't', False))
+    return {tuple(m) for m in idx.compare_sequences('q', 't', False)}
 
 
 def _engine_stranded(query: str, target: str, k: int):
     idx = SequenceIndex(k=k)
     idx.add_sequence('q', query)
     idx.add_sequence('t', target)
-    return set(tuple(m) for m in idx.compare_sequences_stranded('q', 't', False))
+    return {tuple(m) for m in idx.compare_sequences_stranded('q', 't', False)}
 
 
 # --- Targeted fixtures -----------------------------------------------------

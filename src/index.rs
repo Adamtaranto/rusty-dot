@@ -1,20 +1,19 @@
 //! The main `SequenceIndex` class providing the core functionality.
 //!
-//! Provides FM-index construction, k-mer lookup, sequence comparison,
-//! and PAF output, with full Python bindings via PyO3.
+//! Provides rolling-hash k-mer index construction, k-mer lookup, sequence
+//! comparison, and PAF output, with full Python bindings via PyO3.
 // pyo3 pyfunction/pymethods return types trigger a false-positive useless_conversion lint.
 #![allow(clippy::useless_conversion)]
 
 use crate::error::RustyDotError;
 use crate::kmer::build_kmer_set;
-use crate::kmer_hash::KmerIndex;
+use crate::kmer_hash::{shared_fwd_coords, shared_rev_coords, KmerIndex};
 use crate::merge::{
     merge_fwd_runs, merge_kmer_runs, merge_rev_fwd_runs, merge_rev_runs, CoordPair,
 };
 use crate::paf::coords_to_paf;
 use crate::serialize::{load_index, save_index, IndexCollection, SerializableSequence};
-use crate::strand::{revcomp, STRAND_REV};
-use ahash::AHashMap;
+use crate::strand::STRAND_REV;
 use pyo3::prelude::*;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -80,22 +79,22 @@ struct SequenceData {
     seq_len: usize,
 }
 
-/// PyO3-exposed class for building and querying FM-indexes for DNA sequences.
+/// PyO3-exposed class for building and querying k-mer indexes for DNA sequences.
 ///
-/// Each sequence added to the index receives its **own independent FM-index**
-/// built by [rust-bio](https://docs.rs/bio).  The rust-bio FM-index cannot be
-/// updated or extended after construction, so adding more sequences never
-/// modifies an existing FM-index — it only creates a new one.
+/// Each sequence added to the index receives its **own independent k-mer
+/// index** — forward and reverse-complement ntHash maps built in a single O(n)
+/// pass (see [`crate::kmer_hash`]).  Per-sequence indexes are independent, so
+/// adding more sequences never modifies an existing one.
 ///
-/// The index behaves as a **dictionary of per-sequence FM-indexes**:
+/// The index behaves as a **dictionary of per-sequence k-mer indexes**:
 ///
 /// * `add_sequence` / `load_fasta` — **add** new entries to the collection;
 ///   calling either method multiple times accumulates sequences rather than
 ///   replacing them.
 /// * If `add_sequence` (or `load_fasta`) is called with a name that already
 ///   exists in the index, the existing entry is **silently overwritten** with a
-///   new FM-index for the new sequence.
-/// * Pairwise comparisons always operate on exactly two independent FM-indexes.
+///   new index for the new sequence.
+/// * Pairwise comparisons always operate on exactly two independent indexes.
 ///
 /// The `k` value is fixed at construction time and applies to all sequences.
 #[pyclass]
@@ -160,105 +159,6 @@ fn compute_pair_fwd(
         unmerged.sort_unstable_by_key(|c| (c.query_start, c.target_start));
         unmerged
     }
-}
-
-/// Build the shared forward-strand coordinate maps for two sequences.
-///
-/// Intersects the two forward hash indexes and, for every shared hash whose
-/// representative k-mer bytes match (rejecting the astronomically rare 64-bit
-/// hash collision), records that k-mer's positions in both sequences.  The
-/// returned maps are keyed by the k-mer string and are drop-in inputs for the
-/// `merge_*` functions — reproducing exactly what exact k-mer search produced.
-fn shared_fwd_coords(
-    q_seq: &[u8],
-    q_index: &KmerIndex,
-    t_seq: &[u8],
-    t_index: &KmerIndex,
-    k: usize,
-) -> (AHashMap<String, Vec<usize>>, AHashMap<String, Vec<usize>>) {
-    let mut query_coords: AHashMap<String, Vec<usize>> = AHashMap::new();
-    let mut target_coords: AHashMap<String, Vec<usize>> = AHashMap::new();
-
-    // Iterate the smaller forward map for efficiency.
-    let probe_is_query = q_index.fwd.len() <= t_index.fwd.len();
-    let (small, other) = if probe_is_query {
-        (&q_index.fwd, &t_index.fwd)
-    } else {
-        (&t_index.fwd, &q_index.fwd)
-    };
-
-    for (hash, small_pos) in small {
-        let Some(other_pos) = other.get(hash) else {
-            continue;
-        };
-        // Map probe/other back to query/target position lists.
-        let (q_pos, t_pos) = if probe_is_query {
-            (small_pos, other_pos)
-        } else {
-            (other_pos, small_pos)
-        };
-        // Verify one representative k-mer to reject hash collisions.
-        let q_rep = &q_seq[q_pos[0] as usize..q_pos[0] as usize + k];
-        let t_rep = &t_seq[t_pos[0] as usize..t_pos[0] as usize + k];
-        if q_rep != t_rep {
-            continue;
-        }
-        let kmer = String::from_utf8_lossy(q_rep).into_owned();
-        query_coords.insert(kmer.clone(), q_pos.iter().map(|&p| p as usize).collect());
-        target_coords.insert(kmer, t_pos.iter().map(|&p| p as usize).collect());
-    }
-
-    (query_coords, target_coords)
-}
-
-/// Build the shared reverse-strand coordinate maps for two sequences.
-///
-/// Finds query k-mers whose reverse complement occurs in the target by
-/// intersecting the query's reverse-complement hash map with the target's
-/// forward hash map (using the ntHash identity `rev_hash(Q) == fwd_hash(RC(Q))`).
-/// Returns `(target_rev_coords, query_rev_coords)` keyed by the *original* query
-/// k-mer, matching the inputs expected by `merge_rev_*`.
-fn shared_rev_coords(
-    q_seq: &[u8],
-    q_index: &KmerIndex,
-    t_seq: &[u8],
-    t_index: &KmerIndex,
-    k: usize,
-) -> (AHashMap<String, Vec<usize>>, AHashMap<String, Vec<usize>>) {
-    let mut query_rev: AHashMap<String, Vec<usize>> = AHashMap::new();
-    let mut target_rev: AHashMap<String, Vec<usize>> = AHashMap::new();
-
-    // Intersect the query's reverse map with the target's forward map, iterating
-    // whichever is smaller.
-    let probe_is_query = q_index.rev.len() <= t_index.fwd.len();
-    let (small, other) = if probe_is_query {
-        (&q_index.rev, &t_index.fwd)
-    } else {
-        (&t_index.fwd, &q_index.rev)
-    };
-
-    for (hash, small_pos) in small {
-        let Some(other_pos) = other.get(hash) else {
-            continue;
-        };
-        let (q_pos, t_pos) = if probe_is_query {
-            (small_pos, other_pos)
-        } else {
-            (other_pos, small_pos)
-        };
-        // The query k-mer and the target k-mer at their representatives; verify
-        // the target really is the reverse complement of the query k-mer.
-        let q_rep = &q_seq[q_pos[0] as usize..q_pos[0] as usize + k];
-        let t_rep = &t_seq[t_pos[0] as usize..t_pos[0] as usize + k];
-        if revcomp(q_rep) != t_rep {
-            continue;
-        }
-        let kmer = String::from_utf8_lossy(q_rep).into_owned();
-        query_rev.insert(kmer.clone(), q_pos.iter().map(|&p| p as usize).collect());
-        target_rev.insert(kmer, t_pos.iter().map(|&p| p as usize).collect());
-    }
-
-    (target_rev, query_rev)
 }
 
 /// Both-strand comparison of two sequences.

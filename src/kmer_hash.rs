@@ -178,6 +178,116 @@ impl KmerIndex {
     }
 }
 
+/// Build the shared forward-strand coordinate maps for two sequences.
+///
+/// Intersects the two forward hash indexes and, for every shared hash whose
+/// representative k-mer bytes match (rejecting the astronomically rare 64-bit
+/// hash collision), records that k-mer's positions in both sequences.  The
+/// returned maps are keyed by the k-mer string and are drop-in inputs for the
+/// `merge_*` functions — reproducing exactly what exact k-mer search produced.
+///
+/// # Arguments
+///
+/// * `q_seq` / `t_seq` - Query and target sequence bytes (for byte verification).
+/// * `q_index` / `t_index` - The corresponding [`KmerIndex`]es.
+/// * `k` - The k-mer length.
+///
+/// # Returns
+///
+/// `(query_coords, target_coords)`, each mapping a shared k-mer string to its
+/// positions in the respective sequence.
+pub fn shared_fwd_coords(
+    q_seq: &[u8],
+    q_index: &KmerIndex,
+    t_seq: &[u8],
+    t_index: &KmerIndex,
+    k: usize,
+) -> (AHashMap<String, Vec<usize>>, AHashMap<String, Vec<usize>>) {
+    let mut query_coords: AHashMap<String, Vec<usize>> = AHashMap::new();
+    let mut target_coords: AHashMap<String, Vec<usize>> = AHashMap::new();
+
+    // Iterate the smaller forward map for efficiency.
+    let probe_is_query = q_index.fwd.len() <= t_index.fwd.len();
+    let (small, other) = if probe_is_query {
+        (&q_index.fwd, &t_index.fwd)
+    } else {
+        (&t_index.fwd, &q_index.fwd)
+    };
+
+    for (hash, small_pos) in small {
+        let Some(other_pos) = other.get(hash) else {
+            continue;
+        };
+        // Map probe/other back to query/target position lists.
+        let (q_pos, t_pos) = if probe_is_query {
+            (small_pos, other_pos)
+        } else {
+            (other_pos, small_pos)
+        };
+        // Verify one representative k-mer to reject hash collisions.
+        let q_rep = &q_seq[q_pos[0] as usize..q_pos[0] as usize + k];
+        let t_rep = &t_seq[t_pos[0] as usize..t_pos[0] as usize + k];
+        if q_rep != t_rep {
+            continue;
+        }
+        let kmer = String::from_utf8_lossy(q_rep).into_owned();
+        query_coords.insert(kmer.clone(), q_pos.iter().map(|&p| p as usize).collect());
+        target_coords.insert(kmer, t_pos.iter().map(|&p| p as usize).collect());
+    }
+
+    (query_coords, target_coords)
+}
+
+/// Build the shared reverse-strand coordinate maps for two sequences.
+///
+/// Finds query k-mers whose reverse complement occurs in the target by
+/// intersecting the query's reverse-complement hash map with the target's
+/// forward hash map (using the ntHash identity `rev_hash(Q) == fwd_hash(RC(Q))`).
+/// Returns `(target_rev_coords, query_rev_coords)` keyed by the *original* query
+/// k-mer, matching the inputs expected by `merge_rev_*`.
+pub fn shared_rev_coords(
+    q_seq: &[u8],
+    q_index: &KmerIndex,
+    t_seq: &[u8],
+    t_index: &KmerIndex,
+    k: usize,
+) -> (AHashMap<String, Vec<usize>>, AHashMap<String, Vec<usize>>) {
+    let mut query_rev: AHashMap<String, Vec<usize>> = AHashMap::new();
+    let mut target_rev: AHashMap<String, Vec<usize>> = AHashMap::new();
+
+    // Intersect the query's reverse map with the target's forward map, iterating
+    // whichever is smaller.
+    let probe_is_query = q_index.rev.len() <= t_index.fwd.len();
+    let (small, other) = if probe_is_query {
+        (&q_index.rev, &t_index.fwd)
+    } else {
+        (&t_index.fwd, &q_index.rev)
+    };
+
+    for (hash, small_pos) in small {
+        let Some(other_pos) = other.get(hash) else {
+            continue;
+        };
+        let (q_pos, t_pos) = if probe_is_query {
+            (small_pos, other_pos)
+        } else {
+            (other_pos, small_pos)
+        };
+        // The query k-mer and the target k-mer at their representatives; verify
+        // the target really is the reverse complement of the query k-mer.
+        let q_rep = &q_seq[q_pos[0] as usize..q_pos[0] as usize + k];
+        let t_rep = &t_seq[t_pos[0] as usize..t_pos[0] as usize + k];
+        if crate::strand::revcomp(q_rep) != t_rep {
+            continue;
+        }
+        let kmer = String::from_utf8_lossy(q_rep).into_owned();
+        query_rev.insert(kmer.clone(), q_pos.iter().map(|&p| p as usize).collect());
+        target_rev.insert(kmer, t_pos.iter().map(|&p| p as usize).collect());
+    }
+
+    (target_rev, query_rev)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

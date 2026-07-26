@@ -13,11 +13,11 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
+from matplotlib.collections import LineCollection
 import matplotlib.colors as mcolors
 import matplotlib.figure
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
 
 from rusty_dot._rusty_dot import SequenceIndex
 from rusty_dot.paf_io import PafAlignment
@@ -637,7 +637,14 @@ class DotPlotter:
             if segments:
                 ax.add_collection(
                     LineCollection(
-                        segments, colors=colors, linewidths=dot_size, alpha=0.7
+                        segments,
+                        colors=colors,
+                        linewidths=dot_size,
+                        alpha=0.7,
+                        # Rasterize the match layer so vector output (PDF/SVG)
+                        # stays fast and small even with millions of segments;
+                        # axes, ticks and labels remain vector.
+                        rasterized=True,
                     )
                 )
         else:
@@ -662,13 +669,21 @@ class DotPlotter:
             if fwd_segments:
                 ax.add_collection(
                     LineCollection(
-                        fwd_segments, colors=dot_color, linewidths=dot_size, alpha=0.7
+                        fwd_segments,
+                        colors=dot_color,
+                        linewidths=dot_size,
+                        alpha=0.7,
+                        rasterized=True,
                     )
                 )
             if rev_segments:
                 ax.add_collection(
                     LineCollection(
-                        rev_segments, colors=rc_color, linewidths=dot_size, alpha=0.7
+                        rev_segments,
+                        colors=rc_color,
+                        linewidths=dot_size,
+                        alpha=0.7,
+                        rasterized=True,
                     )
                 )
 
