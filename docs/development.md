@@ -184,6 +184,49 @@ Run all Rust tests (including integration tests, if any):
 cargo test
 ```
 
+## Benchmarks
+
+rusty-dot ships both Rust and Python benchmarks, run in CI via
+[CodSpeed](https://codspeed.io/) (`.github/workflows/codspeed.yml`). Both feed on
+deterministic, seeded synthetic DNA so results are reproducible; the real
+assemblies used during development are private and git-ignored.
+
+### Rust benchmarks
+
+The Rust benches live in `benches/` and use
+[`codspeed-criterion-compat`](https://docs.rs/codspeed-criterion-compat) (a
+drop-in criterion API), so the same targets run under plain `cargo bench` and
+under `cargo codspeed`:
+
+```bash
+cargo bench                       # all benches
+cargo bench --bench bench_compare # forward/reverse matching only
+```
+
+| Bench | Measures |
+|-------|----------|
+| `bench_index` | Building the rolling-hash k-mer index across sizes and `k` |
+| `bench_compare` | Forward and reverse-strand matching for a homologous pair |
+| `bench_kmer` | Index primitives (k-mer set, FM-index, k-mer index build) |
+
+!!! note
+    On macOS, linking a standalone `cargo bench`/`cargo test` binary against the
+    pyo3 extension needs the undefined-symbol linker flags configured in
+    `.cargo/config.toml`; these are applied automatically for Apple targets.
+
+### Python benchmarks
+
+The Python benches live in `python/benchmarks/` and use
+[`pytest-codspeed`](https://github.com/CodSpeedHQ/pytest-codspeed) (declared in
+the `test` extra). Run them with:
+
+```bash
+pip install '.[test]'
+pytest python/benchmarks --codspeed
+```
+
+They cover the `CrossIndex` build + `compute_matches` path and dotplot rendering.
+
 ## Building the documentation locally
 
 Install the docs dependencies (included in `pip install maturin --extras dev,docs`):

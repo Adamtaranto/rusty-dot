@@ -1,20 +1,19 @@
 # SequenceIndex
 
-The `SequenceIndex` class is the primary interface for building and querying FM-index-backed sequence comparison data.
+The `SequenceIndex` class is the primary interface for building and querying k-mer-index-backed sequence comparison data.
 It is implemented in Rust (via [PyO3](https://pyo3.rs)) for maximum performance.
 
 ## How multiple sequences are stored
 
-Each sequence added to a `SequenceIndex` receives its **own independent FM-index**, built by [rust-bio](https://docs.rs/bio).
-The rust-bio FM-index is a read-only data structure that is constructed once for a given sequence and cannot be extended or updated after construction.
+Each sequence added to a `SequenceIndex` receives its **own independent k-mer index** — forward and reverse-complement [ntHash](https://github.com/bcgsc/ntHash) maps built in a single O(n) pass over the sequence.
 
 This means:
 
-* **Adding sequences accumulates independent indexes.** Calling `add_sequence` or `load_fasta` multiple times grows the collection — each call creates a new, isolated FM-index for that sequence only and does not affect any existing FM-index.
-* **`load_fasta` can be called multiple times.** Each call parses a file and adds its sequences to the collection, preserving all sequences that were added previously. Two calls on two separate FASTA files will leave the index containing all sequences from both files.
-* **Re-using a name emits a warning and overwrites.** If `add_sequence` or a FASTA record uses a name that already exists in the index, a `UserWarning` is emitted and the existing entry (and its FM-index) is replaced with a new one for the new sequence.
+* **Adding sequences accumulates independent indexes.** Calling `add_sequence` or `load_fasta` multiple times grows the collection — each call creates a new, isolated index for that sequence only and does not affect any existing index.
+* **`load_fasta` can be called multiple times.** Each call parses a file and adds its sequences to the collection, preserving all sequences that were added previously. Two calls on two separate FASTA files will leave the index containing all sequences from both files. The records of a single file are indexed in parallel across CPU cores.
+* **Re-using a name emits a warning and overwrites.** If `add_sequence` or a FASTA record uses a name that already exists in the index, a `UserWarning` is emitted and the existing entry (and its index) is replaced with a new one for the new sequence.
 * **Duplicate names within a FASTA file raise an error.** If a FASTA file contains two records with the same sequence name, `load_fasta` raises a `ValueError` before adding any sequences from that file to the index.
-* **Pairwise comparisons use two independent FM-indexes.** `compare_sequences` and `compare_sequences_stranded` look up the two named sequences from the dictionary and compare their individual FM-indexes — no combined or merged FM-index is ever created.
+* **Pairwise comparisons use two independent indexes.** `compare_sequences` and `compare_sequences_stranded` look up the two named sequences from the dictionary and compare their individual k-mer indexes — no combined or merged index is ever created.
 
 ```python
 from rusty_dot import SequenceIndex
@@ -22,7 +21,7 @@ import warnings
 
 idx = SequenceIndex(k=15)
 
-# Each call adds a new independent FM-index entry
+# Each call adds a new independent k-mer index entry
 idx.add_sequence("contig1", "ACGT" * 100)
 idx.add_sequence("contig2", "TTTT" * 100)
 print(idx.sequence_names())   # ['contig1', 'contig2']
