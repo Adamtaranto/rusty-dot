@@ -17,6 +17,7 @@ import matplotlib.colors as mcolors
 import matplotlib.figure
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
 
 from rusty_dot._rusty_dot import SequenceIndex
 from rusty_dot.paf_io import PafAlignment
@@ -608,11 +609,13 @@ class DotPlotter:
             # use display names (prefix stripped) for the lookup.
             cmap = plt.get_cmap(identity_palette) if color_by_identity else None
             norm = mcolors.Normalize(vmin=0, vmax=1) if color_by_identity else None
-            records = [
-                r
-                for r in effective_paf.records  # type: ignore[union-attr]
-                if r.query_name == display_q and r.target_name == display_t
-            ]
+            # Look up this panel's records from a (query, target) index built
+            # once per plot, avoiding a full linear scan of every record here.
+            records = self._records_for_pair(effective_paf, display_q, display_t)
+            # Accumulate line segments and per-segment colours, then draw them
+            # all with a single LineCollection instead of one artist per match.
+            segments: list[list[tuple[float, float]]] = []
+            colors: list = []
             for rec in records:
                 if min_length > 0 and rec.query_aligned_len < min_length:
                     continue
@@ -626,15 +629,16 @@ class DotPlotter:
                 else:
                     color = rc_color if rec.strand == '-' else dot_color
                 if rec.strand == '-':
-                    xs = [rec.target_end, rec.target_start]
+                    xs = (rec.target_end, rec.target_start)
                 else:
-                    xs = [rec.target_start, rec.target_end]
-                ax.plot(
-                    xs,
-                    [rec.query_start, rec.query_end],
-                    color=color,
-                    linewidth=dot_size,
-                    alpha=0.7,
+                    xs = (rec.target_start, rec.target_end)
+                segments.append([(xs[0], rec.query_start), (xs[1], rec.query_end)])
+                colors.append(color)
+            if segments:
+                ax.add_collection(
+                    LineCollection(
+                        segments, colors=colors, linewidths=dot_size, alpha=0.7
+                    )
                 )
         else:
             # Draw match lines/dots from k-mer index; RC matches are drawn as
@@ -642,23 +646,30 @@ class DotPlotter:
             matches = self.index.compare_sequences_stranded(
                 query_name, target_name, merge
             )
+            # Group segments by strand colour so all forward and all reverse
+            # matches are each drawn with one LineCollection.
+            fwd_segments: list[list[tuple[float, float]]] = []
+            rev_segments: list[list[tuple[float, float]]] = []
             for q_start, q_end, t_start, t_end, strand in matches:
                 if min_length > 0 and (q_end - q_start) < min_length:
                     continue
                 if strand == '-':
                     # Reverse complement: as query advances (q_start→q_end) the
                     # target position retreats (t_end→t_start).
-                    xs = [t_end, t_start]
-                    color = rc_color
+                    rev_segments.append([(t_end, q_start), (t_start, q_end)])
                 else:
-                    xs = [t_start, t_end]
-                    color = dot_color
-                ax.plot(
-                    xs,
-                    [q_start, q_end],
-                    color=color,
-                    linewidth=dot_size,
-                    alpha=0.7,
+                    fwd_segments.append([(t_start, q_start), (t_end, q_end)])
+            if fwd_segments:
+                ax.add_collection(
+                    LineCollection(
+                        fwd_segments, colors=dot_color, linewidths=dot_size, alpha=0.7
+                    )
+                )
+            if rev_segments:
+                ax.add_collection(
+                    LineCollection(
+                        rev_segments, colors=rc_color, linewidths=dot_size, alpha=0.7
+                    )
                 )
 
         ax.set_xlim(0, t_len)
@@ -670,6 +681,43 @@ class DotPlotter:
             ax.set_ylabel(display_q, fontsize=8)
         ax.tick_params(axis='both', labelsize=6)
         ax.set_aspect('auto')
+
+    def _records_for_pair(
+        self,
+        effective_paf: 'PafAlignment',
+        display_q: str,
+        display_t: str,
+    ) -> list:
+        """Return the PAF records for one ``(query, target)`` pair.
+
+        A ``(query_name, target_name) -> list[PafRecord]`` index is built once
+        per unique ``PafAlignment`` object and cached on the plotter, so panel
+        rendering does not rescan every record for each of the ``N × N`` panels.
+
+        Parameters
+        ----------
+        effective_paf : PafAlignment
+            The alignment whose records should be indexed.
+        display_q : str
+            Query sequence display name (group prefix already stripped).
+        display_t : str
+            Target sequence display name (group prefix already stripped).
+
+        Returns
+        -------
+        list of PafRecord
+            Records matching the requested pair (empty list if none).
+        """
+        cache = getattr(self, '_paf_record_index_cache', None)
+        # Rebuild the index only when the PafAlignment object changes identity
+        # (accessing ``.records`` can itself be an O(records) rebuild).
+        if cache is None or cache[0] is not effective_paf:
+            index: dict[tuple[str, str], list] = {}
+            for r in effective_paf.records:
+                index.setdefault((r.query_name, r.target_name), []).append(r)
+            cache = (effective_paf, index)
+            self._paf_record_index_cache = cache
+        return cache[1].get((display_q, display_t), [])
 
     def _draw_annotation_squares(
         self,
