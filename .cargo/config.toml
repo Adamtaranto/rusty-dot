@@ -16,3 +16,15 @@
 # that the crate links cleanly to wasm32-unknown-emscripten.
 [target.wasm32-unknown-emscripten]
 rustflags = ["-C", "opt-level=0"]
+
+# On macOS, the pyo3 `extension-module` cdylib leaves Python symbols undefined
+# to be resolved by the host interpreter at load time.  Standalone `cargo`
+# invocations (`test`, `bench`, `build`) that link that cdylib need the linker
+# told to allow those undefined symbols, or the link fails.  These entries are
+# target-scoped to macOS and do not affect Linux CI, wasm, or the maturin wheel
+# build (which sets its own linker args).
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]

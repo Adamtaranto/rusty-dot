@@ -44,6 +44,21 @@ parallel = ["dep:rayon"]
 
 [dev-dependencies]
 tempfile = "3.26"
+# Drop-in criterion API that also registers benchmarks with cargo-codspeed, so
+# the same bench targets run under both `cargo bench` and `cargo codspeed run`.
+codspeed-criterion-compat = "2"
+
+[[bench]]
+name = "bench_index"
+harness = false
+
+[[bench]]
+name = "bench_compare"
+harness = false
+
+[[bench]]
+name = "bench_kmer"
+harness = false
 
 # Release builds: maximise runtime speed of the compiled extension.  `lto` and a
 # single codegen unit let the optimiser inline across module boundaries (the hot
