@@ -15,6 +15,7 @@
 use crate::strand::{STRAND_FWD, STRAND_REV};
 use pyo3::prelude::*;
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 
 /// A matched coordinate pair between query and target positions.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,9 +50,9 @@ pub struct CoordPair {
 /// # Returns
 ///
 /// A `Vec<CoordPair>` of merged `+`-strand match regions.
-pub fn merge_fwd_runs(
-    kmer_coords: &HashMap<String, Vec<usize>>,
-    query_kmer_positions: &HashMap<String, Vec<usize>>,
+pub fn merge_fwd_runs<S: BuildHasher>(
+    kmer_coords: &HashMap<String, Vec<usize>, S>,
+    query_kmer_positions: &HashMap<String, Vec<usize>, S>,
     k: usize,
 ) -> Vec<CoordPair> {
     let mut pairs: Vec<(usize, usize)> = Vec::new();
@@ -131,9 +132,9 @@ pub fn merge_fwd_runs(
 /// # Returns
 ///
 /// A `Vec<CoordPair>` of merged `-`-strand match regions.
-pub fn merge_rev_runs(
-    target_rev_coords: &HashMap<String, Vec<usize>>,
-    query_kmer_positions: &HashMap<String, Vec<usize>>,
+pub fn merge_rev_runs<S: BuildHasher>(
+    target_rev_coords: &HashMap<String, Vec<usize>, S>,
+    query_kmer_positions: &HashMap<String, Vec<usize>, S>,
     k: usize,
 ) -> Vec<CoordPair> {
     let mut pairs: Vec<(usize, usize)> = Vec::new();
@@ -228,9 +229,9 @@ pub fn merge_rev_runs(
 ///
 /// A `Vec<CoordPair>` of merged `-`-strand match regions where consecutive
 /// RC target positions advance by one per step (forward diagonal).
-pub fn merge_rev_fwd_runs(
-    target_rev_coords: &HashMap<String, Vec<usize>>,
-    query_kmer_positions: &HashMap<String, Vec<usize>>,
+pub fn merge_rev_fwd_runs<S: BuildHasher>(
+    target_rev_coords: &HashMap<String, Vec<usize>, S>,
+    query_kmer_positions: &HashMap<String, Vec<usize>, S>,
     k: usize,
 ) -> Vec<CoordPair> {
     let mut pairs: Vec<(usize, usize)> = Vec::new();
@@ -295,9 +296,9 @@ pub fn merge_rev_fwd_runs(
 
 ///
 /// Equivalent to [`merge_fwd_runs`].
-pub fn merge_kmer_runs(
-    kmer_coords: &HashMap<String, Vec<usize>>,
-    query_kmer_positions: &HashMap<String, Vec<usize>>,
+pub fn merge_kmer_runs<S: BuildHasher>(
+    kmer_coords: &HashMap<String, Vec<usize>, S>,
+    query_kmer_positions: &HashMap<String, Vec<usize>, S>,
     k: usize,
 ) -> Vec<CoordPair> {
     merge_fwd_runs(kmer_coords, query_kmer_positions, k)

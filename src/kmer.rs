@@ -4,13 +4,21 @@
 
 use crate::error::RustyDotError;
 use crate::strand::revcomp;
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use bio::alphabets::dna;
 use bio::data_structures::bwt::{bwt, less, Occ};
 use bio::data_structures::fmindex::{BackwardSearchResult, FMIndex, FMIndexable};
 use bio::data_structures::suffix_array::suffix_array;
 use pyo3::prelude::*;
 use std::collections::{HashMap, HashSet};
+
+/// A borrowed FM-index view over an [`FmIdx`]'s owned BWT/less/Occ tables.
+///
+/// Constructing this view is cheap (it only wraps references), but it was
+/// previously rebuilt inside every `find` call.  Hoisting it out of the
+/// per-k-mer loop and reusing a single view amortises that cost across an
+/// entire k-mer set.
+type FmView<'a> = FMIndex<&'a Vec<u8>, &'a Vec<usize>, &'a Occ>;
 
 /// A simple FM-index wrapper holding the necessary data structures.
 ///
@@ -83,7 +91,25 @@ impl FmIdx {
     ///
     /// A `Vec<usize>` of 0-based start positions in the original text.
     pub fn find(&self, pattern: &[u8]) -> Vec<usize> {
-        let fm = FMIndex::new(&self.bwt_data, &self.less_data, &self.occ_data);
+        self.find_with(&self.view(), pattern)
+    }
+
+    /// Build a reusable borrowed FM-index view over this index's tables.
+    ///
+    /// Callers that issue many `find` queries against the same index should
+    /// construct one view via this method and pass it to [`FmIdx::find_with`]
+    /// rather than paying the (small but non-zero) construction cost per query.
+    #[inline]
+    pub fn view(&self) -> FmView<'_> {
+        FMIndex::new(&self.bwt_data, &self.less_data, &self.occ_data)
+    }
+
+    /// Query the FM-index for all occurrences of a pattern using a pre-built view.
+    ///
+    /// Equivalent to [`FmIdx::find`] but reuses a [`FmView`] supplied by the
+    /// caller, avoiding repeated view construction across a batch of lookups.
+    #[inline]
+    pub fn find_with(&self, fm: &FmView<'_>, pattern: &[u8]) -> Vec<usize> {
         match fm.backward_search(pattern.iter()) {
             BackwardSearchResult::Complete(interval) => interval
                 .occ(&self.sa)
@@ -161,10 +187,12 @@ pub fn sequence_to_index_text(seq: &str) -> Vec<u8> {
 pub fn find_kmer_coords_in_index(
     kmer_set: &AHashSet<String>,
     fm: &FmIdx,
-) -> HashMap<String, Vec<usize>> {
-    let mut coords: HashMap<String, Vec<usize>> = HashMap::new();
+) -> AHashMap<String, Vec<usize>> {
+    // Build the borrowed FM-index view once and reuse it for every k-mer.
+    let view = fm.view();
+    let mut coords: AHashMap<String, Vec<usize>> = AHashMap::new();
     for kmer in kmer_set {
-        let positions = fm.find(kmer.as_bytes());
+        let positions = fm.find_with(&view, kmer.as_bytes());
         if !positions.is_empty() {
             coords.insert(kmer.clone(), positions);
         }
@@ -195,11 +223,13 @@ pub fn find_kmer_coords_in_index(
 pub fn find_rev_coords_in_index(
     kmer_set: &AHashSet<String>,
     fm: &FmIdx,
-) -> HashMap<String, Vec<usize>> {
-    let mut coords: HashMap<String, Vec<usize>> = HashMap::new();
+) -> AHashMap<String, Vec<usize>> {
+    // Build the borrowed FM-index view once and reuse it for every k-mer.
+    let view = fm.view();
+    let mut coords: AHashMap<String, Vec<usize>> = AHashMap::new();
     for kmer in kmer_set {
         let rc = revcomp(kmer.as_bytes());
-        let positions = fm.find(&rc);
+        let positions = fm.find_with(&view, &rc);
         if !positions.is_empty() {
             coords.insert(kmer.clone(), positions);
         }
@@ -256,5 +286,6 @@ pub fn py_find_kmer_coords(seq: &str, kmers: Vec<String>) -> PyResult<HashMap<St
 
     let kmer_set: AHashSet<String> = kmers.into_iter().collect();
     let coords = find_kmer_coords_in_index(&kmer_set, &fm);
-    Ok(coords)
+    // Convert to a std HashMap for the Python return (pyo3 dict conversion).
+    Ok(coords.into_iter().collect())
 }

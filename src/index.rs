@@ -5,6 +5,7 @@
 // pyo3 pyfunction/pymethods return types trigger a false-positive useless_conversion lint.
 #![allow(clippy::useless_conversion)]
 
+use crate::error::RustyDotError;
 use crate::kmer::{
     build_kmer_set, find_kmer_coords_in_index, find_rev_coords_in_index, sequence_to_index_text,
     FmIdx,
@@ -19,10 +20,57 @@ use crate::serialize::{
 use crate::strand::{revcomp, STRAND_REV};
 use ahash::AHashSet;
 use pyo3::prelude::*;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 use std::collections::HashMap;
 
 /// Stranded match coordinates: (query_start, query_end, target_start, target_end, strand).
 type StrandedMatch = (usize, usize, usize, usize, String);
+
+/// Build the in-memory index data (FM-index + k-mer set) for a single sequence.
+///
+/// This is the CPU-heavy per-sequence work (suffix-array construction plus the
+/// k-mer scan).  It is a free function taking no `&self` so it can be called
+/// from a rayon parallel iterator while building many sequences concurrently.
+fn build_sequence_data(seq: &str, k: usize) -> Result<SequenceData, RustyDotError> {
+    let text = sequence_to_index_text(seq);
+    let fm = FmIdx::new(text)?;
+    let kmer_set = build_kmer_set(seq, k)?;
+    let seq_len = seq.len();
+    let seq_bytes = seq.as_bytes().to_vec();
+    Ok(SequenceData {
+        fm,
+        kmer_set,
+        seq_bytes,
+        seq_len,
+    })
+}
+
+/// Build index data for many sequences, in parallel when the `parallel`
+/// feature is enabled.
+///
+/// Returns the built `SequenceData` in the same order as `records`.  The caller
+/// is responsible for releasing the GIL (via `Python::detach`) around
+/// this call so the rayon worker threads can run without contention.
+fn build_many_sequence_data(
+    records: &[(String, String)],
+    k: usize,
+) -> Result<Vec<SequenceData>, RustyDotError> {
+    #[cfg(feature = "parallel")]
+    {
+        records
+            .par_iter()
+            .map(|(_, seq)| build_sequence_data(seq, k))
+            .collect()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        records
+            .iter()
+            .map(|(_, seq)| build_sequence_data(seq, k))
+            .collect()
+    }
+}
 
 /// In-memory store for a single sequence's index data.
 struct SequenceData {
@@ -62,6 +110,270 @@ pub struct SequenceIndex {
     k: usize,
     /// Cache of pairwise comparison results: (query, target, merge) -> coord pairs.
     pair_cache: HashMap<(String, String, bool), Vec<CoordPair>>,
+}
+
+/// Forward-strand comparison of two sequences, returning the coordinate pairs
+/// that would be cached (merged runs, or sorted unmerged hits).
+///
+/// This is the cache-free, `&self`-free core of
+/// [`SequenceIndex::compare_sequences`].  It takes only `&sequences` + `k` so it
+/// can be invoked from a rayon parallel iterator without capturing the
+/// `#[pyclass]`.  Callers must have already validated that the named sequences
+/// exist.
+fn compute_pair_fwd(
+    sequences: &HashMap<String, SequenceData>,
+    k: usize,
+    query_name: &str,
+    target_name: &str,
+    merge: bool,
+) -> Vec<CoordPair> {
+    // Determine which k-mer set is smaller (use as probe set).
+    let probe_is_query =
+        sequences[query_name].kmer_set.len() <= sequences[target_name].kmer_set.len();
+    let (probe_name, other_name) = if probe_is_query {
+        (query_name, target_name)
+    } else {
+        (target_name, query_name)
+    };
+    let probe_set = &sequences[probe_name].kmer_set;
+    let other_set = &sequences[other_name].kmer_set;
+    let shared_set: AHashSet<String> = probe_set
+        .iter()
+        .filter(|k| other_set.contains(*k))
+        .cloned()
+        .collect();
+
+    if shared_set.is_empty() {
+        return Vec::new();
+    }
+
+    let query_coords = find_kmer_coords_in_index(&shared_set, &sequences[query_name].fm);
+    let target_coords = find_kmer_coords_in_index(&shared_set, &sequences[target_name].fm);
+
+    if merge {
+        merge_kmer_runs(&target_coords, &query_coords, k)
+    } else {
+        use crate::strand::STRAND_FWD;
+        let mut unmerged: Vec<CoordPair> = Vec::new();
+        for (kmer, q_positions) in &query_coords {
+            if let Some(t_positions) = target_coords.get(kmer) {
+                for &qp in q_positions {
+                    for &tp in t_positions {
+                        unmerged.push(CoordPair {
+                            query_start: qp,
+                            query_end: qp + k,
+                            target_start: tp,
+                            target_end: tp + k,
+                            strand: STRAND_FWD,
+                        });
+                    }
+                }
+            }
+        }
+        unmerged.sort_unstable_by_key(|c| (c.query_start, c.target_start));
+        unmerged
+    }
+}
+
+/// Both-strand comparison of two sequences.
+///
+/// The cache-free, `&self`-free core of
+/// [`SequenceIndex::compare_sequences_stranded`].
+fn compute_pair_stranded(
+    sequences: &HashMap<String, SequenceData>,
+    k: usize,
+    query_name: &str,
+    target_name: &str,
+    merge: bool,
+) -> Vec<CoordPair> {
+    // --- Forward (+ strand) shared k-mers ---
+    let fwd_shared: AHashSet<String> = {
+        let probe_is_query =
+            sequences[query_name].kmer_set.len() <= sequences[target_name].kmer_set.len();
+        let (probe, other) = if probe_is_query {
+            (query_name, target_name)
+        } else {
+            (target_name, query_name)
+        };
+        let probe_set = &sequences[probe].kmer_set;
+        let other_set = &sequences[other].kmer_set;
+        probe_set
+            .iter()
+            .filter(|k| other_set.contains(*k))
+            .cloned()
+            .collect()
+    };
+
+    // --- Reverse (- strand) k-mers: query kmers whose RC is in target ---
+    let rev_shared: AHashSet<String> = {
+        let q_set = &sequences[query_name].kmer_set;
+        let t_set = &sequences[target_name].kmer_set;
+        q_set
+            .iter()
+            .filter(|k| {
+                let rc_bytes = revcomp(k.as_bytes());
+                if let Ok(rc_str) = std::str::from_utf8(&rc_bytes) {
+                    t_set.contains(rc_str)
+                } else {
+                    false
+                }
+            })
+            .cloned()
+            .collect()
+    };
+
+    let mut all_pairs: Vec<CoordPair> = Vec::new();
+
+    // + strand hits
+    if !fwd_shared.is_empty() {
+        let query_fwd = find_kmer_coords_in_index(&fwd_shared, &sequences[query_name].fm);
+        let target_fwd = find_kmer_coords_in_index(&fwd_shared, &sequences[target_name].fm);
+        if merge {
+            all_pairs.extend(merge_fwd_runs(&target_fwd, &query_fwd, k));
+        } else {
+            use crate::strand::STRAND_FWD;
+            for (kmer, q_pos) in &query_fwd {
+                if let Some(t_pos) = target_fwd.get(kmer) {
+                    for &qp in q_pos {
+                        for &tp in t_pos {
+                            all_pairs.push(CoordPair {
+                                query_start: qp,
+                                query_end: qp + k,
+                                target_start: tp,
+                                target_end: tp + k,
+                                strand: STRAND_FWD,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // - strand hits
+    if !rev_shared.is_empty() {
+        let query_rev = find_kmer_coords_in_index(&rev_shared, &sequences[query_name].fm);
+        let target_rev = find_rev_coords_in_index(&rev_shared, &sequences[target_name].fm);
+        if merge {
+            // Apply both anti-diagonal and co-diagonal merging for RC hits,
+            // deduplicating identical blocks that arise when a single RC pair
+            // has no neighbours on either diagonal.
+            let anti = merge_rev_runs(&target_rev, &query_rev, k);
+            let co = merge_rev_fwd_runs(&target_rev, &query_rev, k);
+            let mut seen = std::collections::HashSet::new();
+            for block in anti.into_iter().chain(co.into_iter()) {
+                let key = (
+                    block.query_start,
+                    block.query_end,
+                    block.target_start,
+                    block.target_end,
+                );
+                if seen.insert(key) {
+                    all_pairs.push(block);
+                }
+            }
+        } else {
+            for (kmer, q_pos) in &query_rev {
+                if let Some(t_pos) = target_rev.get(kmer) {
+                    for &qp in q_pos {
+                        for &tp in t_pos {
+                            all_pairs.push(CoordPair {
+                                query_start: qp,
+                                query_end: qp + k,
+                                target_start: tp,
+                                target_end: tp + k,
+                                strand: STRAND_REV,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    all_pairs
+}
+
+/// Compute forward-strand coord pairs for a set of ordered pairs, in parallel
+/// when the `parallel` feature is enabled.  Pure: reads only `sequences`.
+fn compute_pairs_fwd_batch(
+    sequences: &HashMap<String, SequenceData>,
+    k: usize,
+    pairs: &[(String, String)],
+    merge: bool,
+) -> Vec<Vec<CoordPair>> {
+    #[cfg(feature = "parallel")]
+    {
+        pairs
+            .par_iter()
+            .map(|(q, t)| compute_pair_fwd(sequences, k, q, t, merge))
+            .collect()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        pairs
+            .iter()
+            .map(|(q, t)| compute_pair_fwd(sequences, k, q, t, merge))
+            .collect()
+    }
+}
+
+/// Compute both-strand coord pairs for a set of ordered pairs, in parallel when
+/// the `parallel` feature is enabled.  Pure: reads only `sequences`.
+fn compute_pairs_stranded_batch(
+    sequences: &HashMap<String, SequenceData>,
+    k: usize,
+    pairs: &[(String, String)],
+    merge: bool,
+) -> Vec<Vec<CoordPair>> {
+    #[cfg(feature = "parallel")]
+    {
+        pairs
+            .par_iter()
+            .map(|(q, t)| compute_pair_stranded(sequences, k, q, t, merge))
+            .collect()
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        pairs
+            .iter()
+            .map(|(q, t)| compute_pair_stranded(sequences, k, q, t, merge))
+            .collect()
+    }
+}
+
+impl SequenceIndex {
+    /// Enumerate every ordered `(query, target)` pair (`i != j`), compute the
+    /// forward-strand coords for any not already cached — in parallel, with the
+    /// GIL released — and populate `pair_cache`.  Returns all ordered pairs.
+    fn ensure_fwd_pairs_cached(&mut self, py: Python<'_>, merge: bool) -> Vec<(String, String)> {
+        let names: Vec<String> = self.sequences.keys().cloned().collect();
+        let mut pairs: Vec<(String, String)> = Vec::with_capacity(names.len().saturating_mul(2));
+        for i in 0..names.len() {
+            for j in 0..names.len() {
+                if i != j {
+                    pairs.push((names[i].clone(), names[j].clone()));
+                }
+            }
+        }
+
+        let uncached: Vec<(String, String)> = pairs
+            .iter()
+            .filter(|(q, t)| !self.pair_cache.contains_key(&(q.clone(), t.clone(), merge)))
+            .cloned()
+            .collect();
+
+        if !uncached.is_empty() {
+            let k = self.k;
+            let sequences = &self.sequences;
+            // Release the GIL: the batch does no Python interaction.
+            let results = py.detach(|| compute_pairs_fwd_batch(sequences, k, &uncached, merge));
+            for ((q, t), coords) in uncached.into_iter().zip(results.into_iter()) {
+                self.pair_cache.insert((q, t, merge), coords);
+            }
+        }
+        pairs
+    }
 }
 
 #[pymethods]
@@ -132,20 +444,12 @@ impl SequenceIndex {
                 ),
             )?;
         }
-        let text = sequence_to_index_text(seq);
-        let fm = FmIdx::new(text).map_err(|e| -> pyo3::PyErr { e.into() })?;
-        let kmer_set = build_kmer_set(seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
-        let seq_len = seq.len();
-        let seq_bytes = seq.as_bytes().to_vec();
-        self.sequences.insert(
-            name.to_string(),
-            SequenceData {
-                fm,
-                kmer_set,
-                seq_bytes,
-                seq_len,
-            },
-        );
+        let k = self.k;
+        // Release the GIL for the CPU-heavy build (no Python interaction here).
+        let data = py
+            .detach(|| build_sequence_data(seq, k))
+            .map_err(|e| -> pyo3::PyErr { e.into() })?;
+        self.sequences.insert(name.to_string(), data);
         Ok(())
     }
 
@@ -183,19 +487,19 @@ impl SequenceIndex {
     ///     sequence names.
     #[cfg(feature = "fasta")]
     pub fn load_fasta(&mut self, py: Python<'_>, path: &str) -> PyResult<Vec<String>> {
-        use crate::error::RustyDotError;
         use needletail::parse_fastx_file;
-        use std::collections::{HashMap, HashSet};
+        use std::collections::HashSet;
         use std::path::Path;
 
         let warnings = py.import("warnings")?;
-        let mut names: Vec<String> = Vec::new();
         let mut seen_in_file: HashSet<String> = HashSet::new();
-        let mut temp: HashMap<String, SequenceData> = HashMap::new();
 
+        // Pass 1: read every record into memory and validate names.  Parsing is
+        // inherently sequential (single reader), so we do it up front and defer
+        // the CPU-heavy index construction to a parallel pass.
+        let mut records: Vec<(String, String)> = Vec::new();
         let mut reader = parse_fastx_file(Path::new(path))
             .map_err(|e| -> pyo3::PyErr { RustyDotError::FastaParse(e.to_string()).into() })?;
-
         while let Some(record) = reader.next() {
             let record = record
                 .map_err(|e| -> pyo3::PyErr { RustyDotError::FastaParse(e.to_string()).into() })?;
@@ -212,25 +516,21 @@ impl SequenceIndex {
                 ))
                 .into());
             }
-            let text = sequence_to_index_text(&seq);
-            let fm = FmIdx::new(text).map_err(|e| -> pyo3::PyErr { e.into() })?;
-            let kmer_set = build_kmer_set(&seq, self.k).map_err(|e| -> pyo3::PyErr { e.into() })?;
-            let seq_len = seq.len();
-            let seq_bytes = seq.as_bytes().to_vec();
-            temp.insert(
-                name.clone(),
-                SequenceData {
-                    fm,
-                    kmer_set,
-                    seq_bytes,
-                    seq_len,
-                },
-            );
-            names.push(name);
+            records.push((name, seq));
         }
 
-        // No errors — merge the fully-validated batch into self.sequences.
-        for name in &names {
+        // Pass 2: build the FM-index + k-mer set for every record in parallel.
+        // Release the GIL so the rayon worker threads run unhindered; this call
+        // performs no Python interaction.
+        let k = self.k;
+        let built = py
+            .detach(|| build_many_sequence_data(&records, k))
+            .map_err(|e| -> pyo3::PyErr { e.into() })?;
+
+        // Pass 3: merge the fully-validated batch into self.sequences (serial,
+        // holds the GIL so the overwrite warnings can be emitted).
+        let names: Vec<String> = records.into_iter().map(|(name, _)| name).collect();
+        for (name, data) in names.iter().cloned().zip(built.into_iter()) {
             if self.sequences.contains_key(name.as_str()) {
                 warnings.call_method1(
                     "warn",
@@ -242,9 +542,7 @@ impl SequenceIndex {
                     ),
                 )?;
             }
-            if let Some(data) = temp.remove(name) {
-                self.sequences.insert(name.clone(), data);
-            }
+            self.sequences.insert(name, data);
         }
         Ok(names)
     }
@@ -364,84 +662,13 @@ impl SequenceIndex {
             )));
         }
 
-        // Determine which k-mer set is smaller (use as probe set)
-        let probe_is_query = {
-            let q_len = self.sequences[query_name].kmer_set.len();
-            let t_len = self.sequences[target_name].kmer_set.len();
-            q_len <= t_len
-        };
-
-        // Get shared k-mers: probe ∩ other
-        let shared_kmers: Vec<String> = {
-            let (probe_name, other_name) = if probe_is_query {
-                (query_name, target_name)
-            } else {
-                (target_name, query_name)
-            };
-            let probe_set = &self.sequences[probe_name].kmer_set;
-            let other_set = &self.sequences[other_name].kmer_set;
-            probe_set
-                .iter()
-                .filter(|k| other_set.contains(*k))
-                .cloned()
-                .collect()
-        };
-
-        if shared_kmers.is_empty() {
-            self.pair_cache.insert(cache_key, Vec::new());
-            return Ok(Vec::new());
-        }
-
-        let shared_set: AHashSet<String> = shared_kmers.into_iter().collect();
-
-        // Find coords of shared k-mers in both query and target
-        let query_coords = {
-            let fm = &self.sequences[query_name].fm;
-            find_kmer_coords_in_index(&shared_set, fm)
-        };
-
-        let target_coords = {
-            let fm = &self.sequences[target_name].fm;
-            find_kmer_coords_in_index(&shared_set, fm)
-        };
-
-        let result = if merge {
-            let merged = merge_kmer_runs(&target_coords, &query_coords, self.k);
-            let tuples: Vec<(usize, usize, usize, usize)> = merged
-                .iter()
-                .map(|c| (c.query_start, c.query_end, c.target_start, c.target_end))
-                .collect();
-            self.pair_cache.insert(cache_key, merged);
-            tuples
-        } else {
-            // Return individual k-mer hits (unmerged)
-            use crate::strand::STRAND_FWD;
-            let mut unmerged: Vec<CoordPair> = Vec::new();
-            for (kmer, q_positions) in &query_coords {
-                if let Some(t_positions) = target_coords.get(kmer) {
-                    for &qp in q_positions {
-                        for &tp in t_positions {
-                            unmerged.push(CoordPair {
-                                query_start: qp,
-                                query_end: qp + self.k,
-                                target_start: tp,
-                                target_end: tp + self.k,
-                                strand: STRAND_FWD,
-                            });
-                        }
-                    }
-                }
-            }
-            unmerged.sort_unstable_by_key(|c| (c.query_start, c.target_start));
-            let tuples: Vec<(usize, usize, usize, usize)> = unmerged
-                .iter()
-                .map(|c| (c.query_start, c.query_end, c.target_start, c.target_end))
-                .collect();
-            self.pair_cache.insert(cache_key, unmerged);
-            tuples
-        };
-
-        Ok(result)
+        let coords = compute_pair_fwd(&self.sequences, self.k, query_name, target_name, merge);
+        let tuples: Vec<(usize, usize, usize, usize)> = coords
+            .iter()
+            .map(|c| (c.query_start, c.query_end, c.target_start, c.target_end))
+            .collect();
+        self.pair_cache.insert(cache_key, coords);
+        Ok(tuples)
     }
 
     /// Find shared k-mer matches between two sequences, reporting both strands.
@@ -485,123 +712,8 @@ impl SequenceIndex {
             }
         }
 
-        // --- Forward (+ strand) shared k-mers ---
-        let fwd_shared: AHashSet<String> = {
-            let probe_is_query = self.sequences[query_name].kmer_set.len()
-                <= self.sequences[target_name].kmer_set.len();
-            let (probe, other) = if probe_is_query {
-                (query_name, target_name)
-            } else {
-                (target_name, query_name)
-            };
-            let probe_set = &self.sequences[probe].kmer_set;
-            let other_set = &self.sequences[other].kmer_set;
-            probe_set
-                .iter()
-                .filter(|k| other_set.contains(*k))
-                .cloned()
-                .collect()
-        };
-
-        // --- Reverse (- strand) k-mers: query kmers whose RC is in target ---
-        let rev_shared: AHashSet<String> = {
-            let q_set = &self.sequences[query_name].kmer_set;
-            let t_set = &self.sequences[target_name].kmer_set;
-            q_set
-                .iter()
-                .filter(|k| {
-                    let rc_bytes = revcomp(k.as_bytes());
-                    if let Ok(rc_str) = std::str::from_utf8(&rc_bytes) {
-                        t_set.contains(rc_str)
-                    } else {
-                        false
-                    }
-                })
-                .cloned()
-                .collect()
-        };
-
-        let mut all_pairs: Vec<CoordPair> = Vec::new();
-
-        // + strand hits
-        if !fwd_shared.is_empty() {
-            let query_fwd = {
-                let fm = &self.sequences[query_name].fm;
-                find_kmer_coords_in_index(&fwd_shared, fm)
-            };
-            let target_fwd = {
-                let fm = &self.sequences[target_name].fm;
-                find_kmer_coords_in_index(&fwd_shared, fm)
-            };
-            if merge {
-                all_pairs.extend(merge_fwd_runs(&target_fwd, &query_fwd, self.k));
-            } else {
-                use crate::strand::STRAND_FWD;
-                for (kmer, q_pos) in &query_fwd {
-                    if let Some(t_pos) = target_fwd.get(kmer) {
-                        for &qp in q_pos {
-                            for &tp in t_pos {
-                                all_pairs.push(CoordPair {
-                                    query_start: qp,
-                                    query_end: qp + self.k,
-                                    target_start: tp,
-                                    target_end: tp + self.k,
-                                    strand: STRAND_FWD,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // - strand hits
-        if !rev_shared.is_empty() {
-            let query_rev = {
-                let fm = &self.sequences[query_name].fm;
-                find_kmer_coords_in_index(&rev_shared, fm)
-            };
-            let target_rev = {
-                let fm = &self.sequences[target_name].fm;
-                find_rev_coords_in_index(&rev_shared, fm)
-            };
-            if merge {
-                // Apply both anti-diagonal and co-diagonal merging for RC hits,
-                // deduplicating identical blocks that arise when a single RC pair
-                // has no neighbours on either diagonal.
-                let anti = merge_rev_runs(&target_rev, &query_rev, self.k);
-                let co = merge_rev_fwd_runs(&target_rev, &query_rev, self.k);
-                let mut seen = std::collections::HashSet::new();
-                for block in anti.into_iter().chain(co.into_iter()) {
-                    let key = (
-                        block.query_start,
-                        block.query_end,
-                        block.target_start,
-                        block.target_end,
-                    );
-                    if seen.insert(key) {
-                        all_pairs.push(block);
-                    }
-                }
-            } else {
-                for (kmer, q_pos) in &query_rev {
-                    if let Some(t_pos) = target_rev.get(kmer) {
-                        for &qp in q_pos {
-                            for &tp in t_pos {
-                                all_pairs.push(CoordPair {
-                                    query_start: qp,
-                                    query_end: qp + self.k,
-                                    target_start: tp,
-                                    target_end: tp + self.k,
-                                    strand: STRAND_REV,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
+        let all_pairs =
+            compute_pair_stranded(&self.sequences, self.k, query_name, target_name, merge);
         Ok(all_pairs
             .into_iter()
             .map(|c| {
@@ -645,6 +757,7 @@ impl SequenceIndex {
     ///     If any sequence name is not present in the index.
     pub fn optimal_contig_order(
         &mut self,
+        py: Python<'_>,
         query_names: Vec<String>,
         target_names: Vec<String>,
     ) -> PyResult<(Vec<String>, Vec<String>)> {
@@ -656,6 +769,21 @@ impl SequenceIndex {
                 )));
             }
         }
+
+        // Precompute the both-strand matches for every (query, target) pair once,
+        // in parallel with the GIL released.  Both gravity passes below read from
+        // this map, so each pair is compared a single time.
+        let pair_list: Vec<(String, String)> = query_names
+            .iter()
+            .flat_map(|q| target_names.iter().map(move |t| (q.clone(), t.clone())))
+            .collect();
+        let match_map: HashMap<(String, String), Vec<CoordPair>> = {
+            let k = self.k;
+            let sequences = &self.sequences;
+            let results =
+                py.detach(|| compute_pairs_stranded_batch(sequences, k, &pair_list, true));
+            pair_list.iter().cloned().zip(results.into_iter()).collect()
+        };
 
         let total_target_len: usize = target_names
             .iter()
@@ -678,11 +806,11 @@ impl SequenceIndex {
             let mut weight_sum = 0.0f64;
             let mut weighted_pos = 0.0f64;
             for t in &target_names {
-                let matches = self.compare_sequences_stranded(q.as_str(), t.as_str(), true)?;
+                let matches = &match_map[&(q.clone(), t.clone())];
                 let t_offset = *target_offsets.get(t).unwrap_or(&0) as f64;
-                for (_, _, ts, te, _) in &matches {
-                    let size = (te - ts) as f64;
-                    let mid = t_offset + (*ts as f64 + *te as f64) / 2.0;
+                for c in matches {
+                    let size = (c.target_end - c.target_start) as f64;
+                    let mid = t_offset + (c.target_start as f64 + c.target_end as f64) / 2.0;
                     weighted_pos += size * mid;
                     weight_sum += size;
                 }
@@ -706,7 +834,7 @@ impl SequenceIndex {
             .map(|(_, n)| (self.sequences[n.as_str()].seq_len, n.clone()))
             .collect();
         matched_q.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        unmatched_q.sort_by(|a, b| b.0.cmp(&a.0)); // descending length
+        unmatched_q.sort_by_key(|b| std::cmp::Reverse(b.0)); // descending length
         let q_gravity: Vec<String> = matched_q
             .into_iter()
             .map(|(_, n)| n)
@@ -731,11 +859,11 @@ impl SequenceIndex {
             let mut weight_sum = 0.0f64;
             let mut weighted_pos = 0.0f64;
             for q in &query_names {
-                let matches = self.compare_sequences_stranded(q.as_str(), t.as_str(), true)?;
+                let matches = &match_map[&(q.clone(), t.clone())];
                 let q_offset = *query_offsets.get(q).unwrap_or(&0) as f64;
-                for (qs, qe, _, _, _) in &matches {
-                    let size = (qe - qs) as f64;
-                    let mid = q_offset + (*qs as f64 + *qe as f64) / 2.0;
+                for c in matches {
+                    let size = (c.query_end - c.query_start) as f64;
+                    let mid = q_offset + (c.query_start as f64 + c.query_end as f64) / 2.0;
                     weighted_pos += size * mid;
                     weight_sum += size;
                 }
@@ -759,7 +887,7 @@ impl SequenceIndex {
             .map(|(_, n)| (self.sequences[n.as_str()].seq_len, n.clone()))
             .collect();
         matched_t.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        unmatched_t.sort_by(|a, b| b.0.cmp(&a.0)); // descending length
+        unmatched_t.sort_by_key(|b| std::cmp::Reverse(b.0)); // descending length
         let t_gravity: Vec<String> = matched_t
             .into_iter()
             .map(|(_, n)| n)
@@ -829,18 +957,19 @@ impl SequenceIndex {
     /// list[str]
     ///     All PAF lines for every pairwise comparison, one line per match.
     #[pyo3(signature = (merge=true))]
-    pub fn get_paf_all(&mut self, merge: bool) -> PyResult<Vec<String>> {
-        let names: Vec<String> = self.sequences.keys().cloned().collect();
+    pub fn get_paf_all(&mut self, py: Python<'_>, merge: bool) -> PyResult<Vec<String>> {
+        // Compute every pair in parallel (cache-filling), then format PAF lines
+        // from the cached coords.
+        let pairs = self.ensure_fwd_pairs_cached(py, merge);
         let mut all_paf: Vec<String> = Vec::new();
-        for i in 0..names.len() {
-            for j in 0..names.len() {
-                if i != j {
-                    let q = names[i].clone();
-                    let t = names[j].clone();
-                    let lines = self.get_paf(&q, &t, merge)?;
-                    all_paf.extend(lines);
-                }
-            }
+        for (q, t) in &pairs {
+            let coords = self
+                .pair_cache
+                .get(&(q.clone(), t.clone(), merge))
+                .expect("pair cache populated by ensure_fwd_pairs_cached");
+            let query_len = self.sequences[q].seq_len;
+            let target_len = self.sequences[t].seq_len;
+            all_paf.extend(coords_to_paf(coords, q, query_len, t, target_len));
         }
         Ok(all_paf)
     }
@@ -857,20 +986,12 @@ impl SequenceIndex {
     /// list[tuple[str, str]]
     ///     List of (query_name, target_name) pairs that were computed.
     #[pyo3(signature = (merge=true))]
-    pub fn precompute_all_pairs(&mut self, merge: bool) -> PyResult<Vec<(String, String)>> {
-        let names: Vec<String> = self.sequences.keys().cloned().collect();
-        let mut pairs = Vec::new();
-        for i in 0..names.len() {
-            for j in 0..names.len() {
-                if i != j {
-                    let q = names[i].clone();
-                    let t = names[j].clone();
-                    self.compare_sequences(&q, &t, merge)?;
-                    pairs.push((q, t));
-                }
-            }
-        }
-        Ok(pairs)
+    pub fn precompute_all_pairs(
+        &mut self,
+        py: Python<'_>,
+        merge: bool,
+    ) -> PyResult<Vec<(String, String)>> {
+        Ok(self.ensure_fwd_pairs_cached(py, merge))
     }
 
     /// Save the current index to a binary file.
