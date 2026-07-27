@@ -31,7 +31,12 @@ hits detected via `compare_sequences_stranded`
   short/spurious hits before rendering
 - Cross-index comparisons between two sequence sets (e.g. two genome assemblies)
 - Relative sequence scaling in dotplot subpanels
-- Gravity-centre contig ordering for maximum collinearity
+- d-genies-style gravity contig ordering for maximum collinearity: matches are
+  weighted by `(1 + euclidean_length)²`, each contig is assigned to its single
+  best-matching chromosome, and reverse-oriented contigs are detected and can be
+  rendered flipped along the main diagonal (`DotPlotter.plot(reverse_contigs=…)`)
+- Export the collinearity layout to FASTA (`CrossIndex.write_fasta()`): contigs
+  written in the reordered order with reverse-oriented contigs reverse-complemented
 - **`PafAlignment.filter_by_min_length()`** — discard short alignment records from a loaded PAF file
 - Full Python bindings via [PyO3](https://pyo3.rs)
 
@@ -144,8 +149,12 @@ cross.load_fasta("genome_a.fasta", group="a")   # query sequences (rows)
 cross.load_fasta("genome_b.fasta", group="b")   # target sequences (columns)
 
 # --- Sort contigs for maximum collinearity ---
-# Option 1: via CrossIndex (delegates to SequenceIndex.optimal_contig_order)
+# Option 1: via CrossIndex (delegates to SequenceIndex.optimal_contig_order).
+# Each query contig is assigned to its best-matching target chromosome and
+# ordered by its gravity centre there; reverse-oriented contigs are detected
+# and exposed via cross.reversed_contigs("a").
 q_sorted, t_sorted = cross.reorder_contigs()
+reversed_a = cross.reversed_contigs("a")  # names to render flipped
 
 # Option 2: via PafAlignment gravity-centre algorithm
 # Retrieve all cross-group PAF lines
@@ -168,6 +177,9 @@ plotter.plot(
     output_path="cross_dotplot.png",
     scale_sequences=True,   # subplot size proportional to sequence length
     title="Genome A vs Genome B",
+    # Render reverse-oriented query contigs flipped so they read along the main
+    # diagonal.  Pass an explicit set, or omit to auto-pull the detected set.
+    reverse_contigs=reversed_a,
 )
 
 # Save as SVG vector image for publication-quality output
@@ -188,6 +200,13 @@ plotter.plot(
     min_length=500,
     title="Genome A vs Genome B (≥500 bp alignments)",
 )
+
+# --- Persist the collinearity layout as FASTA ---
+# Reorder + reorient assembly B against a FIXED assembly A, then write both.
+# Reverse-oriented B contigs are reverse-complemented on write; A is untouched.
+cross.reorder_for_colinearity("b", "a", reorder_target=False)
+cross.write_fasta("assembly_a.sorted.fasta", "a")  # forward reference, unchanged
+cross.write_fasta("assembly_b.sorted.fasta", "b")  # reordered + reoriented
 ```
 
 ## Filtering PAF Alignments by Length

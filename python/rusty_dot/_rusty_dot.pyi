@@ -215,6 +215,29 @@ class SequenceIndex:
         """
         ...
 
+    def get_sequence(self, name: str) -> str:
+        """Return the stored sequence bases for a named sequence.
+
+        Yields the original bases retained when the sequence was added, decoded
+        as a string.  Used to write (optionally reordered and reoriented) FASTA.
+
+        Parameters
+        ----------
+        name : str
+            The sequence identifier.
+
+        Returns
+        -------
+        str
+            The sequence bases.
+
+        Raises
+        ------
+        KeyError
+            If ``name`` is not present in the index.
+        """
+        ...
+
     def compare_sequences(
         self,
         query_name: str,
@@ -381,11 +404,16 @@ class SequenceIndex:
     ) -> tuple[list[str], list[str]]:
         """Return query and target contig names sorted for maximum collinearity.
 
-        Uses the gravity-centre algorithm: for each query contig the gravity
-        is the weighted mean of target mid-point positions (normalised by
-        total target span) across all matches.  Query contigs with no matches
-        are placed at the end.  The same algorithm is applied symmetrically to
-        reorder the target contigs.
+        Uses the d-genies gravity algorithm.  Each match is weighted by
+        ``(1 + euclidean_length) ** 2`` (the euclidean length spans both axes),
+        so large collinear blocks dominate.  Every query contig is assigned to
+        its single best-matching target (the argmax of summed match weights) and
+        positioned by the squared-weighted mean of its match mid-points on the
+        concatenated target axis, using only the matches to that best target.
+        Contigs are sorted by ascending position; contigs with no matches are
+        placed at the end, ordered by descending length.  The targets are
+        reordered first (against the queries in their input order) and the
+        queries are then reordered against the freshly sorted target axis.
 
         Parameters
         ----------
@@ -397,8 +425,8 @@ class SequenceIndex:
         Returns
         -------
         tuple[list[str], list[str]]
-            ``(sorted_query_names, sorted_target_names)`` ordered by ascending
-            gravity centre.
+            ``(sorted_query_names, sorted_target_names)`` ordered for maximum
+            collinearity along the diagonal.
 
         Raises
         ------

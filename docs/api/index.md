@@ -27,4 +27,6 @@ rusty-dot exposes its functionality through the following classes and functions.
 | [`py_save_index`](functions.md#rusty_dot._rusty_dot.py_save_index) | `rusty_dot` | Serialise an index collection to disk |
 | [`py_load_index`](functions.md#rusty_dot._rusty_dot.py_load_index) | `rusty_dot` | Load a serialised index from disk |
 | [`parse_paf_file`](paf_io.md#rusty_dot.paf_io.parse_paf_file) | `rusty_dot.paf_io` | Yield PAF records from a file |
-| [`compute_gravity_contigs`](paf_io.md#rusty_dot.paf_io.compute_gravity_contigs) | `rusty_dot.paf_io` | Sort contigs by gravity centre |
+| [`compute_gravity_contigs`](paf_io.md#rusty_dot.paf_io.compute_gravity_contigs) | `rusty_dot.paf_io` | Sort contigs by best-chromosome gravity centre; report reverse-oriented contigs |
+| [`compute_reversed_contigs`](paf_io.md#rusty_dot.paf_io.compute_reversed_contigs) | `rusty_dot.paf_io` | Detect reverse-oriented query contigs (d-genies orientation check) |
+| [`reverse_complement`](paf_io.md#rusty_dot.paf_io.reverse_complement) | `rusty_dot.paf_io` | Reverse-complement a nucleotide string |
