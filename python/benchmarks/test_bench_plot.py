@@ -30,7 +30,7 @@ def _build_index() -> SequenceIndex:
 
 
 def test_bench_plot_kmer(benchmark, tmp_path):
-    """Benchmark rendering a dotplot from k-mer matches to a file."""
+    """Benchmark rendering a dotplot from k-mer matches to a file (default auto)."""
     idx = _build_index()
     plotter = DotPlotter(idx)
     output = str(tmp_path / 'bench.png')
@@ -38,6 +38,21 @@ def test_bench_plot_kmer(benchmark, tmp_path):
     def run():
         fig = plotter.plot(output_path=output)
         # Free the figure so repeated iterations do not accumulate memory.
+        import matplotlib.pyplot as plt
+
+        plt.close(fig)
+
+    benchmark(run)
+
+
+def test_bench_plot_kmer_chained(benchmark, tmp_path):
+    """Benchmark rendering with co-linear chaining enabled (chain_gap > 0)."""
+    idx = _build_index()
+    plotter = DotPlotter(idx)
+    output = str(tmp_path / 'bench_chained.svg')
+
+    def run():
+        fig = plotter.plot(output_path=output, chain_gap=500)
         import matplotlib.pyplot as plt
 
         plt.close(fig)

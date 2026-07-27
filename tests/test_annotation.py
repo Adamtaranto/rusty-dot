@@ -393,11 +393,15 @@ def test_plot_annotation_squares_drawn(dotplot_index, simple_annotation):
                 plotter._draw_annotation_squares(ax, q, simple_annotation)
 
     plt.close(fig)
-    # seq1 has 2 features → 2 patches on diagonal panel (0,0)
-    n_patches_diag = len(axes[0][0].patches)
-    n_patches_off = len(axes[0][1].patches)
-    assert n_patches_diag == 2  # two seq1 features
-    assert n_patches_off == 0  # off-diagonal: no patches
+    # Annotation squares are batched into a single PatchCollection per panel.
+    from matplotlib.collections import PatchCollection
+
+    diag_pcs = [c for c in axes[0][0].collections if isinstance(c, PatchCollection)]
+    off_pcs = [c for c in axes[0][1].collections if isinstance(c, PatchCollection)]
+    # seq1 has 2 features → one PatchCollection holding 2 squares on panel (0,0)
+    assert len(diag_pcs) == 1
+    assert len(diag_pcs[0].get_paths()) == 2
+    assert len(off_pcs) == 0  # off-diagonal: no annotation squares
 
 
 def test_plot_warns_when_annotation_contains_unknown_sequences(dotplot_index, caplog):

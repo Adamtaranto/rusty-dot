@@ -66,10 +66,15 @@ rusty-dot is built for large sequences and many-contig genomes:
   forward and reverse-complement hash → position maps; matching intersects these
   maps and byte-verifies representatives, so there is no suffix-array
   construction on the comparison path.
-- **Vectorised, rasterised plotting.** Dotplot matches are drawn with a single
-  matplotlib `LineCollection` per panel and rasterised, keeping vector (PDF/SVG)
-  output fast and compact even for genome-scale plots while axes and labels stay
-  vector.
+- **Vector-first, high-resolution plotting.** Dotplot matches are built as NumPy
+  segment arrays and drawn with one `LineCollection` per panel/strand. By default
+  (`rasterized='auto'`) the match layer is **true vector** — infinitely zoomable in
+  SVG/PDF — until a panel exceeds `rasterization_threshold` segments, above which
+  only that layer is rasterised at `dpi` to bound file size (axes and labels
+  always stay vector; raise `dpi` for a higher-resolution PNG). Enable
+  `chain_gap=<bp>` to chain co-linear matches
+  across gaps into a few long lines, cutting render time and file size for dense,
+  genome-scale plots.
 
 ## Quick Start — single multi-FASTA index
 

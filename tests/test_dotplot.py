@@ -1035,3 +1035,203 @@ def test_dotplotter_resolve_group_names_raises_for_non_cross():
     plotter = DotPlotter(SequenceIndex(k=4))
     with pytest.raises(ValueError, match='CrossIndex'):
         plotter._resolve_group_names('x', 'y', None, None)
+
+
+# --- _resolve_rasterized -----------------------------------------------------
+
+
+def test_resolve_rasterized_explicit_bool():
+    """Explicit True/False are returned verbatim regardless of count."""
+    from rusty_dot.dotplot import _resolve_rasterized
+
+    assert _resolve_rasterized(1_000_000, True, 50) is True
+    assert _resolve_rasterized(1_000_000, False, 50) is False
+
+
+def test_resolve_rasterized_auto_threshold():
+    """'auto' rasterizes only above the threshold."""
+    from rusty_dot.dotplot import _resolve_rasterized
+
+    assert _resolve_rasterized(10, 'auto', 50) is False
+    assert _resolve_rasterized(51, 'auto', 50) is True
+    assert _resolve_rasterized(50, 'auto', 50) is False  # boundary: not above
+
+
+def test_resolve_rasterized_invalid_string():
+    """An unknown string raises ValueError."""
+    from rusty_dot.dotplot import _resolve_rasterized
+
+    with pytest.raises(ValueError, match='auto'):
+        _resolve_rasterized(1, 'sometimes', 50)
+
+
+# --- _chain_blocks -----------------------------------------------------------
+
+
+def test_chain_blocks_gap_zero_is_noop():
+    """chain_gap=0 returns the blocks unchanged."""
+    from rusty_dot.dotplot import _chain_blocks
+
+    blocks = [(0, 10, 0, 10, '+'), (100, 110, 100, 110, '+')]
+    assert _chain_blocks(blocks, 0) == blocks
+
+
+def test_chain_blocks_merges_same_diagonal_within_gap():
+    """Collinear forward blocks within the gap merge into one."""
+    from rusty_dot.dotplot import _chain_blocks
+
+    blocks = [(0, 10, 0, 10, '+'), (12, 20, 12, 20, '+')]  # diagonal 0, gap 2
+    chained = _chain_blocks(blocks, 5)
+    assert chained == [(0, 20, 0, 20, '+')]
+
+
+def test_chain_blocks_keeps_blocks_beyond_gap_separate():
+    """Collinear blocks farther apart than the gap stay separate."""
+    from rusty_dot.dotplot import _chain_blocks
+
+    blocks = [(0, 10, 0, 10, '+'), (12, 20, 12, 20, '+')]  # gap 2
+    chained = _chain_blocks(blocks, 1)  # gap tolerance 1 < 2
+    assert len(chained) == 2
+
+
+def test_chain_blocks_different_diagonals_stay_separate():
+    """Blocks on different diagonals are never chained."""
+    from rusty_dot.dotplot import _chain_blocks
+
+    blocks = [(0, 10, 0, 10, '+'), (0, 10, 50, 60, '+')]  # diagonals 0 and 50
+    chained = _chain_blocks(blocks, 1000)
+    assert len(chained) == 2
+
+
+def test_chain_blocks_merges_overlapping():
+    """Overlapping collinear blocks merge into their union."""
+    from rusty_dot.dotplot import _chain_blocks
+
+    blocks = [(0, 10, 0, 10, '+'), (5, 15, 5, 15, '+')]
+    chained = _chain_blocks(blocks, 1)
+    assert chained == [(0, 15, 0, 15, '+')]
+
+
+def test_chain_blocks_reverse_strand_antidiagonal():
+    """Reverse-complement blocks on the same anti-diagonal chain correctly."""
+    from rusty_dot.dotplot import _chain_blocks
+
+    # Anti-diagonal invariant q_start + t_end == 100 for both.
+    blocks = [(0, 10, 90, 100, '-'), (12, 20, 78, 88, '-')]  # gap 2
+    chained = _chain_blocks(blocks, 5)
+    assert chained == [(0, 20, 78, 100, '-')]
+
+
+def test_chain_blocks_does_not_merge_across_strands():
+    """A '+' and a '-' block are never chained together."""
+    from rusty_dot.dotplot import _chain_blocks
+
+    blocks = [(0, 10, 0, 10, '+'), (12, 20, 12, 20, '-')]
+    chained = _chain_blocks(blocks, 1000)
+    assert len(chained) == 2
+
+
+# --- auto-rasterization end to end -------------------------------------------
+
+
+def test_plot_panel_auto_vector_below_threshold():
+    """With rasterized='auto' and few segments, the match layer stays vector."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('q', 'ACGTACGTACGT')
+    idx.add_sequence('t', 'ACGTACGTACGT')
+    plotter = DotPlotter(idx)
+
+    fig, ax = plt.subplots()
+    plotter._plot_panel(ax, 'q', 't', rasterized='auto', rasterization_threshold=50_000)
+    from matplotlib.collections import LineCollection
+
+    lcs = [c for c in ax.collections if isinstance(c, LineCollection)]
+    assert lcs, 'expected at least one match LineCollection'
+    assert all(lc.get_rasterized() is False for lc in lcs)
+    plt.close(fig)
+
+
+def test_plot_panel_auto_rasterizes_above_threshold():
+    """With a tiny threshold, the match layer is rasterized."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('q', 'ACGTACGTACGT')
+    idx.add_sequence('t', 'ACGTACGTACGT')
+    plotter = DotPlotter(idx)
+
+    fig, ax = plt.subplots()
+    plotter._plot_panel(ax, 'q', 't', rasterized='auto', rasterization_threshold=0)
+    from matplotlib.collections import LineCollection
+
+    lcs = [c for c in ax.collections if isinstance(c, LineCollection)]
+    assert lcs
+    assert all(lc.get_rasterized() is True for lc in lcs)
+    plt.close(fig)
+
+
+def test_plot_panel_explicit_rasterized_false():
+    """rasterized=False forces vector even with a zero threshold."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('q', 'ACGTACGTACGT')
+    idx.add_sequence('t', 'ACGTACGTACGT')
+    plotter = DotPlotter(idx)
+
+    fig, ax = plt.subplots()
+    plotter._plot_panel(ax, 'q', 't', rasterized=False, rasterization_threshold=0)
+    from matplotlib.collections import LineCollection
+
+    lcs = [c for c in ax.collections if isinstance(c, LineCollection)]
+    assert all(lc.get_rasterized() is False for lc in lcs)
+    plt.close(fig)
+
+
+def test_plot_svg_match_layer_is_vector(dotplot_index, tmp_path):
+    """Default SVG output keeps the match layer as vector paths (no <image>)."""
+    plotter = DotPlotter(dotplot_index)
+    output = str(tmp_path / 'vector.svg')
+    fig = plotter.plot(output_path=output)
+    plt.close(fig)
+    with open(output) as fh:
+        content = fh.read()
+    # A rasterized match layer would embed a raster <image>; vector output uses
+    # <path>/<use> elements only.
+    assert '<image' not in content
+    assert '<path' in content
+
+
+def test_plot_panel_chain_gap_reduces_segments():
+    """Chaining never increases, and can decrease, the number of drawn segments."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    # A sequence vs itself: a long conserved diagonal of k-mer matches.
+    seq = 'ACGT' * 50
+    idx = SequenceIndex(k=6)
+    idx.add_sequence('q', seq)
+    idx.add_sequence('t', seq)
+    plotter = DotPlotter(idx)
+
+    fig, ax0 = plt.subplots()
+    plotter._plot_panel(ax0, 'q', 't', merge=False, chain_gap=0)
+    n_unchained = len(_panel_segments(ax0))
+    plt.close(fig)
+
+    fig, ax1 = plt.subplots()
+    plotter._plot_panel(ax1, 'q', 't', merge=False, chain_gap=500)
+    n_chained = len(_panel_segments(ax1))
+    plt.close(fig)
+
+    assert n_unchained > 0
+    assert n_chained <= n_unchained
