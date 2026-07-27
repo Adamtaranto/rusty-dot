@@ -1,23 +1,23 @@
 # rusty-dot
 
-**rusty-dot** is a Rust + PyO3 tool for making fast dot plot comparisons of DNA sequences using a Rust FM-Index.
+**rusty-dot** is a Rust + PyO3 tool for making fast dot plot comparisons of DNA sequences.
 
 ## Overview
 
 rusty-dot provides a high-performance toolkit for pairwise DNA sequence comparison and visualisation.
-At its core, it builds an [FM-index](https://en.wikipedia.org/wiki/FM-index) (via [rust-bio](https://docs.rs/bio)) for each sequence and uses k-mer set intersection to efficiently find shared subsequences between any two sequences in the collection.
+At its core, it builds a rolling-hash [ntHash](https://github.com/bcgsc/ntHash) k-mer index for each sequence — in a single O(n) pass, in parallel across sequences — and intersects those indexes to efficiently find shared subsequences between any two sequences in the collection.
 
 ### Key Features
 
-- **Fast FM-index construction** via Rust + PyO3 bindings
+- **Fast, parallel k-mer index construction** via Rust + PyO3 bindings
 - **Read FASTA / gzipped FASTA files** via [needletail](https://docs.rs/needletail)
-- **Build FM-indexes** per sequence using [rust-bio](https://docs.rs/bio)
-- **K-mer set intersection** for efficient shared k-mer lookup
+- **Rolling-hash k-mer index** per sequence ([ntHash](https://github.com/bcgsc/ntHash)); records of a file are indexed in parallel across CPU cores ([rayon](https://docs.rs/rayon))
+- **Hash-based shared k-mer lookup**, byte-verified for exact matching
 - **Both-strand k-mer matching**: forward (`+`) and reverse-complement (`-`) hits via `compare_sequences_stranded`
 - **Complete RC hit coverage**: two patterns merged independently — anti-diagonal (standard inverted repeat) and co-diagonal (both arms same direction)
 - **Unified merge API** (`py_merge_runs`) handles all orientation cases with a single call
 - **PAF format output** for alignment records
-- **FM-index serialization/deserialization** with [serde](https://docs.rs/serde) + postcard
+- **Index serialization/deserialization** with [serde](https://docs.rs/serde) + postcard (sequence bytes are stored; the k-mer index is rebuilt on load)
 - **All-vs-all dotplot visualization** with matplotlib: forward hits in blue, RC hits in red; edge-only axis labels in grid plots; subpanels scaled by sequence length by default (`scale_sequences=True`)
 - **SVG vector output** via the `format` parameter (`format='svg'`) or by using a `.svg` file extension — suitable for publication-quality figures
 - **Minimum alignment length filter** (`min_length`) on `DotPlotter.plot()` / `plot_single()` — suppresses short or spurious alignment hits before rendering

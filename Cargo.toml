@@ -19,19 +19,58 @@ pyo3 = { version = "0.28", features = ["extension-module"] }
 # --no-default-features) can exclude it entirely.  emcc cannot link needletail
 # even without its C compression backends because it tries to produce a
 # standalone .wasm for every crate, which requires a `main` symbol.
-needletail = { version = "0.6", default-features = false, optional = true }
+needletail = { version = "0.7", default-features = false, optional = true }
 bio = "3.0"
 serde = { version = "1.0", features = ["derive"] }
 postcard = { version = "1", features = ["use-std"] }
 ahash = "0.8"
 thiserror = "2.0"
+# Positions per k-mer are almost always a single value; SmallVec keeps that
+# common case inline (no heap allocation) in the k-mer position index.
+smallvec = "1"
+# Data parallelism for index building and pairwise comparisons.  Optional so
+# that wasm32 builds (which use --no-default-features) can exclude it — rayon's
+# threading is unavailable on that single-threaded target.
+rayon = { version = "1", optional = true }
 
 [features]
-# Native (default): FASTA file reading via needletail + bzip2/xz/zstd compression.
-# Wasm builds use --no-default-features to exclude needletail entirely.
-default = ["fasta", "compression"]
+# Native (default): FASTA file reading via needletail + bzip2/xz/zstd compression
+# plus rayon data-parallelism.  Wasm builds use --no-default-features to exclude
+# needletail and rayon entirely (the target is single-threaded).
+default = ["fasta", "compression", "parallel"]
 fasta = ["dep:needletail"]
 compression = ["needletail/compression"]
+parallel = ["dep:rayon"]
 
 [dev-dependencies]
-tempfile = "3.26"
+tempfile = "3.27"
+# Drop-in criterion API that also registers benchmarks with cargo-codspeed, so
+# the same bench targets run under both `cargo bench` and `cargo codspeed run`.
+codspeed-criterion-compat = "2"
+
+[[bench]]
+name = "bench_index"
+harness = false
+
+[[bench]]
+name = "bench_compare"
+harness = false
+
+[[bench]]
+name = "bench_kmer"
+harness = false
+
+# Release builds: maximise runtime speed of the compiled extension.  `lto` and a
+# single codegen unit let the optimiser inline across module boundaries (the hot
+# k-mer/FM-index loops benefit most).  panic is intentionally left as "unwind"
+# because PyO3 relies on unwinding across the FFI boundary.
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+# Benchmarks link against the release-optimised library.
+[profile.bench]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

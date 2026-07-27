@@ -10,6 +10,36 @@ from rusty_dot._rusty_dot import SequenceIndex
 from rusty_dot.dotplot import DotPlotter
 
 
+def _panel_segments(ax):
+    """Return ``[(x0, y0, x1, y1), ...]`` for every match segment on ``ax``.
+
+    ``DotPlotter._plot_panel`` renders matches with one or more
+    :class:`matplotlib.collections.LineCollection` (a single artist holding all
+    segments) rather than one :class:`~matplotlib.lines.Line2D` per match, so
+    per-segment inspection goes through ``ax.collections`` instead of
+    ``ax.lines``.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The panel axes to inspect.
+
+    Returns
+    -------
+    list of tuple of float
+        One ``(x0, y0, x1, y1)`` tuple per drawn line segment.
+    """
+    from matplotlib.collections import LineCollection
+
+    segments = []
+    for coll in ax.collections:
+        if isinstance(coll, LineCollection):
+            for seg in coll.get_segments():
+                (x0, y0), (x1, y1) = seg[0], seg[-1]
+                segments.append((x0, y0, x1, y1))
+    return segments
+
+
 @pytest.fixture
 def dotplot_index():
     """Create an index for dotplot testing."""
@@ -103,17 +133,16 @@ def test_plot_rc_lines_are_anti_diagonal(tmp_path):
     plt.close(fig)
 
     # At least one line must have been drawn
-    assert len(ax.lines) > 0
+    segments = _panel_segments(ax)
+    assert len(segments) > 0
 
     # For every RC match line, the x-data must be decreasing (anti-diagonal)
-    for line in ax.lines:
-        xdata = line.get_xdata()
-        if len(xdata) == 2:
-            # anti-diagonal: x goes from t_end to t_start (decreasing)
-            assert xdata[0] >= xdata[1], (
-                f'Expected anti-diagonal line (x decreasing) for RC match, '
-                f'got x={xdata}'
-            )
+    for x0, _y0, x1, _y1 in segments:
+        # anti-diagonal: x goes from t_end to t_start (decreasing)
+        assert x0 >= x1, (
+            f'Expected anti-diagonal line (x decreasing) for RC match, '
+            f'got x=({x0}, {x1})'
+        )
 
 
 def test_plot_fwd_lines_are_diagonal(tmp_path):
@@ -132,10 +161,10 @@ def test_plot_fwd_lines_are_diagonal(tmp_path):
     plotter._plot_panel(ax, 'q', 't')
     plt.close(fig)
 
-    fwd_lines = [
-        line for line in ax.lines if list(line.get_xdata()) == sorted(line.get_xdata())
+    fwd_segments = [
+        (x0, y0, x1, y1) for x0, y0, x1, y1 in _panel_segments(ax) if x0 <= x1
     ]
-    assert len(fwd_lines) > 0, 'Expected at least one forward (diagonal) match line'
+    assert len(fwd_segments) > 0, 'Expected at least one forward (diagonal) match line'
 
 
 def test_plot_rc_color_parameter(tmp_path):
@@ -224,13 +253,13 @@ def test_plot_min_length_filters_short_matches(tmp_path):
 
     fig, ax_all = plt.subplots()
     plotter._plot_panel(ax_all, 'q', 't', min_length=0)
-    n_lines_all = len(ax_all.lines)
+    n_lines_all = len(_panel_segments(ax_all))
     plt.close(fig)
 
     fig, ax_filtered = plt.subplots()
     # A very large min_length should filter everything out
     plotter._plot_panel(ax_filtered, 'q', 't', min_length=10000)
-    n_lines_filtered = len(ax_filtered.lines)
+    n_lines_filtered = len(_panel_segments(ax_filtered))
     plt.close(fig)
 
     assert n_lines_all > 0
@@ -445,8 +474,8 @@ def test_plot_color_by_identity_lines_drawn(dotplot_index):
     plotter._plot_panel(ax, 'seq1', 'seq2', color_by_identity=True)
     plt.close(fig)
 
-    # Two PAF records → two lines drawn
-    assert len(ax.lines) == 2
+    # Two PAF records → two line segments drawn
+    assert len(_panel_segments(ax)) == 2
 
 
 def test_plot_color_by_identity_custom_palette(dotplot_index, tmp_path):
@@ -499,7 +528,7 @@ def test_plot_color_by_identity_fallback_uses_kmer_matches(dotplot_index):
 
     fig_kmer, ax_kmer = plt.subplots()
     plotter._plot_panel(ax_kmer, 'seq1', 'seq2', color_by_identity=False)
-    n_kmer = len(ax_kmer.lines)
+    n_kmer = len(_panel_segments(ax_kmer))
     plt.close(fig_kmer)
 
     # Suppress the expected warning to keep test output clean.
@@ -509,11 +538,12 @@ def test_plot_color_by_identity_fallback_uses_kmer_matches(dotplot_index):
         plotter._plot_panel(ax_warn, 'seq1', 'seq2', color_by_identity=True)
     finally:
         logging.disable(logging.NOTSET)
-    n_fallback = len(ax_warn.lines)
+    n_fallback = len(_panel_segments(ax_warn))
     plt.close(fig_warn)
 
-    # fallback should produce the same number of lines as the normal k-mer plot
+    # fallback should produce the same number of segments as the normal k-mer plot
     assert n_fallback == n_kmer
+    assert n_kmer > 0
 
 
 def test_plot_identity_colorbar_returns_figure(dotplot_index):
@@ -655,14 +685,14 @@ def test_plot_color_by_identity_min_length_filters(dotplot_index):
 
     fig, ax_all = plt.subplots()
     plotter._plot_panel(ax_all, 'seq1', 'seq2', color_by_identity=True, min_length=0)
-    n_all = len(ax_all.lines)
+    n_all = len(_panel_segments(ax_all))
     plt.close(fig)
 
     fig, ax_filtered = plt.subplots()
     plotter._plot_panel(
         ax_filtered, 'seq1', 'seq2', color_by_identity=True, min_length=8
     )
-    n_filtered = len(ax_filtered.lines)
+    n_filtered = len(_panel_segments(ax_filtered))
     plt.close(fig)
 
     assert n_all == 2
@@ -779,8 +809,8 @@ def test_dotplotter_paf_as_index_strand_colors(tmp_path):
     plotter._plot_panel(ax, 'contigA', 'contigB', dot_color='blue', rc_color='red')
     plt.close(fig)
 
-    # One '+' alignment should produce one line
-    assert len(ax.lines) == 1
+    # One '+' alignment should produce one line segment
+    assert len(_panel_segments(ax)) == 1
 
 
 def test_dotplotter_paf_as_index_rc_alignment():
@@ -796,10 +826,11 @@ def test_dotplotter_paf_as_index_rc_alignment():
     plotter._plot_panel(ax, 'contigA', 'contigC')
     plt.close(fig)
 
-    assert len(ax.lines) == 1
-    xdata = ax.lines[0].get_xdata()
+    segments = _panel_segments(ax)
+    assert len(segments) == 1
+    x0, _y0, x1, _y1 = segments[0]
     # RC strand: x goes from target_end to target_start (decreasing)
-    assert xdata[0] > xdata[1]
+    assert x0 > x1
 
 
 def test_dotplotter_paf_as_index_plot_grid(tmp_path):
@@ -1004,3 +1035,203 @@ def test_dotplotter_resolve_group_names_raises_for_non_cross():
     plotter = DotPlotter(SequenceIndex(k=4))
     with pytest.raises(ValueError, match='CrossIndex'):
         plotter._resolve_group_names('x', 'y', None, None)
+
+
+# --- _resolve_rasterized -----------------------------------------------------
+
+
+def test_resolve_rasterized_explicit_bool():
+    """Explicit True/False are returned verbatim regardless of count."""
+    from rusty_dot.dotplot import _resolve_rasterized
+
+    assert _resolve_rasterized(1_000_000, True, 50) is True
+    assert _resolve_rasterized(1_000_000, False, 50) is False
+
+
+def test_resolve_rasterized_auto_threshold():
+    """'auto' rasterizes only above the threshold."""
+    from rusty_dot.dotplot import _resolve_rasterized
+
+    assert _resolve_rasterized(10, 'auto', 50) is False
+    assert _resolve_rasterized(51, 'auto', 50) is True
+    assert _resolve_rasterized(50, 'auto', 50) is False  # boundary: not above
+
+
+def test_resolve_rasterized_invalid_string():
+    """An unknown string raises ValueError."""
+    from rusty_dot.dotplot import _resolve_rasterized
+
+    with pytest.raises(ValueError, match='auto'):
+        _resolve_rasterized(1, 'sometimes', 50)
+
+
+# --- _chain_blocks -----------------------------------------------------------
+
+
+def test_chain_blocks_gap_zero_is_noop():
+    """chain_gap=0 returns the blocks unchanged."""
+    from rusty_dot.dotplot import _chain_blocks
+
+    blocks = [(0, 10, 0, 10, '+'), (100, 110, 100, 110, '+')]
+    assert _chain_blocks(blocks, 0) == blocks
+
+
+def test_chain_blocks_merges_same_diagonal_within_gap():
+    """Collinear forward blocks within the gap merge into one."""
+    from rusty_dot.dotplot import _chain_blocks
+
+    blocks = [(0, 10, 0, 10, '+'), (12, 20, 12, 20, '+')]  # diagonal 0, gap 2
+    chained = _chain_blocks(blocks, 5)
+    assert chained == [(0, 20, 0, 20, '+')]
+
+
+def test_chain_blocks_keeps_blocks_beyond_gap_separate():
+    """Collinear blocks farther apart than the gap stay separate."""
+    from rusty_dot.dotplot import _chain_blocks
+
+    blocks = [(0, 10, 0, 10, '+'), (12, 20, 12, 20, '+')]  # gap 2
+    chained = _chain_blocks(blocks, 1)  # gap tolerance 1 < 2
+    assert len(chained) == 2
+
+
+def test_chain_blocks_different_diagonals_stay_separate():
+    """Blocks on different diagonals are never chained."""
+    from rusty_dot.dotplot import _chain_blocks
+
+    blocks = [(0, 10, 0, 10, '+'), (0, 10, 50, 60, '+')]  # diagonals 0 and 50
+    chained = _chain_blocks(blocks, 1000)
+    assert len(chained) == 2
+
+
+def test_chain_blocks_merges_overlapping():
+    """Overlapping collinear blocks merge into their union."""
+    from rusty_dot.dotplot import _chain_blocks
+
+    blocks = [(0, 10, 0, 10, '+'), (5, 15, 5, 15, '+')]
+    chained = _chain_blocks(blocks, 1)
+    assert chained == [(0, 15, 0, 15, '+')]
+
+
+def test_chain_blocks_reverse_strand_antidiagonal():
+    """Reverse-complement blocks on the same anti-diagonal chain correctly."""
+    from rusty_dot.dotplot import _chain_blocks
+
+    # Anti-diagonal invariant q_start + t_end == 100 for both.
+    blocks = [(0, 10, 90, 100, '-'), (12, 20, 78, 88, '-')]  # gap 2
+    chained = _chain_blocks(blocks, 5)
+    assert chained == [(0, 20, 78, 100, '-')]
+
+
+def test_chain_blocks_does_not_merge_across_strands():
+    """A '+' and a '-' block are never chained together."""
+    from rusty_dot.dotplot import _chain_blocks
+
+    blocks = [(0, 10, 0, 10, '+'), (12, 20, 12, 20, '-')]
+    chained = _chain_blocks(blocks, 1000)
+    assert len(chained) == 2
+
+
+# --- auto-rasterization end to end -------------------------------------------
+
+
+def test_plot_panel_auto_vector_below_threshold():
+    """With rasterized='auto' and few segments, the match layer stays vector."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('q', 'ACGTACGTACGT')
+    idx.add_sequence('t', 'ACGTACGTACGT')
+    plotter = DotPlotter(idx)
+
+    fig, ax = plt.subplots()
+    plotter._plot_panel(ax, 'q', 't', rasterized='auto', rasterization_threshold=50_000)
+    from matplotlib.collections import LineCollection
+
+    lcs = [c for c in ax.collections if isinstance(c, LineCollection)]
+    assert lcs, 'expected at least one match LineCollection'
+    assert all(lc.get_rasterized() is False for lc in lcs)
+    plt.close(fig)
+
+
+def test_plot_panel_auto_rasterizes_above_threshold():
+    """With a tiny threshold, the match layer is rasterized."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('q', 'ACGTACGTACGT')
+    idx.add_sequence('t', 'ACGTACGTACGT')
+    plotter = DotPlotter(idx)
+
+    fig, ax = plt.subplots()
+    plotter._plot_panel(ax, 'q', 't', rasterized='auto', rasterization_threshold=0)
+    from matplotlib.collections import LineCollection
+
+    lcs = [c for c in ax.collections if isinstance(c, LineCollection)]
+    assert lcs
+    assert all(lc.get_rasterized() is True for lc in lcs)
+    plt.close(fig)
+
+
+def test_plot_panel_explicit_rasterized_false():
+    """rasterized=False forces vector even with a zero threshold."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('q', 'ACGTACGTACGT')
+    idx.add_sequence('t', 'ACGTACGTACGT')
+    plotter = DotPlotter(idx)
+
+    fig, ax = plt.subplots()
+    plotter._plot_panel(ax, 'q', 't', rasterized=False, rasterization_threshold=0)
+    from matplotlib.collections import LineCollection
+
+    lcs = [c for c in ax.collections if isinstance(c, LineCollection)]
+    assert all(lc.get_rasterized() is False for lc in lcs)
+    plt.close(fig)
+
+
+def test_plot_svg_match_layer_is_vector(dotplot_index, tmp_path):
+    """Default SVG output keeps the match layer as vector paths (no <image>)."""
+    plotter = DotPlotter(dotplot_index)
+    output = str(tmp_path / 'vector.svg')
+    fig = plotter.plot(output_path=output)
+    plt.close(fig)
+    with open(output) as fh:
+        content = fh.read()
+    # A rasterized match layer would embed a raster <image>; vector output uses
+    # <path>/<use> elements only.
+    assert '<image' not in content
+    assert '<path' in content
+
+
+def test_plot_panel_chain_gap_reduces_segments():
+    """Chaining never increases, and can decrease, the number of drawn segments."""
+    import matplotlib
+
+    matplotlib.use('Agg')
+
+    # A sequence vs itself: a long conserved diagonal of k-mer matches.
+    seq = 'ACGT' * 50
+    idx = SequenceIndex(k=6)
+    idx.add_sequence('q', seq)
+    idx.add_sequence('t', seq)
+    plotter = DotPlotter(idx)
+
+    fig, ax0 = plt.subplots()
+    plotter._plot_panel(ax0, 'q', 't', merge=False, chain_gap=0)
+    n_unchained = len(_panel_segments(ax0))
+    plt.close(fig)
+
+    fig, ax1 = plt.subplots()
+    plotter._plot_panel(ax1, 'q', 't', merge=False, chain_gap=500)
+    n_chained = len(_panel_segments(ax1))
+    plt.close(fig)
+
+    assert n_unchained > 0
+    assert n_chained <= n_unchained

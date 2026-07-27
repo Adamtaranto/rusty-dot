@@ -1,6 +1,15 @@
-# Dev stuff
-.idea/
+# Sandpit
+.ideas/
+.plans/
 
+# Agent configs
+.claude/
+.claudeignore
+.env
+.mcp.json
+
+# Mac stuff
+.DS_Store
 # Mac stuff
 .DS_Store
 

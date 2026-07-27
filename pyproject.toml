@@ -18,15 +18,19 @@ classifiers = [
 dependencies = ["matplotlib>=3.5", "numpy>=1.21"]
 
 [project.optional-dependencies]
+test = [
+        "pytest-codspeed",
+        "pytest-cov",
+        "pytest",
+        "toml",
+        ]
 dev = [
     "isort",
     "maturin>=1.0",
-    "numpydoc-validation",
-    "pydocstyle",
     "mypy",
+    "numpydoc-validation",
     "pre-commit",
-    "pytest-cov",
-    "pytest",
+    "pydocstyle",
     "ruff",
 ]
 

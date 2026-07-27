@@ -6,7 +6,7 @@ rusty-dot exposes its functionality through the following classes and functions.
 
 | Class | Module | Description |
 |-------|--------|-------------|
-| [`SequenceIndex`](sequence_index.md) | `rusty_dot` | Rust-backed FM-index for sequence comparison |
+| [`SequenceIndex`](sequence_index.md) | `rusty_dot` | Rust-backed rolling-hash k-mer index for sequence comparison |
 | [`DotPlotter`](dotplot.md) | `rusty_dot.dotplot` | All-vs-all dotplot visualisation |
 | [`CrossIndex`](cross_index.md) | `rusty_dot.paf_io` | Multi-group cross-index for cross-group pairwise comparisons; DotPlotter-compatible |
 | [`PafRecord`](paf_io.md#rusty_dot.paf_io.PafRecord) | `rusty_dot.paf_io` | Single PAF alignment record |

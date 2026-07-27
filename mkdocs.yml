@@ -1,5 +1,5 @@
 site_name: rusty-dot
-site_description: Fast dot plot comparisons of DNA sequences using an FM-Index
+site_description: Fast dot plot comparisons of DNA sequences using a rolling-hash k-mer index
 site_url: https://adamtaranto.github.io/rusty-dot/
 repo_url: https://github.com/Adamtaranto/rusty-dot
 repo_name: Adamtaranto/rusty-dot

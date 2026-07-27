@@ -13,10 +13,12 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
+from matplotlib.collections import LineCollection, PatchCollection
 import matplotlib.colors as mcolors
 import matplotlib.figure
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+import numpy as np
 
 from rusty_dot._rusty_dot import SequenceIndex
 from rusty_dot.paf_io import PafAlignment
@@ -26,6 +28,133 @@ if TYPE_CHECKING:
     from rusty_dot.paf_io import CrossIndex
 
 _log = logging.getLogger(__name__)
+
+
+def _resolve_rasterized(
+    n_segments: int,
+    rasterized: Union[bool, str],
+    threshold: int,
+) -> bool:
+    """Decide whether a match layer should be rasterised.
+
+    Parameters
+    ----------
+    n_segments : int
+        Number of line segments about to be drawn in this layer.
+    rasterized : bool or str
+        ``True`` / ``False`` force the choice; ``'auto'`` rasterises only when
+        *n_segments* exceeds *threshold* (keeping small plots true vector while
+        bounding the size of very dense ones).
+    threshold : int
+        Segment count above which ``'auto'`` switches to rasterised.
+
+    Returns
+    -------
+    bool
+        Whether to set ``rasterized=True`` on the layer.
+
+    Raises
+    ------
+    ValueError
+        If *rasterized* is a string other than ``'auto'``.
+    """
+    if isinstance(rasterized, bool):
+        return rasterized
+    if rasterized == 'auto':
+        return n_segments > threshold
+    raise ValueError(f"rasterized must be True, False, or 'auto', got {rasterized!r}")
+
+
+def _chain_blocks(
+    blocks: list[tuple[int, int, int, int, str]],
+    chain_gap: int,
+) -> list[tuple[int, int, int, int, str]]:
+    """Chain co-linear match blocks separated by small gaps into single blocks.
+
+    Blocks that lie on the same diagonal (forward strand) or anti-diagonal
+    (reverse-complement strand) and whose query coordinates are separated by no
+    more than *chain_gap* base pairs are merged into one block.  This collapses
+    diagonals that exact k-mer matching has broken into many pieces (e.g. by
+    SNPs) into a small number of long lines, greatly reducing the number of
+    segments that must be drawn.
+
+    Indels shift the diagonal, so blocks either side of an indel stay separate
+    (a deliberate v1 choice — only strictly co-linear runs are joined).
+
+    Parameters
+    ----------
+    blocks : list of tuple
+        ``(query_start, query_end, target_start, target_end, strand)`` tuples,
+        with ``target_start < target_end`` and ``strand`` one of ``'+'`` / ``'-'``.
+    chain_gap : int
+        Maximum gap (bp, measured on the query axis) between consecutive blocks
+        on the same diagonal that will still be joined.  ``0`` disables chaining
+        and returns *blocks* unchanged.
+
+    Returns
+    -------
+    list of tuple
+        The chained blocks, in the same 5-tuple format.
+    """
+    if chain_gap <= 0 or len(blocks) <= 1:
+        return blocks
+
+    arr = np.asarray(
+        [(qs, qe, ts, te) for (qs, qe, ts, te, _s) in blocks], dtype=np.int64
+    )
+    strands = np.array([s for (_qs, _qe, _ts, _te, s) in blocks])
+    qs, qe, ts, te = arr[:, 0], arr[:, 1], arr[:, 2], arr[:, 3]
+
+    # Diagonal key: forward strand is constant t_start - q_start; reverse strand
+    # is constant q_start + t_end (as query advances, target retreats).
+    is_rev = strands == '-'
+    diag = np.where(is_rev, qs + te, ts - qs)
+    strand_code = is_rev.astype(np.int64)
+
+    # Sort by (strand, diagonal, query_start) so each co-linear run is contiguous.
+    order = np.lexsort((qs, diag, strand_code))
+    qs_o, qe_o, ts_o, te_o = qs[order], qe[order], ts[order], te[order]
+    diag_o, strand_o = diag[order], strand_code[order]
+
+    # Index the (strand, diagonal) groups, then shift every coordinate by
+    # group_index * BASE so distinct groups occupy non-overlapping value ranges
+    # separated by more than chain_gap.  A single global sorted-interval merge is
+    # then correct both within a group and across group boundaries (no running
+    # state leaks between groups).
+    grp_change = np.ones(len(qs_o), dtype=bool)
+    grp_change[1:] = (strand_o[1:] != strand_o[:-1]) | (diag_o[1:] != diag_o[:-1])
+    base_group = np.cumsum(grp_change) - 1
+    span = int(max(qe_o.max(), qs_o.max())) + chain_gap + 1
+    qs_shift = qs_o + base_group * span
+    qe_shift = qe_o + base_group * span
+
+    # Sorted-interval merge: a new chain starts at index 0 or wherever the next
+    # start lies more than chain_gap beyond the running max end so far.
+    running_end = np.maximum.accumulate(qe_shift)
+    is_new = np.ones(len(qs_o), dtype=bool)
+    is_new[1:] = qs_shift[1:] > running_end[:-1] + chain_gap
+    starts = np.flatnonzero(is_new)
+
+    # Reduce each chain: query span = [min qs, max qe]; target span = [min ts, max te].
+    chained_qs = qs_o[starts]
+    chained_qe = np.maximum.reduceat(qe_o, starts)
+    chained_ts = np.minimum.reduceat(ts_o, starts)
+    chained_te = np.maximum.reduceat(te_o, starts)
+    chained_strand = strand_o[starts]
+
+    result: list[tuple[int, int, int, int, str]] = []
+    for i in range(len(starts)):
+        strand = '-' if chained_strand[i] == 1 else '+'
+        result.append(
+            (
+                int(chained_qs[i]),
+                int(chained_qe[i]),
+                int(chained_ts[i]),
+                int(chained_te[i]),
+                strand,
+            )
+        )
+    return result
 
 
 class DotPlotter:
@@ -287,6 +416,9 @@ class DotPlotter:
         color_by_identity: bool = False,
         identity_palette: str = 'viridis',
         annotation: Optional['GffAnnotation'] = None,
+        chain_gap: int = 0,
+        rasterized: Union[bool, str] = 'auto',
+        rasterization_threshold: int = 50_000,
     ) -> matplotlib.figure.Figure:
         """Plot an all-vs-all dotplot grid.
 
@@ -348,7 +480,10 @@ class DotPlotter:
         title : str, optional
             Overall figure title. If ``None``, no title is added.
         dpi : int, optional
-            Resolution of the output image. Default is ``150``.
+            Resolution of the output image. Default is ``150``.  For vector
+            formats this only affects any rasterised match layer (see
+            *rasterized*); axes and labels remain resolution-independent.  Raise
+            it (e.g. ``dpi=300``) for a higher-resolution raster (PNG) figure.
         scale_sequences : bool, optional
             When ``True`` (default), subplot widths and heights are
             proportional to the lengths of the corresponding sequences so that
@@ -378,6 +513,20 @@ class DotPlotter:
             Each feature is drawn as a coloured square at its genomic
             position.  Sequence names in *annotation* that are absent from
             the index emit a warning.  Default is ``None``.
+        chain_gap : int, optional
+            When greater than ``0``, co-linear match blocks on the same diagonal
+            separated by up to *chain_gap* bp are chained into single lines
+            before drawing, greatly reducing the number of segments (and thus
+            render time and file size) for dense plots.  Default is ``0`` (off).
+        rasterized : bool or str, optional
+            Whether to rasterise the match layer.  ``'auto'`` (default) keeps it
+            true vector — infinitely zoomable in SVG/PDF — until a panel's
+            segment count exceeds *rasterization_threshold*, above which that
+            layer is rasterised at *dpi* to bound file size.  ``True`` / ``False``
+            force the behaviour.  Axes, ticks and labels always stay vector.
+        rasterization_threshold : int, optional
+            Segment count per strand/panel above which ``rasterized='auto'``
+            rasterises the layer.  Default is ``50_000``.
 
         Returns
         -------
@@ -474,6 +623,9 @@ class DotPlotter:
                     color_by_identity=color_by_identity,
                     identity_palette=identity_palette,
                     paf_alignment_override=effective_paf,
+                    chain_gap=chain_gap,
+                    rasterized=rasterized,
+                    rasterization_threshold=rasterization_threshold,
                 )
 
                 # Column label at top of each column (top row only), rotated.
@@ -520,6 +672,9 @@ class DotPlotter:
         color_by_identity: bool = False,
         identity_palette: str = 'viridis',
         paf_alignment_override: Optional['PafAlignment'] = None,
+        chain_gap: int = 0,
+        rasterized: Union[bool, str] = 'auto',
+        rasterization_threshold: int = 50_000,
     ) -> None:
         """Render a single comparison panel onto the given Axes.
 
@@ -566,6 +721,19 @@ class DotPlotter:
             record lookup.  Typically supplied from pre-computed
             :class:`~rusty_dot.paf_io.CrossIndex` records.
             Default is ``None``.
+        chain_gap : int, optional
+            When greater than ``0``, co-linear match blocks on the same diagonal
+            separated by up to *chain_gap* bp (on the query axis) are chained
+            into a single line before drawing, reducing the segment count.
+            Ignored for identity-coloured rendering.  Default is ``0`` (off).
+        rasterized : bool or str, optional
+            Controls whether the match layer is rasterised.  ``'auto'`` (default)
+            keeps it true vector when the segment count is at or below
+            *rasterization_threshold* and rasterises it otherwise; ``True`` /
+            ``False`` force the choice.  Axes, ticks and labels always stay vector.
+        rasterization_threshold : int, optional
+            Segment count above which ``rasterized='auto'`` switches a layer to
+            rasterised.  Default is ``50_000``.
         """
         q_len = self.index.get_sequence_length(query_name)
         t_len = self.index.get_sequence_length(target_name)
@@ -602,64 +770,54 @@ class DotPlotter:
             )
             use_paf = False
 
-        if use_paf:
-            # Use PAF records for this sequence pair.
-            # Records from CrossIndex.compute_matches() store un-prefixed names;
-            # use display names (prefix stripped) for the lookup.
-            cmap = plt.get_cmap(identity_palette) if color_by_identity else None
-            norm = mcolors.Normalize(vmin=0, vmax=1) if color_by_identity else None
-            records = [
-                r
-                for r in effective_paf.records  # type: ignore[union-attr]
-                if r.query_name == display_q and r.target_name == display_t
-            ]
-            for rec in records:
-                if min_length > 0 and rec.query_aligned_len < min_length:
-                    continue
-                if color_by_identity:
-                    identity = (
-                        rec.residue_matches / rec.alignment_block_len
-                        if rec.alignment_block_len > 0
-                        else 1.0
-                    )
-                    color = cmap(norm(identity))  # type: ignore[misc]
-                else:
-                    color = rc_color if rec.strand == '-' else dot_color
-                if rec.strand == '-':
-                    xs = [rec.target_end, rec.target_start]
-                else:
-                    xs = [rec.target_start, rec.target_end]
-                ax.plot(
-                    xs,
-                    [rec.query_start, rec.query_end],
-                    color=color,
-                    linewidth=dot_size,
-                    alpha=0.7,
-                )
-        else:
-            # Draw match lines/dots from k-mer index; RC matches are drawn as
-            # anti-diagonal lines.
-            matches = self.index.compare_sequences_stranded(
-                query_name, target_name, merge
+        if use_paf and color_by_identity:
+            # Identity-coloured PAF records: one segment per record with a
+            # per-segment colour.  Chaining is not applied here because each
+            # record carries its own identity value.
+            records = self._records_for_pair(effective_paf, display_q, display_t)
+            self._draw_identity_records(
+                ax,
+                records,
+                identity_palette=identity_palette,
+                dot_size=dot_size,
+                min_length=min_length,
+                rasterized=rasterized,
+                rasterization_threshold=rasterization_threshold,
             )
-            for q_start, q_end, t_start, t_end, strand in matches:
-                if min_length > 0 and (q_end - q_start) < min_length:
-                    continue
-                if strand == '-':
-                    # Reverse complement: as query advances (q_start→q_end) the
-                    # target position retreats (t_end→t_start).
-                    xs = [t_end, t_start]
-                    color = rc_color
-                else:
-                    xs = [t_start, t_end]
-                    color = dot_color
-                ax.plot(
-                    xs,
-                    [q_start, q_end],
-                    color=color,
-                    linewidth=dot_size,
-                    alpha=0.7,
-                )
+        else:
+            # Strand-coloured rendering, from either pre-computed PAF records or
+            # the k-mer engine.  Both produce (qs, qe, ts, te, strand) blocks.
+            if use_paf:
+                records = self._records_for_pair(effective_paf, display_q, display_t)
+                blocks = [
+                    (
+                        rec.query_start,
+                        rec.query_end,
+                        rec.target_start,
+                        rec.target_end,
+                        rec.strand,
+                    )
+                    for rec in records
+                ]
+            else:
+                blocks = [
+                    (qs, qe, ts, te, strand)
+                    for qs, qe, ts, te, strand in self.index.compare_sequences_stranded(
+                        query_name, target_name, merge
+                    )
+                ]
+            if chain_gap > 0:
+                blocks = _chain_blocks(blocks, chain_gap)
+            self._draw_stranded_blocks(
+                ax,
+                blocks,
+                dot_color=dot_color,
+                rc_color=rc_color,
+                dot_size=dot_size,
+                min_length=min_length,
+                rasterized=rasterized,
+                rasterization_threshold=rasterization_threshold,
+            )
 
         ax.set_xlim(0, t_len)
         ax.set_ylim(0, q_len)
@@ -670,6 +828,195 @@ class DotPlotter:
             ax.set_ylabel(display_q, fontsize=8)
         ax.tick_params(axis='both', labelsize=6)
         ax.set_aspect('auto')
+
+    @staticmethod
+    def _draw_stranded_blocks(
+        ax: plt.Axes,
+        blocks: list[tuple[int, int, int, int, str]],
+        dot_color: str,
+        rc_color: str,
+        dot_size: float,
+        min_length: int,
+        rasterized: Union[bool, str],
+        rasterization_threshold: int,
+    ) -> None:
+        """Draw strand-coloured match blocks as vectorised LineCollections.
+
+        Forward (``+``) blocks are drawn as diagonal segments and reverse (``-``)
+        blocks as anti-diagonal segments, each strand batched into a single
+        ``LineCollection`` built from a NumPy ``(N, 2, 2)`` array.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Axes to draw on.
+        blocks : list of tuple
+            ``(query_start, query_end, target_start, target_end, strand)`` blocks.
+        dot_color, rc_color : str
+            Colours for forward and reverse-complement matches.
+        dot_size : float
+            Line width in points.
+        min_length : int
+            Skip blocks whose query length is below this (``0`` = keep all).
+        rasterized : bool or str
+            Passed to :func:`_resolve_rasterized` per strand collection.
+        rasterization_threshold : int
+            Segment-count threshold for ``rasterized='auto'``.
+        """
+        if not blocks:
+            return
+        arr = np.asarray(
+            [(qs, qe, ts, te) for (qs, qe, ts, te, _s) in blocks], dtype=float
+        )
+        strand = np.array([s for (_qs, _qe, _ts, _te, s) in blocks])
+        lengths = arr[:, 1] - arr[:, 0]
+        keep = lengths >= min_length if min_length > 0 else np.ones(len(arr), bool)
+
+        fwd = arr[keep & (strand != '-')]
+        rev = arr[keep & (strand == '-')]
+
+        if len(fwd):
+            # Forward: (t_start, q_start) -> (t_end, q_end).
+            fwd_seg = np.stack(
+                [
+                    np.column_stack([fwd[:, 2], fwd[:, 0]]),
+                    np.column_stack([fwd[:, 3], fwd[:, 1]]),
+                ],
+                axis=1,
+            )
+            ax.add_collection(
+                LineCollection(
+                    fwd_seg,
+                    colors=dot_color,
+                    linewidths=dot_size,
+                    alpha=0.7,
+                    rasterized=_resolve_rasterized(
+                        len(fwd_seg), rasterized, rasterization_threshold
+                    ),
+                )
+            )
+        if len(rev):
+            # Reverse complement: (t_end, q_start) -> (t_start, q_end).
+            rev_seg = np.stack(
+                [
+                    np.column_stack([rev[:, 3], rev[:, 0]]),
+                    np.column_stack([rev[:, 2], rev[:, 1]]),
+                ],
+                axis=1,
+            )
+            ax.add_collection(
+                LineCollection(
+                    rev_seg,
+                    colors=rc_color,
+                    linewidths=dot_size,
+                    alpha=0.7,
+                    rasterized=_resolve_rasterized(
+                        len(rev_seg), rasterized, rasterization_threshold
+                    ),
+                )
+            )
+
+    @staticmethod
+    def _draw_identity_records(
+        ax: plt.Axes,
+        records: list,
+        identity_palette: str,
+        dot_size: float,
+        min_length: int,
+        rasterized: Union[bool, str],
+        rasterization_threshold: int,
+    ) -> None:
+        """Draw PAF records coloured by per-record identity.
+
+        Each record becomes one segment; colours come from the record identity
+        (``residue_matches / alignment_block_len``) mapped through
+        *identity_palette*.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Axes to draw on.
+        records : list of PafRecord
+            Records for this panel's sequence pair.
+        identity_palette : str
+            Matplotlib colormap name for identity colouring.
+        dot_size : float
+            Line width in points.
+        min_length : int
+            Skip records whose query aligned length is below this.
+        rasterized : bool or str
+            Passed to :func:`_resolve_rasterized`.
+        rasterization_threshold : int
+            Segment-count threshold for ``rasterized='auto'``.
+        """
+        cmap = plt.get_cmap(identity_palette)
+        norm = mcolors.Normalize(vmin=0, vmax=1)
+        segments: list[list[tuple[float, float]]] = []
+        colors: list = []
+        for rec in records:
+            if min_length > 0 and rec.query_aligned_len < min_length:
+                continue
+            identity = (
+                rec.residue_matches / rec.alignment_block_len
+                if rec.alignment_block_len > 0
+                else 1.0
+            )
+            color = cmap(norm(identity))
+            if rec.strand == '-':
+                xs = (rec.target_end, rec.target_start)
+            else:
+                xs = (rec.target_start, rec.target_end)
+            segments.append([(xs[0], rec.query_start), (xs[1], rec.query_end)])
+            colors.append(color)
+        if segments:
+            ax.add_collection(
+                LineCollection(
+                    segments,
+                    colors=colors,
+                    linewidths=dot_size,
+                    alpha=0.7,
+                    rasterized=_resolve_rasterized(
+                        len(segments), rasterized, rasterization_threshold
+                    ),
+                )
+            )
+
+    def _records_for_pair(
+        self,
+        effective_paf: 'PafAlignment',
+        display_q: str,
+        display_t: str,
+    ) -> list:
+        """Return the PAF records for one ``(query, target)`` pair.
+
+        A ``(query_name, target_name) -> list[PafRecord]`` index is built once
+        per unique ``PafAlignment`` object and cached on the plotter, so panel
+        rendering does not rescan every record for each of the ``N × N`` panels.
+
+        Parameters
+        ----------
+        effective_paf : PafAlignment
+            The alignment whose records should be indexed.
+        display_q : str
+            Query sequence display name (group prefix already stripped).
+        display_t : str
+            Target sequence display name (group prefix already stripped).
+
+        Returns
+        -------
+        list of PafRecord
+            Records matching the requested pair (empty list if none).
+        """
+        cache = getattr(self, '_paf_record_index_cache', None)
+        # Rebuild the index only when the PafAlignment object changes identity
+        # (accessing ``.records`` can itself be an O(records) rebuild).
+        if cache is None or cache[0] is not effective_paf:
+            index: dict[tuple[str, str], list] = {}
+            for r in effective_paf.records:
+                index.setdefault((r.query_name, r.target_name), []).append(r)
+            cache = (effective_paf, index)
+            self._paf_record_index_cache = cache
+        return cache[1].get((display_q, display_t), [])
 
     def _draw_annotation_squares(
         self,
@@ -692,17 +1039,24 @@ class DotPlotter:
             The annotation object providing features and colours.
         """
         features = annotation.get_features_for_sequence(seq_name)
+        # Batch all feature squares into a single PatchCollection rather than
+        # adding one artist per feature.
+        rects = []
+        facecolors = []
         for feat in features:
             width = feat.end - feat.start
-            rect = mpatches.Rectangle(
-                (feat.start, feat.start),
-                width,
-                width,
-                facecolor=annotation.get_color(feat.feature_type),
-                edgecolor='none',
-                alpha=0.35,
+            rects.append(mpatches.Rectangle((feat.start, feat.start), width, width))
+            facecolors.append(annotation.get_color(feat.feature_type))
+        if rects:
+            ax.add_collection(
+                PatchCollection(
+                    rects,
+                    facecolors=facecolors,
+                    edgecolors='none',
+                    alpha=0.35,
+                    match_original=False,
+                )
             )
-            ax.add_patch(rect)
 
     def plot_annotation_legend(
         self,
@@ -776,6 +1130,9 @@ class DotPlotter:
         identity_palette: str = 'viridis',
         annotation: Optional['GffAnnotation'] = None,
         annotation_track_size: float = 0.4,
+        chain_gap: int = 0,
+        rasterized: Union[bool, str] = 'auto',
+        rasterization_threshold: int = 50_000,
     ) -> matplotlib.figure.Figure:
         """Plot a single pairwise dotplot.
 
@@ -852,6 +1209,17 @@ class DotPlotter:
         annotation_track_size : float, optional
             Height/width in inches of each annotation track.
             Default is ``0.4``.
+        chain_gap : int, optional
+            When greater than ``0``, chain co-linear match blocks on the same
+            diagonal separated by up to *chain_gap* bp into single lines before
+            drawing.  Default is ``0`` (off).  See :meth:`plot`.
+        rasterized : bool or str, optional
+            Whether to rasterise the match layer; ``'auto'`` (default) keeps it
+            true vector until the segment count exceeds
+            *rasterization_threshold*.  See :meth:`plot`.
+        rasterization_threshold : int, optional
+            Segment count above which ``rasterized='auto'`` rasterises the
+            layer.  Default is ``50_000``.
 
         Returns
         -------
@@ -941,6 +1309,9 @@ class DotPlotter:
             color_by_identity=color_by_identity,
             identity_palette=identity_palette,
             paf_alignment_override=effective_paf,
+            chain_gap=chain_gap,
+            rasterized=rasterized,
+            rasterization_threshold=rasterization_threshold,
         )
 
         if has_tracks:

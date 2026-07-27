@@ -8,8 +8,10 @@ Written in Rust with PyO3 python bindings.
 ## Features
 
 - Read FASTA / gzipped FASTA files via [needletail](https://docs.rs/needletail)
-- Build FM-indexes per sequence using [rust-bio](https://docs.rs/bio)
-- K-mer set intersection for efficient shared k-mer lookup
+- Build a rolling-hash [ntHash](https://github.com/bcgsc/ntHash) k-mer index per
+  sequence in a single O(n) pass, in parallel across sequences (via
+  [rayon](https://docs.rs/rayon))
+- Hash-based shared k-mer lookup, byte-verified for exact matching
 - **Both-strand k-mer matching**: forward (`+`) and reverse-complement (`-`)
 hits detected via `compare_sequences_stranded`
 - Merge sequential k-mer runs into contiguous match blocks for both orientations:
@@ -18,7 +20,8 @@ hits detected via `compare_sequences_stranded`
   - RC co-diagonal merging — both arms run in same direction (`py_merge_rev_fwd_runs`)
   - Unified strand-aware entry-point (`py_merge_runs`)
 - PAF format output for alignment records
-- FM-index serialization/deserialization with [serde](https://docs.rs/serde) + postcard
+- Index serialization/deserialization with [serde](https://docs.rs/serde) +
+  postcard (stores sequence bytes; the k-mer index is rebuilt on load)
 - All-vs-all dotplot visualization with matplotlib:
   - Forward hits drawn in **blue** (configurable via `dot_color`)
   - Reverse-complement hits drawn in **red** (configurable via `rc_color`)
@@ -50,10 +53,33 @@ pip install maturin
 maturin develop --release
 ```
 
+## Performance
+
+rusty-dot is built for large sequences and many-contig genomes:
+
+- **Always build with `--release`.** Debug builds are dramatically slower; the
+  release profile additionally enables link-time optimisation.
+- **Parallel index construction.** Building the per-sequence k-mer index for the
+  records of a FASTA file, and computing all-vs-all pairwise comparisons, run
+  across all available CPU cores (rayon) with the Python GIL released.
+- **Rolling-hash matching.** Each sequence is scanned once with ntHash to build
+  forward and reverse-complement hash → position maps; matching intersects these
+  maps and byte-verifies representatives, so there is no suffix-array
+  construction on the comparison path.
+- **Vector-first, high-resolution plotting.** Dotplot matches are built as NumPy
+  segment arrays and drawn with one `LineCollection` per panel/strand. By default
+  (`rasterized='auto'`) the match layer is **true vector** — infinitely zoomable in
+  SVG/PDF — until a panel exceeds `rasterization_threshold` segments, above which
+  only that layer is rasterised at `dpi` to bound file size (axes and labels
+  always stay vector; raise `dpi` for a higher-resolution PNG). Enable
+  `chain_gap=<bp>` to chain co-linear matches
+  across gaps into a few long lines, cutting render time and file size for dense,
+  genome-scale plots.
+
 ## Quick Start — single multi-FASTA index
 
-Each sequence added to a `SequenceIndex` gets its **own independent FM-index**
-(rust-bio FM-indexes are read-only once built and cannot be extended).
+Each sequence added to a `SequenceIndex` gets its **own independent k-mer
+index**.
 
 Calling `add_sequence` or `load_fasta` multiple times **accumulates** sequences
 — it never merges or replaces the existing collection.
@@ -69,7 +95,7 @@ from rusty_dot import SequenceIndex
 from rusty_dot.dotplot import DotPlotter
 
 # Build an index from a multi-sequence FASTA file
-# Each sequence in the file gets its own independent FM-index entry
+# Each sequence in the file gets its own independent k-mer index entry
 idx = SequenceIndex(k=15)
 names = idx.load_fasta("assembly.fasta")
 

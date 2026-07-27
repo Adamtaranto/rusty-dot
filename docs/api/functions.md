@@ -1,7 +1,9 @@
 # Low-Level Functions
 
 These functions are implemented in Rust and exposed via PyO3.
-They provide fine-grained access to the underlying FM-index and k-mer machinery.
+They provide fine-grained access to the underlying k-mer machinery.  (Note that
+`py_find_kmer_coords` performs a one-off FM-index search and is independent of the
+rolling-hash index used by `SequenceIndex` for comparisons.)
 For most use cases, the [`SequenceIndex`](sequence_index.md) class is more convenient.
 
 ## FASTA I/O
