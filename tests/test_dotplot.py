@@ -1235,3 +1235,74 @@ def test_plot_panel_chain_gap_reduces_segments():
 
     assert n_unchained > 0
     assert n_chained <= n_unchained
+
+
+# ---------------------------------------------------------------------------
+# Reverse-oriented contig rendering (GAP 3)
+# ---------------------------------------------------------------------------
+
+
+def _forward_paf_alignment():
+    """A PafAlignment with a single forward match: query 0-50 → target 0-50."""
+    from rusty_dot.paf_io import PafAlignment, PafRecord
+
+    rec = PafRecord.from_line('q\t100\t0\t50\t+\tt\t100\t0\t50\t48\t50\t255')
+    return PafAlignment.from_records([rec])
+
+
+def test_reverse_contig_mirrors_query_axis():
+    """reverse_contigs mirrors the query coordinates (q → q_len - q)."""
+    aln = _forward_paf_alignment()
+    plotter = DotPlotter(aln)
+
+    fig_fwd = plotter.plot(query_names=['q'], target_names=['t'])
+    fwd_segs = _panel_segments(fig_fwd.axes[0])
+    plt.close(fig_fwd)
+
+    fig_rev = plotter.plot(query_names=['q'], target_names=['t'], reverse_contigs={'q'})
+    rev_segs = _panel_segments(fig_rev.axes[0])
+    plt.close(fig_rev)
+
+    assert fwd_segs and rev_segs
+    # Forward match occupies query 0-50; the reversed rendering mirrors it to
+    # query 50-100 (q_len = 100), so the maximum y-coordinate jumps to ~100.
+    fwd_max_y = max(max(s[1], s[3]) for s in fwd_segs)
+    rev_max_y = max(max(s[1], s[3]) for s in rev_segs)
+    assert fwd_max_y == 50
+    assert rev_max_y == 100
+
+
+def test_reverse_contigs_empty_leaves_unchanged():
+    """Passing an empty set leaves the panel identical to the default."""
+    aln = _forward_paf_alignment()
+    plotter = DotPlotter(aln)
+
+    fig_a = plotter.plot(query_names=['q'], target_names=['t'])
+    segs_a = _panel_segments(fig_a.axes[0])
+    plt.close(fig_a)
+
+    fig_b = plotter.plot(query_names=['q'], target_names=['t'], reverse_contigs=set())
+    segs_b = _panel_segments(fig_b.axes[0])
+    plt.close(fig_b)
+
+    assert segs_a == segs_b
+
+
+def test_reverse_contigs_auto_from_pafalignment():
+    """When reverse_contigs is None the set is pulled from the PafAlignment."""
+    from rusty_dot.paf_io import PafAlignment, PafRecord
+
+    recs = [
+        PafRecord.from_line('qr\t300\t0\t150\t-\tref\t1000\t850\t1000\t140\t150\t255'),
+        PafRecord.from_line('qr\t300\t150\t300\t-\tref\t1000\t700\t850\t140\t150\t255'),
+    ]
+    aln = PafAlignment.from_records(recs)
+    aln.reorder_contigs(['qr'], ['ref'])  # populates reversed_contigs
+    assert aln.reversed_contigs == {'qr'}
+
+    plotter = DotPlotter(aln)
+    # No reverse_contigs argument → auto-pull flags 'qr' as reversed.
+    fig = plotter.plot(query_names=['qr'], target_names=['ref'])
+    segs = _panel_segments(fig.axes[0])
+    plt.close(fig)
+    assert segs  # rendered without error using the auto-detected reversed set

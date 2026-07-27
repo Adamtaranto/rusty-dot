@@ -9,6 +9,7 @@ Reference: https://github.com/rrwick/Autocycler/blob/b0523350898faac71686251ec58
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
@@ -21,7 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from rusty_dot._rusty_dot import SequenceIndex
-from rusty_dot.paf_io import PafAlignment
+from rusty_dot.paf_io import CrossIndex, PafAlignment
 
 if TYPE_CHECKING:
     from rusty_dot.annotation import GffAnnotation
@@ -419,6 +420,7 @@ class DotPlotter:
         chain_gap: int = 0,
         rasterized: Union[bool, str] = 'auto',
         rasterization_threshold: int = 50_000,
+        reverse_contigs: Optional[set[str]] = None,
     ) -> matplotlib.figure.Figure:
         """Plot an all-vs-all dotplot grid.
 
@@ -527,6 +529,15 @@ class DotPlotter:
         rasterization_threshold : int, optional
             Segment count per strand/panel above which ``rasterized='auto'``
             rasterises the layer.  Default is ``50_000``.
+        reverse_contigs : set[str] or None, optional
+            Un-prefixed query (row) contig names to render reverse-complemented
+            so reverse-oriented contigs read along the main diagonal.  When
+            ``None`` (default) the set is pulled automatically from the index:
+            :meth:`~rusty_dot.paf_io.CrossIndex.reversed_contigs` for the
+            *query_group* of a ``CrossIndex``, or
+            :attr:`~rusty_dot.paf_io.PafAlignment.reversed_contigs` for a
+            ``PafAlignment`` (both populated by a prior ``reorder`` call).  Pass
+            an explicit set (including ``set()`` to disable) to override.
 
         Returns
         -------
@@ -558,6 +569,17 @@ class DotPlotter:
         # Use the per-call override if available, otherwise fall back to the
         # paf_alignment set at construction time.
         effective_paf = paf_override if paf_override is not None else self.paf_alignment
+
+        # Resolve the set of reverse-oriented query contigs (un-prefixed names).
+        # An explicit argument wins; otherwise auto-pull from the index.
+        if reverse_contigs is not None:
+            reverse_set = set(reverse_contigs)
+        elif isinstance(self.index, CrossIndex) and query_group is not None:
+            reverse_set = self.index.reversed_contigs(query_group)
+        elif isinstance(self.index, PafAlignment):
+            reverse_set = set(self.index.reversed_contigs)
+        else:
+            reverse_set = set()
 
         # Warn about annotation sequences missing from the index.
         if annotation is not None:
@@ -626,6 +648,7 @@ class DotPlotter:
                     chain_gap=chain_gap,
                     rasterized=rasterized,
                     rasterization_threshold=rasterization_threshold,
+                    reverse_query=self._strip_group_prefix(q_name) in reverse_set,
                 )
 
                 # Column label at top of each column (top row only), rotated.
@@ -675,6 +698,7 @@ class DotPlotter:
         chain_gap: int = 0,
         rasterized: Union[bool, str] = 'auto',
         rasterization_threshold: int = 50_000,
+        reverse_query: bool = False,
     ) -> None:
         """Render a single comparison panel onto the given Axes.
 
@@ -734,6 +758,12 @@ class DotPlotter:
         rasterization_threshold : int, optional
             Segment count above which ``rasterized='auto'`` switches a layer to
             rasterised.  Default is ``50_000``.
+        reverse_query : bool, optional
+            When ``True`` the query (row) contig is rendered reverse-complemented:
+            every match's query coordinates are mirrored (``q → q_len - q``) and
+            its strand colour flipped, so a reverse-oriented contig reads along
+            the main diagonal.  The underlying records are not modified.
+            Default is ``False``.
         """
         q_len = self.index.get_sequence_length(query_name)
         t_len = self.index.get_sequence_length(target_name)
@@ -775,6 +805,18 @@ class DotPlotter:
             # per-segment colour.  Chaining is not applied here because each
             # record carries its own identity value.
             records = self._records_for_pair(effective_paf, display_q, display_t)
+            if reverse_query:
+                # Mirror the query coordinates and flip the strand so the
+                # contig renders reverse-complemented (originals untouched).
+                records = [
+                    dataclasses.replace(
+                        rec,
+                        query_start=q_len - rec.query_end,
+                        query_end=q_len - rec.query_start,
+                        strand='-' if rec.strand == '+' else '+',
+                    )
+                    for rec in records
+                ]
             self._draw_identity_records(
                 ax,
                 records,
@@ -805,6 +847,19 @@ class DotPlotter:
                     for qs, qe, ts, te, strand in self.index.compare_sequences_stranded(
                         query_name, target_name, merge
                     )
+                ]
+            if reverse_query:
+                # Mirror the query coordinates and flip the strand so the
+                # contig renders reverse-complemented (originals untouched).
+                blocks = [
+                    (
+                        q_len - qe,
+                        q_len - qs,
+                        ts,
+                        te,
+                        '-' if strand == '+' else '+',
+                    )
+                    for qs, qe, ts, te, strand in blocks
                 ]
             if chain_gap > 0:
                 blocks = _chain_blocks(blocks, chain_gap)

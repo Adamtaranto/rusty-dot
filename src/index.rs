@@ -22,6 +22,119 @@ use std::collections::HashMap;
 /// Stranded match coordinates: (query_start, query_end, target_start, target_end, strand).
 type StrandedMatch = (usize, usize, usize, usize, String);
 
+/// Squared d-genies gravity weight of a single match: `(1 + euclidean_length)^2`,
+/// where the euclidean length spans both the query and target axes.  Large,
+/// collinear blocks dominate, so a contig's best chromosome and sort position are
+/// driven by its major alignments rather than short spurious hits.
+fn match_weight(c: &CoordPair) -> f64 {
+    let dx = c.target_end as f64 - c.target_start as f64;
+    let dy = c.query_end as f64 - c.query_start as f64;
+    let eucl = (dx * dx + dy * dy).sqrt();
+    (1.0 + eucl).powi(2)
+}
+
+/// Order `items` along the concatenated `others` axis by gravity centre, following
+/// the d-genies algorithm.
+///
+/// For each item we sum the squared match weights (`match_weight`) against every
+/// "other" and assign the item to its best-matching other (argmax of the summed
+/// weight).  Its sort position is the weighted mean of its match mid-points on the
+/// concatenated other axis, using *only* the matches to that best other, normalised
+/// by the total other length.  Matched items sort by ascending position (ties broken
+/// by descending length then name); items with no matches sort last, by descending
+/// length then name.
+///
+/// `self_is_query` selects the axis convention: the shared `match_map` is always
+/// keyed `(query, target)`, so when ordering targets we swap the lookup key and read
+/// the query-axis mid-points instead of the target-axis mid-points.
+fn gravity_order(
+    items: &[String],
+    others: &[String],
+    match_map: &HashMap<(String, String), Vec<CoordPair>>,
+    seq_len: &HashMap<String, usize>,
+    self_is_query: bool,
+) -> Vec<String> {
+    // Cumulative offsets so each match mid-point becomes an absolute coordinate
+    // along the concatenated other axis (in the given `others` order).
+    let mut other_offsets: HashMap<&str, f64> = HashMap::new();
+    let mut acc = 0f64;
+    for o in others {
+        other_offsets.insert(o.as_str(), acc);
+        acc += seq_len[o.as_str()] as f64;
+    }
+    let total_other = acc.max(1.0);
+
+    let mid_of = |c: &CoordPair| -> f64 {
+        if self_is_query {
+            (c.target_start as f64 + c.target_end as f64) / 2.0
+        } else {
+            (c.query_start as f64 + c.query_end as f64) / 2.0
+        }
+    };
+    let key_of = |it: &str, o: &str| -> (String, String) {
+        if self_is_query {
+            (it.to_string(), o.to_string())
+        } else {
+            (o.to_string(), it.to_string())
+        }
+    };
+
+    let mut matched: Vec<(f64, usize, String)> = Vec::new();
+    let mut unmatched: Vec<(usize, String)> = Vec::new();
+
+    for it in items {
+        // Total squared weight of this item against each other; pick the argmax.
+        // The first other reaching the maximum wins (strict `>`), matching the
+        // Python implementation's tie behaviour.
+        let mut best_other: Option<&str> = None;
+        let mut best_w = 0f64;
+        for o in others {
+            let ms = &match_map[&key_of(it, o)];
+            if ms.is_empty() {
+                continue;
+            }
+            let w: f64 = ms.iter().map(match_weight).sum();
+            if w > best_w {
+                best_w = w;
+                best_other = Some(o.as_str());
+            }
+        }
+
+        match best_other {
+            None => unmatched.push((seq_len[it.as_str()], it.clone())),
+            Some(bo) => {
+                let ms = &match_map[&key_of(it, bo)];
+                let offset = other_offsets[bo];
+                let mut wsum = 0f64;
+                let mut wpos = 0f64;
+                for c in ms {
+                    let w = match_weight(c);
+                    wsum += w;
+                    wpos += w * (offset + mid_of(c));
+                }
+                let pos = wpos / wsum / total_other;
+                matched.push((pos, seq_len[it.as_str()], it.clone()));
+            }
+        }
+    }
+
+    // Matched: ascending gravity, then descending length, then name (determinism).
+    matched.sort_by(|a, b| {
+        a.0.partial_cmp(&b.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.1.cmp(&a.1))
+            .then_with(|| a.2.cmp(&b.2))
+    });
+    // Unmatched: descending length, then name.
+    unmatched.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+
+    matched
+        .into_iter()
+        .map(|(_, _, n)| n)
+        .chain(unmatched.into_iter().map(|(_, n)| n))
+        .collect()
+}
+
 /// Build the in-memory index data (rolling-hash k-mer index) for a single sequence.
 ///
 /// This is the CPU-heavy per-sequence work (a single O(n) ntHash scan building
@@ -579,6 +692,36 @@ impl SequenceIndex {
         }
     }
 
+    /// Get the stored sequence for a named sequence.
+    ///
+    /// Returns the original sequence bases retained when the sequence was added,
+    /// decoded as a UTF-8 string.  Used to write (optionally reordered and
+    /// reoriented) FASTA output.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    ///     The sequence name.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///     The sequence bases.
+    ///
+    /// Raises
+    /// ------
+    /// KeyError
+    ///     If the sequence name is not found.
+    pub fn get_sequence(&self, name: &str) -> PyResult<String> {
+        match self.sequences.get(name) {
+            Some(data) => Ok(String::from_utf8_lossy(&data.seq_bytes).into_owned()),
+            None => Err(pyo3::exceptions::PyKeyError::new_err(format!(
+                "Sequence '{}' not found in index",
+                name
+            ))),
+        }
+    }
+
     /// Find the shared k-mers between two sequences and return their coordinates.
     ///
     /// Uses the smaller k-mer set for lookup efficiency.
@@ -755,116 +898,22 @@ impl SequenceIndex {
             pair_list.iter().cloned().zip(results.into_iter()).collect()
         };
 
-        let total_target_len: usize = target_names
+        // Sequence lengths for every name involved (used for offsets and the
+        // unmatched-contig length tie-break).
+        let seq_len: HashMap<String, usize> = query_names
             .iter()
-            .map(|n| self.sequences[n.as_str()].seq_len)
-            .sum::<usize>()
-            .max(1);
-
-        // Build cumulative target offsets so we can express each target position as an
-        // absolute coordinate across the concatenated target.
-        let mut target_offsets: HashMap<String, usize> = HashMap::new();
-        let mut offset = 0usize;
-        for n in &target_names {
-            target_offsets.insert(n.clone(), offset);
-            offset += self.sequences[n.as_str()].seq_len;
-        }
-
-        // Gravity of each query contig = weighted mean of match mid-points on the target axis.
-        let mut q_gravity: Vec<(f64, String)> = Vec::new();
-        for q in &query_names {
-            let mut weight_sum = 0.0f64;
-            let mut weighted_pos = 0.0f64;
-            for t in &target_names {
-                let matches = &match_map[&(q.clone(), t.clone())];
-                let t_offset = *target_offsets.get(t).unwrap_or(&0) as f64;
-                for c in matches {
-                    let size = (c.target_end - c.target_start) as f64;
-                    let mid = t_offset + (c.target_start as f64 + c.target_end as f64) / 2.0;
-                    weighted_pos += size * mid;
-                    weight_sum += size;
-                }
-            }
-            let gravity = if weight_sum > 0.0 {
-                weighted_pos / weight_sum / total_target_len as f64
-            } else {
-                f64::MAX // unmatched contigs sort to the end
-            };
-            q_gravity.push((gravity, q.clone()));
-        }
-        // Sort: matched contigs by ascending gravity, then unmatched by descending length.
-        let mut matched_q: Vec<(f64, String)> = q_gravity
-            .iter()
-            .filter(|(g, _)| *g < f64::MAX)
-            .cloned()
-            .collect();
-        let mut unmatched_q: Vec<(usize, String)> = q_gravity
-            .iter()
-            .filter(|(g, _)| *g >= f64::MAX)
-            .map(|(_, n)| (self.sequences[n.as_str()].seq_len, n.clone()))
-            .collect();
-        matched_q.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        unmatched_q.sort_by_key(|b| std::cmp::Reverse(b.0)); // descending length
-        let q_gravity: Vec<String> = matched_q
-            .into_iter()
-            .map(|(_, n)| n)
-            .chain(unmatched_q.into_iter().map(|(_, n)| n))
+            .chain(target_names.iter())
+            .map(|n| (n.clone(), self.sequences[n.as_str()].seq_len))
             .collect();
 
-        let total_query_len: usize = query_names
-            .iter()
-            .map(|n| self.sequences[n.as_str()].seq_len)
-            .sum::<usize>()
-            .max(1);
+        // d-genies groups query contigs against the *displayed* target order, so we
+        // order the targets first (using the queries in their input order for the
+        // concatenated query axis) and then order the queries against the freshly
+        // sorted target axis.  This asymmetry is intentional and deterministic.
+        let sorted_t = gravity_order(&target_names, &query_names, &match_map, &seq_len, false);
+        let sorted_q = gravity_order(&query_names, &sorted_t, &match_map, &seq_len, true);
 
-        let mut query_offsets: HashMap<String, usize> = HashMap::new();
-        let mut q_offset = 0usize;
-        for n in &query_names {
-            query_offsets.insert(n.clone(), q_offset);
-            q_offset += self.sequences[n.as_str()].seq_len;
-        }
-
-        let mut t_gravity: Vec<(f64, String)> = Vec::new();
-        for t in &target_names {
-            let mut weight_sum = 0.0f64;
-            let mut weighted_pos = 0.0f64;
-            for q in &query_names {
-                let matches = &match_map[&(q.clone(), t.clone())];
-                let q_offset = *query_offsets.get(q).unwrap_or(&0) as f64;
-                for c in matches {
-                    let size = (c.query_end - c.query_start) as f64;
-                    let mid = q_offset + (c.query_start as f64 + c.query_end as f64) / 2.0;
-                    weighted_pos += size * mid;
-                    weight_sum += size;
-                }
-            }
-            let gravity = if weight_sum > 0.0 {
-                weighted_pos / weight_sum / total_query_len as f64
-            } else {
-                f64::MAX
-            };
-            t_gravity.push((gravity, t.clone()));
-        }
-        // Sort: matched contigs by ascending gravity, then unmatched by descending length.
-        let mut matched_t: Vec<(f64, String)> = t_gravity
-            .iter()
-            .filter(|(g, _)| *g < f64::MAX)
-            .cloned()
-            .collect();
-        let mut unmatched_t: Vec<(usize, String)> = t_gravity
-            .iter()
-            .filter(|(g, _)| *g >= f64::MAX)
-            .map(|(_, n)| (self.sequences[n.as_str()].seq_len, n.clone()))
-            .collect();
-        matched_t.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        unmatched_t.sort_by_key(|b| std::cmp::Reverse(b.0)); // descending length
-        let t_gravity: Vec<String> = matched_t
-            .into_iter()
-            .map(|(_, n)| n)
-            .chain(unmatched_t.into_iter().map(|(_, n)| n))
-            .collect();
-
-        Ok((q_gravity, t_gravity))
+        Ok((sorted_q, sorted_t))
     }
 
     /// Get PAF-formatted strings for a pair of sequences.
@@ -1065,5 +1114,86 @@ impl SequenceIndex {
             self.k,
             self.sequences.len()
         )
+    }
+}
+
+#[cfg(test)]
+mod gravity_tests {
+    use super::*;
+
+    /// Build a forward-strand `CoordPair` (strand is irrelevant to gravity).
+    fn cp(qs: usize, qe: usize, ts: usize, te: usize) -> CoordPair {
+        CoordPair {
+            query_start: qs,
+            query_end: qe,
+            target_start: ts,
+            target_end: te,
+            strand: b'+',
+        }
+    }
+
+    #[test]
+    fn match_weight_is_one_plus_euclidean_squared() {
+        // Target span 3, query span 4 -> euclidean length 5 -> (1 + 5)^2 = 36.
+        let w = match_weight(&cp(0, 4, 0, 3));
+        assert!((w - 36.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn best_chromosome_argmax_ignores_small_hits() {
+        // `q` has five tiny hits to `tA` but one big hit to `tB`; squared
+        // weighting makes `tB` its best chromosome, so it sorts after `q2`
+        // (which maps to the start of `tA`) on the concatenated [tA, tB] axis.
+        let mut mm: HashMap<(String, String), Vec<CoordPair>> = HashMap::new();
+        let small: Vec<CoordPair> = (0..5)
+            .map(|i| cp(100 + i * 10, 110 + i * 10, 100 + i * 10, 110 + i * 10))
+            .collect();
+        mm.insert(("q".into(), "tA".into()), small);
+        mm.insert(("q".into(), "tB".into()), vec![cp(300, 800, 400, 900)]);
+        mm.insert(("q2".into(), "tA".into()), vec![cp(0, 400, 0, 400)]);
+        mm.insert(("q2".into(), "tB".into()), vec![]);
+        let seq_len: HashMap<String, usize> = [
+            ("q".to_string(), 900usize),
+            ("q2".to_string(), 500),
+            ("tA".to_string(), 1000),
+            ("tB".to_string(), 1000),
+        ]
+        .into_iter()
+        .collect();
+        let order = gravity_order(
+            &["q".to_string(), "q2".to_string()],
+            &["tA".to_string(), "tB".to_string()],
+            &mm,
+            &seq_len,
+            true,
+        );
+        assert_eq!(order, vec!["q2".to_string(), "q".to_string()]);
+    }
+
+    #[test]
+    fn unmatched_sorts_last_by_descending_length() {
+        let mut mm: HashMap<(String, String), Vec<CoordPair>> = HashMap::new();
+        mm.insert(("m".into(), "t".into()), vec![cp(0, 100, 0, 100)]);
+        mm.insert(("u_long".into(), "t".into()), vec![]);
+        mm.insert(("u_short".into(), "t".into()), vec![]);
+        let seq_len: HashMap<String, usize> = [
+            ("m".to_string(), 100usize),
+            ("u_long".to_string(), 500),
+            ("u_short".to_string(), 50),
+            ("t".to_string(), 1000),
+        ]
+        .into_iter()
+        .collect();
+        let order = gravity_order(
+            &["u_short".to_string(), "u_long".to_string(), "m".to_string()],
+            &["t".to_string()],
+            &mm,
+            &seq_len,
+            true,
+        );
+        assert_eq!(
+            order,
+            vec!["m".to_string(), "u_long".to_string(), "u_short".to_string()]
+        );
     }
 }

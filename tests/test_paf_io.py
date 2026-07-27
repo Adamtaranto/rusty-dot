@@ -10,6 +10,7 @@ from rusty_dot.paf_io import (
     PafAlignment,
     PafRecord,
     compute_gravity_contigs,
+    compute_reversed_contigs,
     parse_paf_file,
 )
 
@@ -249,7 +250,7 @@ class TestComputeGravityContigs:
 
     def test_collinear_order(self):
         records = self._make_records()
-        q_sorted, t_sorted = compute_gravity_contigs(
+        q_sorted, t_sorted, _reversed = compute_gravity_contigs(
             records, ['q_late', 'q_early'], ['target']
         )
         # q_early has lower gravity (maps to start of target) → sorts first
@@ -259,7 +260,7 @@ class TestComputeGravityContigs:
     def test_no_match_sorts_last(self):
         records = self._make_records()
         # Add a query contig that has no matches
-        q_sorted, _ = compute_gravity_contigs(
+        q_sorted, _t, _reversed = compute_gravity_contigs(
             records, ['q_late', 'q_early', 'q_none'], ['target']
         )
         assert q_sorted[-1] == 'q_none'
@@ -272,7 +273,9 @@ class TestComputeGravityContigs:
                 'query\t100\t60\t100\t+\tt_early\t40\t0\t40\t38\t40\t255'
             ),
         ]
-        _, t_sorted = compute_gravity_contigs(records, ['query'], ['t_late', 't_early'])
+        _q, t_sorted, _reversed = compute_gravity_contigs(
+            records, ['query'], ['t_late', 't_early']
+        )
         # t_early maps to lower query positions (60–100 mid=80, t_late mid=25)
         # With only one query, gravity = weighted mean query mid-point
         # t_early: query mid = 80 → higher gravity → sorts after t_late
@@ -865,10 +868,340 @@ class TestComputeGravityContigsUnmatchedLength:
         # Add two unmatched queries: long_unmatched (100 bp) and short_unmatched (10 bp)
         # Neither appears in records → len_map has no entry → length 0 for both
         # In this edge case they sort equal; just verify they're both at the end.
-        q_sorted, _ = compute_gravity_contigs(
+        q_sorted, _t, _reversed = compute_gravity_contigs(
             records,
             ['q_early', 'long_unmatched', 'short_unmatched'],
             ['target'],
         )
         assert q_sorted[0] == 'q_early'
         assert set(q_sorted[1:]) == {'long_unmatched', 'short_unmatched'}
+
+
+# ---------------------------------------------------------------------------
+# Best-matching chromosome (argmax) + squared weighting
+# ---------------------------------------------------------------------------
+
+
+class TestBestMatchingChromosome:
+    def test_argmax_uses_best_chromosome(self):
+        """A contig's best chromosome is its single big match's target, not the
+        many small hits on another chromosome (squared weighting + argmax)."""
+        from rusty_dot.paf_io import _gravity_order
+
+        # q_multi has five tiny hits on chrA but one large hit on chrB.  Squared
+        # weighting makes the single big block dominate, so argmax → chrB.
+        recs = [
+            PafRecord.from_line(
+                f'q_multi\t900\t{100 + i * 10}\t{110 + i * 10}\t+\t'
+                f'chrA\t1000\t{100 + i * 10}\t{110 + i * 10}\t9\t10\t255'
+            )
+            for i in range(5)
+        ]
+        recs.append(
+            PafRecord.from_line(
+                'q_multi\t900\t300\t800\t+\tchrB\t1000\t400\t900\t480\t500\t255'
+            )
+        )
+        matches: dict = {}
+        for r in recs:
+            matches.setdefault((r.query_name, r.target_name), []).append(r)
+        len_map = {'q_multi': 900, 'chrA': 1000, 'chrB': 1000}
+        _ordered, best_other = _gravity_order(
+            ['q_multi'], ['chrA', 'chrB'], matches, len_map, self_is_query=True
+        )
+        assert best_other['q_multi'] == 'chrB'
+
+    def test_tie_breaks_by_descending_length(self):
+        """Two contigs at the same gravity position sort by descending length."""
+        recs = [
+            PafRecord.from_line(
+                'q_short\t100\t0\t50\t+\tt\t1000\t100\t200\t48\t50\t255'
+            ),
+            PafRecord.from_line(
+                'q_long\t500\t0\t50\t+\tt\t1000\t100\t200\t48\t50\t255'
+            ),
+        ]
+        q_sorted, _t, _rev = compute_gravity_contigs(recs, ['q_short', 'q_long'], ['t'])
+        # Identical target mid-point → equal gravity → longer contig first.
+        assert q_sorted == ['q_long', 'q_short']
+
+
+# ---------------------------------------------------------------------------
+# Reverse-orientation detection (compute_reversed_contigs / gravity 3-tuple)
+# ---------------------------------------------------------------------------
+
+
+class TestReversedContigDetection:
+    def _reversed_from(self, records, q, t):
+        _sq, _st, reversed_q = compute_gravity_contigs(records, q, t)
+        return reversed_q
+
+    def test_reverse_oriented_contig_detected(self):
+        """A contig whose target position decreases as query increases is flagged."""
+        recs = [
+            PafRecord.from_line(
+                'qr\t300\t0\t100\t-\tref\t1000\t900\t1000\t95\t100\t255'
+            ),
+            PafRecord.from_line(
+                'qr\t300\t100\t200\t-\tref\t1000\t800\t900\t95\t100\t255'
+            ),
+            PafRecord.from_line(
+                'qr\t300\t200\t300\t-\tref\t1000\t700\t800\t95\t100\t255'
+            ),
+        ]
+        assert self._reversed_from(recs, ['qr'], ['ref']) == {'qr'}
+
+    def test_forward_contig_not_reversed(self):
+        """A contig whose target position increases with query is not flagged."""
+        recs = [
+            PafRecord.from_line('qf\t300\t0\t100\t+\tref\t1000\t0\t100\t95\t100\t255'),
+            PafRecord.from_line(
+                'qf\t300\t100\t200\t+\tref\t1000\t100\t200\t95\t100\t255'
+            ),
+            PafRecord.from_line(
+                'qf\t300\t200\t300\t+\tref\t1000\t200\t300\t95\t100\t255'
+            ),
+        ]
+        assert self._reversed_from(recs, ['qf'], ['ref']) == set()
+
+    def test_small_noise_match_does_not_flip(self):
+        """A tiny reverse noise match below the 10% threshold is ignored."""
+        recs = [
+            # One dominant forward match.
+            PafRecord.from_line('q\t300\t0\t200\t+\tref\t1000\t0\t200\t190\t200\t255'),
+            # Tiny reverse hit: euclidean length far below 10% of the big match.
+            PafRecord.from_line('q\t300\t210\t215\t-\tref\t1000\t505\t500\t4\t5\t255'),
+        ]
+        assert self._reversed_from(recs, ['q'], ['ref']) == set()
+
+    def test_single_big_reverse_match_flagged(self):
+        """A single dominant reverse-strand match flags the contig as reversed."""
+        recs = [
+            PafRecord.from_line('q\t300\t0\t250\t-\tref\t1000\t0\t250\t240\t250\t255'),
+        ]
+        assert self._reversed_from(recs, ['q'], ['ref']) == {'q'}
+
+    def test_compute_reversed_contigs_direct(self):
+        """The standalone helper agrees with the gravity-tuple result."""
+        recs = [
+            PafRecord.from_line(
+                'qr\t300\t0\t150\t-\tref\t1000\t850\t1000\t140\t150\t255'
+            ),
+            PafRecord.from_line(
+                'qr\t300\t150\t300\t-\tref\t1000\t700\t850\t140\t150\t255'
+            ),
+        ]
+        matches = {('qr', 'ref'): recs}
+        len_map = {'qr': 300, 'ref': 1000}
+        result = compute_reversed_contigs(['qr'], matches, len_map, {'qr': 'ref'})
+        assert result == {'qr'}
+
+
+# ---------------------------------------------------------------------------
+# reversed_contigs exposure on PafAlignment and CrossIndex
+# ---------------------------------------------------------------------------
+
+
+class TestReversedContigsAPI:
+    def test_pafalignment_reorder_returns_two_tuple(self):
+        """reorder_contigs stays a 2-tuple; reversed set lives on the property."""
+        recs = [
+            PafRecord.from_line(
+                'qr\t300\t0\t150\t-\tref\t1000\t850\t1000\t140\t150\t255'
+            ),
+            PafRecord.from_line(
+                'qr\t300\t150\t300\t-\tref\t1000\t700\t850\t140\t150\t255'
+            ),
+        ]
+        aln = PafAlignment.from_records(recs)
+        result = aln.reorder_contigs(['qr'], ['ref'])
+        assert isinstance(result, tuple) and len(result) == 2
+        assert aln.reversed_contigs == {'qr'}
+
+    def test_pafalignment_reversed_contigs_empty_before_reorder(self):
+        """The property is empty until reorder_contigs has run."""
+        recs = [
+            PafRecord.from_line('q\t100\t0\t50\t+\tref\t1000\t0\t50\t48\t50\t255'),
+        ]
+        aln = PafAlignment.from_records(recs)
+        assert aln.reversed_contigs == set()
+
+    def test_crossindex_reversed_contigs_populated(self):
+        """reorder_for_colinearity records the reverse-oriented query contigs."""
+        from rusty_dot.paf_io import CrossIndex
+
+        def revcomp(s):
+            return s.translate(str.maketrans('ACGT', 'TGCA'))[::-1]
+
+        seq = (
+            'ACGTTGCAAGGCCTTAGCTAGGATCCGATCGATTACGGCATGCATTGCACGTAGCTAGCATCG'
+            'TTAGGCATCCGATTGACCGATACGGATTCAGCTAGGCATTACGGATCCGATTAGCACGTATGC'
+        )
+        cross = CrossIndex(k=11)
+        cross.add_sequence('fwd', seq, group='a')
+        cross.add_sequence('rev', revcomp(seq), group='a')
+        cross.add_sequence('ref', seq, group='b')
+        cross.compute_matches('a', 'b')
+        cross.reorder_for_colinearity('a', 'b')
+        reversed_a = cross.reversed_contigs('a')
+        assert isinstance(reversed_a, set)
+        # The reverse-complement contig aligns on the '-' strand → flagged;
+        # the forward copy is not.
+        assert 'rev' in reversed_a
+        assert 'fwd' not in reversed_a
+
+    def test_crossindex_reversed_contigs_empty_for_unreordered_group(self):
+        """A group never used as query axis has an empty reversed set."""
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=6)
+        cross.add_sequence('q', 'ACGTACGTACGT' * 3, group='a')
+        cross.add_sequence('t', 'ACGTACGTACGT' * 3, group='b')
+        assert cross.reversed_contigs('a') == set()
+
+
+# ---------------------------------------------------------------------------
+# reverse_complement helper
+# ---------------------------------------------------------------------------
+
+
+class TestReverseComplement:
+    def test_basic(self):
+        from rusty_dot.paf_io import reverse_complement
+
+        assert reverse_complement('ACGT') == 'ACGT'
+        assert reverse_complement('AAAA') == 'TTTT'
+        assert reverse_complement('ACGTN') == 'NACGT'
+
+    def test_case_preserved(self):
+        from rusty_dot.paf_io import reverse_complement
+
+        assert reverse_complement('acgt') == 'acgt'
+        assert reverse_complement('AcgT') == 'AcgT'
+
+    def test_double_reverse_is_identity(self):
+        from rusty_dot.paf_io import reverse_complement
+
+        seq = 'ACGTTGCAAGGCCTTAGCTAGGATCCGATCG'
+        assert reverse_complement(reverse_complement(seq)) == seq
+
+
+# ---------------------------------------------------------------------------
+# compute_gravity_contigs with fixed targets (sort_targets=False)
+# ---------------------------------------------------------------------------
+
+
+class TestFixedTargetOrder:
+    def test_targets_unchanged_when_sort_targets_false(self):
+        recs = [
+            PafRecord.from_line('qB\t100\t0\t50\t+\tt2\t1000\t900\t950\t48\t50\t255'),
+            PafRecord.from_line('qA\t100\t0\t50\t+\tt1\t1000\t0\t50\t48\t50\t255'),
+        ]
+        q_sorted, t_sorted, _rev = compute_gravity_contigs(
+            recs, ['qB', 'qA'], ['t1', 't2'], sort_targets=False
+        )
+        # Targets kept exactly as given; queries reordered against that axis.
+        assert t_sorted == ['t1', 't2']
+        assert q_sorted == ['qA', 'qB']
+
+
+# ---------------------------------------------------------------------------
+# CrossIndex FASTA output + fixed-target reorder
+# ---------------------------------------------------------------------------
+
+
+def _rc(s: str) -> str:
+    return s.translate(str.maketrans('ACGT', 'TGCA'))[::-1]
+
+
+_FASTA_SEQ = (
+    'ACGTTGCAAGGCCTTAGCTAGGATCCGATCGATTACGGCATGCATTGCACGTAGCTAGCATCG'
+    'TTAGGCATCCGATTGACCGATACGGATTCAGCTAGGCATTACGGATCCGATTAGCACGTATGC'
+)
+
+
+class TestCrossIndexFasta:
+    def _cross(self):
+        from rusty_dot.paf_io import CrossIndex
+
+        cross = CrossIndex(k=11)
+        cross.add_sequence('fwd', _FASTA_SEQ, group='a')
+        cross.add_sequence('rev', _rc(_FASTA_SEQ), group='a')
+        cross.add_sequence('ref', _FASTA_SEQ, group='b')
+        cross.compute_matches('a', 'b')
+        return cross
+
+    def test_get_sequence_roundtrip(self):
+        cross = self._cross()
+        assert cross.get_sequence('fwd', group='a') == _FASTA_SEQ
+        assert cross.get_sequence('a:fwd') == _FASTA_SEQ
+
+    def _read_fasta(self, path):
+        records, name, seq = {}, None, []
+        for line in path.read_text().splitlines():
+            if line.startswith('>'):
+                if name is not None:
+                    records[name] = ''.join(seq)
+                name = line[1:].split()[0]
+                seq = []
+            else:
+                seq.append(line)
+        if name is not None:
+            records[name] = ''.join(seq)
+        return records
+
+    def test_write_fasta_reorients_reversed_contig(self, tmp_path):
+        cross = self._cross()
+        cross.reorder_for_colinearity('a', 'b')
+        assert 'rev' in cross.reversed_contigs('a')
+
+        out = tmp_path / 'a.fasta'
+        cross.write_fasta(out, 'a')
+        recs = self._read_fasta(out)
+        # 'rev' was reverse-complemented on write → matches the forward reference.
+        assert recs['rev'] == _FASTA_SEQ
+        assert recs['fwd'] == _FASTA_SEQ
+
+    def test_write_fasta_reverse_disabled(self, tmp_path):
+        cross = self._cross()
+        cross.reorder_for_colinearity('a', 'b')
+        out = tmp_path / 'a_noflip.fasta'
+        cross.write_fasta(out, 'a', reverse=set())
+        recs = self._read_fasta(out)
+        # With flipping disabled the reverse contig stays reverse-complemented.
+        assert recs['rev'] == _rc(_FASTA_SEQ)
+
+    def test_write_fasta_respects_order(self, tmp_path):
+        cross = self._cross()
+        out = tmp_path / 'a_ordered.fasta'
+        cross.write_fasta(out, 'a', order=['rev', 'fwd'], reverse=set())
+        names = [
+            line[1:].split()[0]
+            for line in out.read_text().splitlines()
+            if line.startswith('>')
+        ]
+        assert names == ['rev', 'fwd']
+
+    def test_write_fasta_line_width(self, tmp_path):
+        cross = self._cross()
+        out = tmp_path / 'wrapped.fasta'
+        cross.write_fasta(out, 'a', reverse=set(), line_width=20)
+        seq_lines = [
+            line for line in out.read_text().splitlines() if not line.startswith('>')
+        ]
+        assert all(len(line) <= 20 for line in seq_lines)
+        assert any(len(line) == 20 for line in seq_lines)
+
+    def test_write_fasta_unknown_group_raises(self, tmp_path):
+        cross = self._cross()
+        with pytest.raises(KeyError):
+            cross.write_fasta(tmp_path / 'x.fasta', 'nope')
+
+    def test_reorder_target_false_keeps_target_fixed(self):
+        cross = self._cross()
+        cross.add_sequence('ref2', _rc(_FASTA_SEQ), group='b')
+        cross.compute_matches('a', 'b')
+        before_b = list(cross.contig_order['b'])
+        cross.reorder_for_colinearity('a', 'b', reorder_target=False)
+        assert cross.contig_order['b'] == before_b  # target untouched
+        assert set(cross.contig_order['a']) == {'fwd', 'rev'}

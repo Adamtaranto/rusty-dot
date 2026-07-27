@@ -43,6 +43,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import logging
+from math import sqrt
 from pathlib import Path
 import re
 from typing import Any, Generator, Iterable
@@ -353,24 +354,177 @@ def parse_paf_file(path: str | Path) -> Generator[PafRecord, None, None]:
 
 
 # ---------------------------------------------------------------------------
+# Sequence utilities
+# ---------------------------------------------------------------------------
+
+_COMPLEMENT = str.maketrans('ACGTNacgtn', 'TGCANtgcan')
+
+
+def reverse_complement(seq: str) -> str:
+    """Return the reverse complement of a nucleotide sequence.
+
+    Complements ``A/C/G/T/N`` (case preserved) and reverses the string.  Any
+    other character is left unchanged before reversal.
+
+    Parameters
+    ----------
+    seq : str
+        Nucleotide sequence.
+
+    Returns
+    -------
+    str
+        The reverse-complemented sequence.
+    """
+    return seq.translate(_COMPLEMENT)[::-1]
+
+
+# ---------------------------------------------------------------------------
 # Gravity-based contig reordering (pure Python)
 # ---------------------------------------------------------------------------
+
+
+def _match_weight(rec: PafRecord) -> float:
+    """Return the squared d-genies gravity weight of one alignment record.
+
+    The weight is ``(1 + euclidean_length) ** 2`` where the euclidean length
+    spans both axes: ``sqrt((target_end - target_start)**2 +
+    (query_end - query_start)**2)``.  Large collinear blocks dominate, so a
+    contig's best chromosome and sort position are driven by its major
+    alignments rather than short spurious hits.
+
+    Parameters
+    ----------
+    rec : PafRecord
+        Alignment record.
+
+    Returns
+    -------
+    float
+        The squared match weight (always ``>= 1``).
+    """
+    dt = float(rec.target_end - rec.target_start)
+    dq = float(rec.query_end - rec.query_start)
+    return (1.0 + sqrt(dt * dt + dq * dq)) ** 2
+
+
+def _gravity_order(
+    items: list[str],
+    others: list[str],
+    matches: dict[tuple[str, str], list[PafRecord]],
+    len_map: dict[str, int],
+    self_is_query: bool,
+) -> tuple[list[str], dict[str, str | None]]:
+    """Order *items* along the concatenated *others* axis by gravity centre.
+
+    Mirrors the Rust ``gravity_order`` helper.  Each item is assigned to its
+    best-matching *other* (argmax of summed squared match weights) and
+    positioned by the squared-weighted mean of its match mid-points on the
+    concatenated *other* axis, using only the matches to that best other.
+    Matched items sort by ascending position (ties broken by descending length
+    then name); items with no matches sort last, by descending length then name.
+
+    Parameters
+    ----------
+    items : list[str]
+        Names to order (the "self" axis).
+    others : list[str]
+        Reference names defining the concatenated other axis, in display order.
+    matches : dict[tuple[str, str], list[PafRecord]]
+        Records keyed by ``(query_name, target_name)``.
+    len_map : dict[str, int]
+        Sequence lengths for every name (self and other).
+    self_is_query : bool
+        When ``True`` items are queries and the other axis is the target;
+        when ``False`` items are targets and the other axis is the query.
+
+    Returns
+    -------
+    tuple[list[str], dict[str, str | None]]
+        ``(ordered_names, best_other)`` where *best_other* maps each item to
+        its argmax other (``None`` if the item has no matches).
+    """
+    # Cumulative offsets so each mid-point becomes an absolute coordinate along
+    # the concatenated other axis (in the given *others* order).
+    offsets: dict[str, int] = {}
+    acc = 0
+    for o in others:
+        offsets[o] = acc
+        acc += len_map.get(o, 1)
+    total_other = max(acc, 1)
+
+    def _key(it: str, o: str) -> tuple[str, str]:
+        return (it, o) if self_is_query else (o, it)
+
+    def _mid(rec: PafRecord) -> float:
+        if self_is_query:
+            return (rec.target_start + rec.target_end) / 2.0
+        return (rec.query_start + rec.query_end) / 2.0
+
+    matched: list[tuple[float, str]] = []
+    unmatched: list[str] = []
+    best_other: dict[str, str | None] = {}
+
+    for it in items:
+        # Total squared weight against each other; the first other reaching the
+        # maximum wins (strict ``>``), matching the Rust tie behaviour.
+        best_o: str | None = None
+        best_w = 0.0
+        for o in others:
+            recs = matches.get(_key(it, o))
+            if not recs:
+                continue
+            w = sum(_match_weight(r) for r in recs)
+            if w > best_w:
+                best_w = w
+                best_o = o
+        best_other[it] = best_o
+
+        if best_o is None:
+            unmatched.append(it)
+            continue
+
+        recs = matches[_key(it, best_o)]
+        offset = offsets[best_o]
+        wsum = 0.0
+        wpos = 0.0
+        for r in recs:
+            w = _match_weight(r)
+            wsum += w
+            wpos += w * (offset + _mid(r))
+        pos = wpos / wsum / total_other
+        matched.append((pos, it))
+
+    # Matched: ascending gravity, then descending length, then name.
+    matched.sort(key=lambda p: (p[0], -len_map.get(p[1], 0), p[1]))
+    # Unmatched: descending length, then name.
+    unmatched.sort(key=lambda n: (-len_map.get(n, 0), n))
+
+    ordered = [n for _, n in matched] + unmatched
+    return ordered, best_other
 
 
 def compute_gravity_contigs(
     records: Iterable[PafRecord],
     query_names: list[str],
     target_names: list[str],
-) -> tuple[list[str], list[str]]:
-    """Return query and target contig names sorted by gravity centre.
+    sort_targets: bool = True,
+) -> tuple[list[str], list[str], set[str]]:
+    """Return query/target contigs sorted by gravity centre, plus reversed set.
 
-    For each query contig the gravity centre is the weighted mean of target
-    mid-point positions (normalised by the total target span) across all
-    alignment records that involve that contig.  Target contigs are sorted
-    symmetrically against the query axis.
+    Implements the d-genies gravity algorithm: each contig is assigned to its
+    single best-matching chromosome (argmax of summed squared match weights,
+    ``(1 + euclidean_length) ** 2``) and positioned by the squared-weighted mean
+    of its match mid-points on the concatenated opposing axis, using only the
+    matches to that best chromosome.  Contigs are then sorted by ascending
+    position; contigs with no alignments are placed last, by descending length.
 
-    Contigs with no alignment records receive a gravity of ``float("inf")``
-    and are placed at the end of the sorted list.
+    When *sort_targets* is ``True`` (default) the targets are ordered first
+    (against the queries in their input order) and the queries are then ordered
+    against the freshly sorted target axis, so contigs group according to the
+    displayed target arrangement.  When ``False`` the target order is treated as
+    fixed (returned unchanged) and only the queries are reordered against it —
+    use this to reorder one assembly against another that must not move.
 
     Parameters
     ----------
@@ -379,101 +533,126 @@ def compute_gravity_contigs(
     query_names : list[str]
         The query contig names to reorder.
     target_names : list[str]
-        The target contig names to reorder.
+        The target contig names to reorder (or to keep fixed when
+        *sort_targets* is ``False``).
+    sort_targets : bool, optional
+        Whether to reorder the targets too.  Default is ``True``.
 
     Returns
     -------
-    tuple[list[str], list[str]]
-        ``(sorted_query_names, sorted_target_names)`` ordered by ascending
-        gravity centre.
+    tuple[list[str], list[str], set[str]]
+        ``(sorted_query_names, sorted_target_names, reversed_query_names)`` where
+        *reversed_query_names* are the query contigs detected as reverse-oriented
+        against their best-matching chromosome (see
+        :func:`compute_reversed_contigs`).  *sorted_target_names* equals
+        *target_names* unchanged when *sort_targets* is ``False``.
     """
     query_set = set(query_names)
     target_set = set(target_names)
 
-    # Collect all records into a list and build sequence-length maps from them.
-    q_len_map: dict[str, int] = {}
-    t_len_map: dict[str, int] = {}
-    all_records: list[PafRecord] = []
+    # Bucket records by (query, target) and build sequence-length maps.
+    matches: dict[tuple[str, str], list[PafRecord]] = {}
+    len_map: dict[str, int] = {}
     for rec in records:
-        all_records.append(rec)
-        q_len_map[rec.query_name] = rec.query_len
-        t_len_map[rec.target_name] = rec.target_len
-
-    # Build cumulative target offsets using actual sequence lengths.
-    t_offsets: dict[str, int] = {}
-    t_off = 0
-    for t in target_names:
-        t_offsets[t] = t_off
-        t_off += t_len_map.get(t, 1)
-    total_target_len = max(t_off, 1)
-
-    # Build cumulative query offsets using actual sequence lengths.
-    q_offsets_real: dict[str, int] = {}
-    q_off = 0
-    for q in query_names:
-        q_offsets_real[q] = q_off
-        q_off += q_len_map.get(q, 1)
-    total_query_len = max(q_off, 1)
-
-    # Accumulate weighted positions.
-    q_weight: dict[str, float] = dict.fromkeys(query_names, 0.0)
-    q_wpos: dict[str, float] = dict.fromkeys(query_names, 0.0)
-    t_weight: dict[str, float] = dict.fromkeys(target_names, 0.0)
-    t_wpos: dict[str, float] = dict.fromkeys(target_names, 0.0)
-
-    for rec in all_records:
+        len_map[rec.query_name] = rec.query_len
+        len_map[rec.target_name] = rec.target_len
         if rec.query_name not in query_set or rec.target_name not in target_set:
             continue
-        size = float(rec.alignment_block_len or (rec.query_end - rec.query_start))
-        if size <= 0:
+        matches.setdefault((rec.query_name, rec.target_name), []).append(rec)
+
+    # Order targets first (others = queries in input order) unless they are held
+    # fixed, then order queries against the resulting target axis.  This
+    # asymmetry is intentional and matches the Rust implementation.
+    if sort_targets:
+        sorted_t, _ = _gravity_order(
+            target_names, query_names, matches, len_map, self_is_query=False
+        )
+    else:
+        sorted_t = list(target_names)
+    sorted_q, best_other_q = _gravity_order(
+        query_names, sorted_t, matches, len_map, self_is_query=True
+    )
+
+    reversed_q = compute_reversed_contigs(query_names, matches, len_map, best_other_q)
+    return sorted_q, sorted_t, reversed_q
+
+
+def compute_reversed_contigs(
+    query_names: list[str],
+    matches: dict[tuple[str, str], list[PafRecord]],
+    len_map: dict[str, int],
+    best_other: dict[str, str | None],
+) -> set[str]:
+    """Return query contigs that are reverse-oriented against their best target.
+
+    Ports d-genies' ``is_contig_well_oriented``: for each query contig, take its
+    matches on its best-matching chromosome, keep only "big" matches (euclidean
+    length greater than 10% of the longest match *and* at least 1% of
+    ``min(contig_len, chrom_len)``), sort them by query mid-point, and check
+    whether the target mid-point trends upward.  A contig is reverse-oriented
+    when the mean of the consecutive-pair direction signs is ``<= -0.1`` (for a
+    single big match, when that match is on the ``-`` strand).  Contigs with no
+    big matches are treated as forward (well oriented).
+
+    Parameters
+    ----------
+    query_names : list[str]
+        Query contig names to test.
+    matches : dict[tuple[str, str], list[PafRecord]]
+        Records keyed by ``(query_name, target_name)``.
+    len_map : dict[str, int]
+        Sequence lengths for every name.
+    best_other : dict[str, str | None]
+        Mapping of each query contig to its best-matching target (or ``None``).
+
+    Returns
+    -------
+    set[str]
+        Names of query contigs detected as reverse-oriented.
+    """
+    reversed_set: set[str] = set()
+    for q in query_names:
+        t = best_other.get(q)
+        if t is None:
+            continue
+        recs = matches.get((q, t), [])
+        if not recs:
             continue
 
-        # Target gravity from query's perspective.
-        t_mid = (
-            t_offsets.get(rec.target_name, 0)
-            + (rec.target_start + rec.target_end) / 2.0
-        )
-        q_weight[rec.query_name] += size
-        q_wpos[rec.query_name] += size * t_mid
+        # (query_mid, target_mid, euclidean_length, strand) per match.
+        lines = [
+            (
+                (r.query_start + r.query_end) / 2.0,
+                (r.target_start + r.target_end) / 2.0,
+                sqrt(
+                    float(r.target_end - r.target_start) ** 2
+                    + float(r.query_end - r.query_start) ** 2
+                ),
+                r.strand,
+            )
+            for r in recs
+        ]
+        max_len = max(line[2] for line in lines)
+        threshold = 0.01 * min(len_map.get(q, 1), len_map.get(t, 1))
+        selected = [
+            line for line in lines if line[2] > 0.10 * max_len and line[2] >= threshold
+        ]
 
-        # Query gravity from target's perspective.
-        q_mid = (
-            q_offsets_real.get(rec.query_name, 0)
-            + (rec.query_start + rec.query_end) / 2.0
-        )
-        t_weight[rec.target_name] += size
-        t_wpos[rec.target_name] += size * q_mid
-
-    def _gravity(name: str, wt: dict, wp: dict, total: float) -> float:
-        w = wt.get(name, 0.0)
-        return (wp.get(name, 0.0) / w / total) if w > 0 else float('inf')
-
-    def _sort_key_with_len(
-        name: str,
-        wt: dict,
-        wp: dict,
-        total: float,
-        len_map: dict,
-    ) -> tuple:
-        g = _gravity(name, wt, wp, total)
-        if g == float('inf'):
-            # Unmatched: sort after matched (1 > 0), then by descending length
-            return (1, -len_map.get(name, 0))
-        return (0, g)
-
-    sorted_q = sorted(
-        query_names,
-        key=lambda n: _sort_key_with_len(
-            n, q_weight, q_wpos, total_target_len, q_len_map
-        ),
-    )
-    sorted_t = sorted(
-        target_names,
-        key=lambda n: _sort_key_with_len(
-            n, t_weight, t_wpos, total_query_len, t_len_map
-        ),
-    )
-    return sorted_q, sorted_t
+        if len(selected) > 1:
+            selected.sort(key=lambda line: line[0])  # by query mid-point
+            signs = [
+                1 if selected[i][1] > selected[i - 1][1] else -1
+                for i in range(1, len(selected))
+            ]
+            mean_sign = sum(signs) / len(signs)
+            if mean_sign <= -0.1:  # not well oriented
+                reversed_set.add(q)
+        elif len(selected) == 1:
+            # A single big match: orientation is simply its strand.
+            if selected[0][3] == '-':
+                reversed_set.add(q)
+        # Zero big matches: ignore (treated as forward).
+    return reversed_set
 
 
 # ---------------------------------------------------------------------------
@@ -506,6 +685,9 @@ class PafAlignment:
         # Custom group assignments.  None means use the default (query_names
         # → 'a', target_names → 'b') which is computed lazily from records.
         self._groups: dict[str, list[str]] | None = None
+        # Query contigs detected as reverse-oriented by the most recent
+        # :meth:`reorder_contigs` call (empty until then).
+        self._reversed_query: set[str] = set()
 
     # ------------------------------------------------------------------
     # Constructors
@@ -824,7 +1006,9 @@ class PafAlignment:
         Returns
         -------
         tuple[list[str], list[str]]
-            ``(sorted_query_names, sorted_target_names)``.
+            ``(sorted_query_names, sorted_target_names)``.  The set of query
+            contigs detected as reverse-oriented is stored on
+            :attr:`reversed_contigs` (not returned, for backward compatibility).
 
         Raises
         ------
@@ -846,7 +1030,25 @@ class PafAlignment:
         else:
             t = target_names if target_names is not None else self.target_names
 
-        return compute_gravity_contigs(self.records, q, t)
+        sorted_q, sorted_t, reversed_q = compute_gravity_contigs(self.records, q, t)
+        self._reversed_query = reversed_q
+        return sorted_q, sorted_t
+
+    @property
+    def reversed_contigs(self) -> set[str]:
+        """Query contigs detected as reverse-oriented by :meth:`reorder_contigs`.
+
+        Empty until :meth:`reorder_contigs` has been called.  These contigs
+        align in reverse orientation against their best-matching target and can
+        be passed to :meth:`~rusty_dot.dotplot.DotPlotter.plot` via
+        ``reverse_contigs=`` to be rendered flipped along the main diagonal.
+
+        Returns
+        -------
+        set[str]
+            Names of reverse-oriented query contigs.
+        """
+        return set(self._reversed_query)
 
 
 # ---------------------------------------------------------------------------
@@ -934,6 +1136,9 @@ class CrossIndex:
         self._internal_group: dict[str, str] = {}
         # (query_group, target_group) -> list[PafRecord] from compute_matches
         self._records_by_pair: dict[tuple[str, str], list[PafRecord]] = {}
+        # group_label -> set of reverse-oriented contigs (from the last
+        # collinearity reorder that used that group as the query axis)
+        self._reversed: dict[str, set[str]] = {}
 
     @property
     def _paf_records(self) -> list[PafRecord]:
@@ -1355,12 +1560,23 @@ class CrossIndex:
                 reverse=True,
             )
 
-    def reorder_for_colinearity(self, query_group: str, target_group: str) -> None:
+    def reorder_for_colinearity(
+        self,
+        query_group: str,
+        target_group: str,
+        reorder_target: bool = True,
+    ) -> None:
         """Reorder sequences in two groups to maximise dotplot collinearity.
 
-        Uses the gravity-centre algorithm via
-        :meth:`~rusty_dot.SequenceIndex.optimal_contig_order`.  Updates
-        :attr:`contig_order` in-place for both groups.
+        Uses the d-genies gravity algorithm.  Each query contig is assigned to
+        its best-matching target chromosome, ordered by its gravity centre
+        there, and flagged if reverse-oriented (see :meth:`reversed_contigs`).
+        Updates :attr:`contig_order` in-place.
+
+        Orientation is expressed relative to the target group, which is treated
+        as the forward reference: only *query_group* contigs are flagged as
+        reversed.  Order and orientation are derived from the k-mer engine's
+        stranded matches (the ``compute_matches`` cache is forward-strand only).
 
         .. note::
             :meth:`compute_matches` must be called for ``(query_group,
@@ -1372,6 +1588,11 @@ class CrossIndex:
             Group label for the query (y-axis / rows).
         target_group : str
             Group label for the target (x-axis / columns).
+        reorder_target : bool, optional
+            When ``True`` (default) both groups are reordered.  When ``False``
+            the target group's order is left unchanged and only *query_group* is
+            reordered against it — use this to align one assembly to another
+            that must not move.  Default is ``True``.
 
         Raises
         ------
@@ -1387,17 +1608,185 @@ class CrossIndex:
                 f'No matches computed for group pair {pair!r}. '
                 'Call compute_matches() for this pair first.'
             )
-        q_internal = [
-            self._make_internal(query_group, n) for n in self._groups[query_group]
-        ]
-        t_internal = [
-            self._make_internal(target_group, n) for n in self._groups[target_group]
-        ]
-        sorted_q_int, sorted_t_int = self._index.optimal_contig_order(
-            q_internal, t_internal
+        q_names = list(self._groups[query_group])
+        t_names = list(self._groups[target_group])
+        records = self._stranded_records(query_group, target_group, q_names, t_names)
+        sorted_q, sorted_t, reversed_q = compute_gravity_contigs(
+            records, q_names, t_names, sort_targets=reorder_target
         )
-        self._groups[query_group] = [self._split_internal(n)[1] for n in sorted_q_int]
-        self._groups[target_group] = [self._split_internal(n)[1] for n in sorted_t_int]
+        self._groups[query_group] = sorted_q
+        if reorder_target:
+            self._groups[target_group] = sorted_t
+        self._reversed[query_group] = reversed_q
+
+    def _stranded_records(
+        self,
+        query_group: str,
+        target_group: str,
+        q_names: list[str],
+        t_names: list[str],
+    ) -> list[PafRecord]:
+        """Build both-strand PAF records for a group pair from the k-mer engine.
+
+        The cached ``compute_matches`` records are forward-strand only, so both
+        the gravity ordering and the reverse-orientation check are driven from
+        :meth:`~rusty_dot.SequenceIndex.compare_sequences_stranded`, which
+        reports forward and reverse matches.
+
+        Parameters
+        ----------
+        query_group, target_group : str
+            Group labels for the query and target axes.
+        q_names, t_names : list[str]
+            Un-prefixed sequence names within each group.
+
+        Returns
+        -------
+        list[PafRecord]
+            One record per stranded match block across every (query, target)
+            pair, using un-prefixed names.
+        """
+        records: list[PafRecord] = []
+        for q in q_names:
+            qi = self._make_internal(query_group, q)
+            q_len = self._index.get_sequence_length(qi)
+            for t in t_names:
+                ti = self._make_internal(target_group, t)
+                t_len = self._index.get_sequence_length(ti)
+                for qs, qe, ts, te, strand in self._index.compare_sequences_stranded(
+                    qi, ti, True
+                ):
+                    block = max(qe - qs, te - ts)
+                    records.append(
+                        PafRecord(
+                            query_name=q,
+                            query_len=q_len,
+                            query_start=qs,
+                            query_end=qe,
+                            strand=strand,
+                            target_name=t,
+                            target_len=t_len,
+                            target_start=ts,
+                            target_end=te,
+                            residue_matches=block,
+                            alignment_block_len=block,
+                            mapping_quality=255,
+                        )
+                    )
+        return records
+
+    def reversed_contigs(self, group: str) -> set[str]:
+        """Return reverse-oriented contigs for *group* from the last reorder.
+
+        Populated by :meth:`reorder_for_colinearity` and
+        :meth:`reorder_contigs` when *group* is used as the query axis.  Empty
+        for groups that have not been reordered as a query.
+
+        Parameters
+        ----------
+        group : str
+            Group label.
+
+        Returns
+        -------
+        set[str]
+            Names of reverse-oriented contigs in *group*.
+        """
+        return set(self._reversed.get(group, set()))
+
+    # ------------------------------------------------------------------
+    # FASTA output
+    # ------------------------------------------------------------------
+
+    def get_sequence(self, name: str, group: str | None = None) -> str:
+        """Return the stored sequence bases for a contig.
+
+        Parameters
+        ----------
+        name : str
+            Sequence name.  Un-prefixed when *group* is given, otherwise the
+            internal ``'group:name'`` identifier.
+        group : str or None, optional
+            Group label the sequence belongs to.  When provided, *name* is the
+            un-prefixed name.  Default is ``None``.
+
+        Returns
+        -------
+        str
+            The sequence bases.
+
+        Raises
+        ------
+        KeyError
+            If the sequence is not present in the index.
+        """
+        internal = self._make_internal(group, name) if group is not None else name
+        return self._index.get_sequence(internal)
+
+    def write_fasta(
+        self,
+        path: str | Path,
+        group: str,
+        order: list[str] | None = None,
+        reverse: set[str] | None = None,
+        line_width: int = 60,
+    ) -> None:
+        """Write a group's contigs to a FASTA file, optionally reordered/reoriented.
+
+        Contigs are written in *order* (default :attr:`contig_order` for the
+        group, as set by the most recent reorder), and any contig named in
+        *reverse* is written reverse-complemented (default
+        :meth:`reversed_contigs` for the group).  This makes the FASTA match the
+        collinearity-optimised dotplot layout: reordered along the axis and
+        reverse-oriented contigs flipped to read forward.  Reverse-complemented
+        records carry a ``reverse_complement`` note in their header description.
+
+        Parameters
+        ----------
+        path : str or pathlib.Path
+            Output FASTA path.
+        group : str
+            Group label whose contigs to write.
+        order : list[str] or None, optional
+            Ordered un-prefixed contig names to write.  Defaults to the group's
+            current :attr:`contig_order`.
+        reverse : set[str] or None, optional
+            Contig names to reverse-complement.  Defaults to the group's
+            :meth:`reversed_contigs` set.  Pass ``set()`` to disable flipping.
+        line_width : int, optional
+            Wrap sequence lines at this many bases.  ``0`` or negative writes
+            each sequence on a single line.  Default is ``60``.
+
+        Raises
+        ------
+        KeyError
+            If *group* is unknown or a requested contig is not present.
+        """
+        if group not in self._groups:
+            raise KeyError(f'Group {group!r} not found.')
+        names = list(order) if order is not None else list(self._groups[group])
+        rc_names = reverse if reverse is not None else self.reversed_contigs(group)
+
+        with open(path, 'w') as fh:
+            for name in names:
+                seq = self.get_sequence(name, group=group)
+                if name in rc_names:
+                    seq = reverse_complement(seq)
+                    fh.write(f'>{name} reverse_complement\n')
+                else:
+                    fh.write(f'>{name}\n')
+                if line_width and line_width > 0:
+                    for i in range(0, len(seq), line_width):
+                        fh.write(seq[i : i + line_width] + '\n')
+                else:
+                    fh.write(seq + '\n')
+        _log.info(
+            'CrossIndex: wrote %d contigs from group %r to %s (%d reverse-complemented)',
+            len(names),
+            group,
+            path,
+            sum(1 for n in names if n in rc_names),
+        )
 
     # ------------------------------------------------------------------
     # PAF output and match computation
@@ -1720,6 +2109,8 @@ class CrossIndex:
                 target_group,
             )
 
+        # Both labels are resolved (non-None) by the block above.
+        assert query_group is not None and target_group is not None
         pair = (query_group, target_group)
         if pair not in self._records_by_pair:
             raise ValueError(
@@ -1735,13 +2126,14 @@ class CrossIndex:
             if target_names is not None
             else list(self._groups[target_group])
         )
-        q_internal = [self._make_internal(query_group, n) for n in q_names]
-        t_internal = [self._make_internal(target_group, n) for n in t_names]
-        sorted_q_int, sorted_t_int = self._index.optimal_contig_order(
-            q_internal, t_internal
+        # Order and reverse-orientation both come from the stranded matches
+        # (the compute_matches cache is forward-strand only); the resulting
+        # order matches SequenceIndex.optimal_contig_order by construction.
+        records = self._stranded_records(query_group, target_group, q_names, t_names)
+        sorted_q, sorted_t, reversed_q = compute_gravity_contigs(
+            records, q_names, t_names
         )
-        sorted_q = [self._split_internal(n)[1] for n in sorted_q_int]
-        sorted_t = [self._split_internal(n)[1] for n in sorted_t_int]
+        self._reversed[query_group] = reversed_q
         return sorted_q, sorted_t
 
     # ------------------------------------------------------------------

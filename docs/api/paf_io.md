@@ -37,3 +37,7 @@ plotter.plot(
 ::: rusty_dot.paf_io.parse_paf_file
 
 ::: rusty_dot.paf_io.compute_gravity_contigs
+
+::: rusty_dot.paf_io.compute_reversed_contigs
+
+::: rusty_dot.paf_io.reverse_complement

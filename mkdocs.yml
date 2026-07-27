@@ -67,6 +67,7 @@ nav:
       - Dotplot Visualization: tutorials/dotplot_tutorial.ipynb
       - PAF Workflow: tutorials/paf_workflow.ipynb
       - All-vs-All Between Two Indices: tutorials/all_vs_all_two_indices.ipynb
+      - Writing Reordered FASTA: tutorials/write_reordered_fasta.ipynb
       - Minimap2 PAF Visualization: tutorials/minimap2_paf_tutorial.ipynb
   - API Reference:
       - Overview: api/index.md

@@ -36,7 +36,9 @@ from rusty_dot.paf_io import (  # noqa: F401
     PafAlignment,
     PafRecord,
     compute_gravity_contigs,
+    compute_reversed_contigs,
     parse_paf_file,
+    reverse_complement,
 )
 
 __version__ = '0.1.0'
@@ -48,6 +50,8 @@ __all__ = [
     'PafAlignment',
     'parse_paf_file',
     'compute_gravity_contigs',
+    'compute_reversed_contigs',
+    'reverse_complement',
     'GffAnnotation',
     'GffFeature',
     'py_read_fasta',
