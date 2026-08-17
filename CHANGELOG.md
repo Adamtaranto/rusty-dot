@@ -12,11 +12,19 @@ and this project adheres to
 
 - Browser app (`app/`): fully client-side assembly comparison built with
   Shiny for Python and deployed as a static Shinylive/Pyodide site alongside
-  the docs. Upload FASTA/FASTA.gz assemblies, align with rusty-dot's k-mer
-  engine or import PAF (minimap2/LASTZ/nucmer via biowasm planned), reconfigure
-  the dotplot without recomputing, and download SVG/PDF plots, PAF, and a
-  reordered query FASTA. NCBI BLAST is not offered — no WASM build of BLAST+
-  exists.
+  the docs at <https://adamtaranto.github.io/rusty-dot/app/>. Upload
+  FASTA/FASTA.gz assemblies, align with rusty-dot's k-mer engine or import
+  PAF, reconfigure the dotplot without recomputing, and download SVG/PDF
+  plots, PAF, and a reordered query FASTA.
+- Browser app: additional in-browser aligners via biowasm — minimap2 2.22,
+  LASTZ 1.04.52, and nucmer (MUMmer4); these fetch tool binaries from the
+  biowasm CDN at runtime. NCBI BLAST is not offered — no production
+  WebAssembly build of BLAST+ exists; nucmer is the substitute.
+- Browser app: interactive in-app dotplot with sub-plot drill-down — click a
+  sub-panel of the all-vs-all grid to focus a single query/target pair.
+- Docs page for the browser app (`docs/webapp.md`) with an embedded live app,
+  capabilities table, and memory/network limits; linked from the README,
+  docs landing page, and site navigation.
 - Pyodide wheel pipeline: the `wasm-build` CI job now targets Pyodide 0.27
   (CPython 3.12 + Emscripten 3.1.58) with proper side-module link flags and a
   Node smoke test, producing a wheel loadable in the browser; the docs deploy
