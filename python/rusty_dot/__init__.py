@@ -40,6 +40,7 @@ from rusty_dot.paf_io import (  # noqa: F401
     parse_paf_file,
     reverse_complement,
 )
+from rusty_dot.style import NATURE_RC, nature_style, use_nature_style  # noqa: F401
 
 __version__ = '0.1.0'
 __all__ = [
@@ -61,4 +62,7 @@ __all__ = [
     'py_coords_to_paf',
     'py_save_index',
     'py_load_index',
+    'NATURE_RC',
+    'nature_style',
+    'use_nature_style',
 ]
