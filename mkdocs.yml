@@ -60,6 +60,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Web App: webapp.md
   - Installation: installation.md
   - Development Guide: development.md
   - Tutorials:
