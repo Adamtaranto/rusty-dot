@@ -404,7 +404,7 @@ class DotPlotter:
         target_group: Optional[str],
         query_names: Optional[list[str]],
         target_names: Optional[list[str]],
-    ) -> tuple[Optional[list[str]], Optional[list[str]], Optional[set[str]], bool]:
+    ) -> tuple[Optional[list[str]], Optional[list[str]], Optional[set[str]]]:
         """Apply a plot-time contig-ordering strategy before name resolution.
 
         Reuses the existing reorder machinery on the underlying index:
@@ -434,19 +434,13 @@ class DotPlotter:
 
         Returns
         -------
-        tuple of (list[str] | None, list[str] | None, set[str] | None, bool)
-            ``(query_names, target_names, auto_reverse_set,
-            suppress_paf_override)``.  The name lists are ``None`` when
-            group-based resolution (or the default all-sequences path) should
-            proceed unchanged; *auto_reverse_set* holds the un-prefixed
-            reverse-oriented query contigs detected by a ``'colinearity'``
-            reorder, or ``None`` when orientation information is unavailable.
-            *suppress_paf_override* is ``True`` when
-            :meth:`~rusty_dot.paf_io.CrossIndex.compute_matches` was invoked
-            here purely to enable the reorder: its cache is forward-strand
-            only, so rendering must stay on the stranded k-mer path (as it
-            would have without *contig_order*) to keep reverse-strand
-            alignments visible.
+        tuple of (list[str] | None, list[str] | None, set[str] | None)
+            ``(query_names, target_names, auto_reverse_set)``.  The name lists
+            are ``None`` when group-based resolution (or the default
+            all-sequences path) should proceed unchanged;
+            *auto_reverse_set* holds the un-prefixed reverse-oriented query
+            contigs detected by a ``'colinearity'`` reorder, or ``None`` when
+            orientation information is unavailable.
 
         Raises
         ------
@@ -458,7 +452,7 @@ class DotPlotter:
         """
         valid = ('length', 'colinearity')
         if contig_order is None:
-            return query_names, target_names, None, False
+            return query_names, target_names, None
         if contig_order not in valid:
             raise ValueError(
                 f'Invalid contig_order {contig_order!r}; '
@@ -466,7 +460,6 @@ class DotPlotter:
             )
 
         auto_rev: Optional[set[str]] = None
-        suppress_paf_override = False
 
         if isinstance(self.index, CrossIndex):
             cross = self.index
@@ -496,11 +489,7 @@ class DotPlotter:
                         tg = next(g for g in groups if g != qg)
                 assert qg is not None and tg is not None
                 if (qg, tg) not in cross.computed_group_pairs:
-                    # compute_matches is required by reorder_for_colinearity,
-                    # but its cache is forward-strand only — keep rendering on
-                    # the stranded k-mer path the caller would otherwise get.
                     cross.compute_matches(query_group=qg, target_group=tg)
-                    suppress_paf_override = True
                 cross.reorder_for_colinearity(qg, tg)
                 auto_rev = cross.reversed_contigs(qg)
                 # Groups were auto-detected: resolve names here so the new
@@ -517,7 +506,7 @@ class DotPlotter:
                     query_names = cross.sequence_names()
                 if target_group is None and target_names is None:
                     target_names = cross.sequence_names()
-            return query_names, target_names, auto_rev, suppress_paf_override
+            return query_names, target_names, auto_rev
 
         all_names = self.index.sequence_names()
         if contig_order == 'length':
@@ -530,7 +519,7 @@ class DotPlotter:
                 query_names = list(by_length)
             if target_names is None:
                 target_names = list(by_length)
-            return query_names, target_names, None, False
+            return query_names, target_names, None
 
         # colinearity on PafAlignment / SequenceIndex.
         q_in = query_names if query_names is not None else sorted(all_names)
@@ -547,7 +536,7 @@ class DotPlotter:
             query_names = sorted_q
         if target_names is None:
             target_names = sorted_t
-        return query_names, target_names, auto_rev, False
+        return query_names, target_names, auto_rev
 
     def plot(
         self,
@@ -705,12 +694,11 @@ class DotPlotter:
             :meth:`~rusty_dot.SequenceIndex.optimal_contig_order` for a bare
             ``SequenceIndex``).  Explicit *query_names* / *target_names*
             arguments take precedence: an axis whose names were supplied by
-            the caller keeps the caller's order.  When ``'colinearity'``
-            computes CrossIndex matches on demand, those (forward-strand-only)
-            records are used solely for ordering and rendering keeps the
-            stranded k-mer path so reverse-strand alignments stay visible.
-            An invalid value raises :exc:`ValueError`.  Default is ``None``
-            (no reordering).
+            the caller keeps the caller's order.  ``'colinearity'`` computes
+            CrossIndex matches on demand when needed; the cached records
+            cover both strands, so subsequent rendering from the cache shows
+            reverse-strand alignments too.  An invalid value raises
+            :exc:`ValueError`.  Default is ``None`` (no reordering).
         auto_reverse : bool, optional
             When ``True``, reverse-oriented query contigs detected by the
             *contig_order* reorder (via
@@ -736,12 +724,7 @@ class DotPlotter:
             not a ``CrossIndex``.
         """
         # Apply the requested contig-ordering strategy (no-op when None).
-        (
-            query_names,
-            target_names,
-            auto_reverse_set,
-            suppress_paf_override,
-        ) = self._apply_contig_order(
+        query_names, target_names, auto_reverse_set = self._apply_contig_order(
             contig_order, query_group, target_group, query_names, target_names
         )
         if auto_reverse and reverse_contigs is None and auto_reverse_set is not None:
@@ -753,11 +736,6 @@ class DotPlotter:
         query_names, target_names, paf_override = self._resolve_group_names(
             query_group, target_group, query_names, target_names
         )
-        if suppress_paf_override:
-            # The records were computed by _apply_contig_order purely for
-            # ordering; they are forward-strand only, so keep rendering on the
-            # stranded k-mer path (identical to a contig_order=None call).
-            paf_override = None
 
         all_names = self.index.sequence_names()
         if not all_names:

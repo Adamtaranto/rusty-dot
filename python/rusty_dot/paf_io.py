@@ -1576,7 +1576,8 @@ class CrossIndex:
         Orientation is expressed relative to the target group, which is treated
         as the forward reference: only *query_group* contigs are flagged as
         reversed.  Order and orientation are derived from the k-mer engine's
-        stranded matches (the ``compute_matches`` cache is forward-strand only).
+        stranded matches (the same mechanism that populates the
+        :meth:`compute_matches` cache).
 
         .. note::
             :meth:`compute_matches` must be called for ``(query_group,
@@ -1619,19 +1620,75 @@ class CrossIndex:
             self._groups[target_group] = sorted_t
         self._reversed[query_group] = reversed_q
 
+    def _stranded_pair_records(
+        self,
+        q_int: str,
+        t_int: str,
+        q_name: str,
+        t_name: str,
+        merge: bool = True,
+    ) -> list[PafRecord]:
+        """Build both-strand PAF records for a single sequence pair.
+
+        Matches come from
+        :meth:`~rusty_dot.SequenceIndex.compare_sequences_stranded`, which
+        reports forward (``'+'``) and reverse-complement (``'-'``) matches.
+        Query coordinates are always on the forward strand, as required by
+        the PAF specification.
+
+        Parameters
+        ----------
+        q_int, t_int : str
+            Internal (``'group:name'``) identifiers used for the comparison.
+        q_name, t_name : str
+            Un-prefixed names written into the records.
+        merge : bool, optional
+            Whether to merge co-linear k-mer runs.  Default is ``True``.
+
+        Returns
+        -------
+        list[PafRecord]
+            One record per stranded match block.
+        """
+        q_len = self._index.get_sequence_length(q_int)
+        t_len = self._index.get_sequence_length(t_int)
+        records: list[PafRecord] = []
+        for qs, qe, ts, te, strand in self._index.compare_sequences_stranded(
+            q_int, t_int, merge
+        ):
+            block = max(qe - qs, te - ts)
+            records.append(
+                PafRecord(
+                    query_name=q_name,
+                    query_len=q_len,
+                    query_start=qs,
+                    query_end=qe,
+                    strand=strand,
+                    target_name=t_name,
+                    target_len=t_len,
+                    target_start=ts,
+                    target_end=te,
+                    residue_matches=block,
+                    alignment_block_len=block,
+                    mapping_quality=255,
+                )
+            )
+        return records
+
     def _stranded_records(
         self,
         query_group: str,
         target_group: str,
         q_names: list[str],
         t_names: list[str],
+        merge: bool = True,
     ) -> list[PafRecord]:
         """Build both-strand PAF records for a group pair from the k-mer engine.
 
-        The cached ``compute_matches`` records are forward-strand only, so both
-        the gravity ordering and the reverse-orientation check are driven from
-        :meth:`~rusty_dot.SequenceIndex.compare_sequences_stranded`, which
-        reports forward and reverse matches.
+        Both the gravity ordering and the reverse-orientation check are driven
+        from :meth:`~rusty_dot.SequenceIndex.compare_sequences_stranded`, which
+        reports forward and reverse matches.  :meth:`compute_matches` caches
+        records built through this same mechanism.
 
         Parameters
         ----------
@@ -1639,6 +1696,8 @@ class CrossIndex:
             Group labels for the query and target axes.
         q_names, t_names : list[str]
             Un-prefixed sequence names within each group.
+        merge : bool, optional
+            Whether to merge co-linear k-mer runs.  Default is ``True``.
 
         Returns
         -------
@@ -1649,30 +1708,9 @@ class CrossIndex:
         records: list[PafRecord] = []
         for q in q_names:
             qi = self._make_internal(query_group, q)
-            q_len = self._index.get_sequence_length(qi)
             for t in t_names:
                 ti = self._make_internal(target_group, t)
-                t_len = self._index.get_sequence_length(ti)
-                for qs, qe, ts, te, strand in self._index.compare_sequences_stranded(
-                    qi, ti, True
-                ):
-                    block = max(qe - qs, te - ts)
-                    records.append(
-                        PafRecord(
-                            query_name=q,
-                            query_len=q_len,
-                            query_start=qs,
-                            query_end=qe,
-                            strand=strand,
-                            target_name=t,
-                            target_len=t_len,
-                            target_start=ts,
-                            target_end=te,
-                            residue_matches=block,
-                            alignment_block_len=block,
-                            mapping_quality=255,
-                        )
-                    )
+                records.extend(self._stranded_pair_records(qi, ti, q, t, merge))
         return records
 
     def reversed_contigs(self, group: str) -> set[str]:
@@ -1826,6 +1864,11 @@ class CrossIndex:
         ``(query_group, target_group)``, and the pair is added to
         :attr:`computed_group_pairs`.
 
+        Records cover **both strands**: reverse-complement matches are cached
+        as ``'-'`` strand :class:`PafRecord` entries with query coordinates on
+        the forward strand, as required by the PAF specification.  Plotting
+        from the cache therefore renders reverse-oriented contigs correctly.
+
         Parameters
         ----------
         query_group : str or None, optional
@@ -1868,25 +1911,7 @@ class CrossIndex:
                 tg,
                 len(t_seqs),
             )
-            pair_records: list[PafRecord] = []
-            for q_orig in q_seqs:
-                for t_orig in t_seqs:
-                    q_int = self._make_internal(qg, q_orig)
-                    t_int = self._make_internal(tg, t_orig)
-                    _log.debug(
-                        'CrossIndex.compute_matches: comparing %r (group %r) '
-                        'vs %r (group %r)',
-                        q_orig,
-                        qg,
-                        t_orig,
-                        tg,
-                    )
-                    lines = self._index.get_paf(q_int, t_int, merge)
-                    for line in lines:
-                        fields = line.split('\t')
-                        fields[0] = q_orig
-                        fields[5] = t_orig
-                        pair_records.append(PafRecord.from_line('\t'.join(fields)))
+            pair_records = self._stranded_records(qg, tg, q_seqs, t_seqs, merge)
             self._records_by_pair[(qg, tg)] = pair_records
             _log.info(
                 'CrossIndex.compute_matches: stored %d record(s) for pair (%r, %r)',
@@ -1917,7 +1942,10 @@ class CrossIndex:
         Returns
         -------
         list[str]
-            PAF-formatted lines (12 tab-separated columns each).
+            PAF-formatted lines (12 tab-separated columns each).  Both
+            strands are reported: reverse-complement matches appear as
+            ``'-'`` strand lines with query coordinates on the forward
+            strand, per the PAF specification.
         """
         if group_pairs is None:
             group_pairs = self._get_default_group_pairs()
@@ -1935,23 +1963,10 @@ class CrossIndex:
                 query_group,
                 target_group,
             )
-            for q_orig in q_seqs:
-                for t_orig in t_seqs:
-                    q_int = self._make_internal(query_group, q_orig)
-                    t_int = self._make_internal(target_group, t_orig)
-                    _log.debug(
-                        'CrossIndex.get_paf: comparing %r (group %r) vs %r (group %r)',
-                        q_orig,
-                        query_group,
-                        t_orig,
-                        target_group,
-                    )
-                    lines = self._index.get_paf(q_int, t_int, merge)
-                    for line in lines:
-                        fields = line.split('\t')
-                        fields[0] = q_orig
-                        fields[5] = t_orig
-                        paf_lines.append('\t'.join(fields))
+            records = self._stranded_records(
+                query_group, target_group, q_seqs, t_seqs, merge
+            )
+            paf_lines.extend(rec.to_line() for rec in records)
         return paf_lines
 
     def run_merge(
@@ -2015,12 +2030,10 @@ class CrossIndex:
                     continue
                 q_int = self._make_internal('a', q_orig)
                 t_int = self._make_internal('a', t_orig)
-                lines = self._index.get_paf(q_int, t_int, merge)
-                for line in lines:
-                    fields = line.split('\t')
-                    fields[0] = q_orig
-                    fields[5] = t_orig
-                    paf_lines.append('\t'.join(fields))
+                records = self._stranded_pair_records(
+                    q_int, t_int, q_orig, t_orig, merge
+                )
+                paf_lines.extend(rec.to_line() for rec in records)
         return paf_lines
 
     def reorder_contigs(
@@ -2126,9 +2139,9 @@ class CrossIndex:
             if target_names is not None
             else list(self._groups[target_group])
         )
-        # Order and reverse-orientation both come from the stranded matches
-        # (the compute_matches cache is forward-strand only); the resulting
-        # order matches SequenceIndex.optimal_contig_order by construction.
+        # Order and reverse-orientation both come from the stranded matches;
+        # the resulting order matches SequenceIndex.optimal_contig_order by
+        # construction.
         records = self._stranded_records(query_group, target_group, q_names, t_names)
         sorted_q, sorted_t, reversed_q = compute_gravity_contigs(
             records, q_names, t_names

@@ -1540,3 +1540,34 @@ def test_contig_order_auto_reverse_explicit_reverse_contigs_wins():
     plt.close(fig_auto)
 
     assert segs_override != segs_auto
+
+
+def test_plot_from_computed_cache_renders_reverse_segments():
+    """Plotting via groups from the compute_matches cache shows '-' matches.
+
+    Regression test: the forward-strand-only cache used to blank panels for
+    reverse-oriented contigs when the pre-computed records were used for
+    rendering.
+    """
+    import random
+
+    from rusty_dot.paf_io import CrossIndex
+
+    rng = random.Random(21)
+    chrom = ''.join(rng.choice('ACGT') for _ in range(200))
+    cross = CrossIndex(k=15)
+    cross.add_sequence('chr1', chrom, group='ref')
+    cross.add_sequence('q_rc', _revcomp(chrom), group='qry')
+    cross.compute_matches('qry', 'ref')
+    assert ('qry', 'ref') in cross.computed_group_pairs
+
+    plotter = DotPlotter(cross)
+    fig = plotter.plot(query_group='qry', target_group='ref')
+    segs = _panel_segments(fig.axes[0])
+    plt.close(fig)
+
+    assert segs, 'expected segments rendered from the cached records'
+    # Reverse matches are drawn anti-diagonal (x decreasing).
+    assert any(x0 > x1 for x0, _y0, x1, _y1 in segs), (
+        'expected at least one reverse (anti-diagonal) segment from the cache'
+    )
