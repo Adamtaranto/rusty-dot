@@ -10,7 +10,11 @@
 #                          link errors)
 #   link-native-libraries=no  stop rustc passing nonexistent emscripten C libs
 #                          to the linker (nightly-only -Z flag, so wasm builds
-#                          need a nightly toolchain: RUSTUP_TOOLCHAIN=nightly)
+#                          need a nightly toolchain).  Use the pinned
+#                          RUSTUP_TOOLCHAIN=nightly-2025-05-01: newer nightlies
+#                          default to wasm-exceptions (incompatible with
+#                          Pyodide 0.27's non-EH ABI); older ones predate
+#                          stdlib APIs used by bio 4.x.
 #
 # The earlier opt-level=0 workaround (emsdk 3.1.65's wasm-opt not knowing
 # --enable-bulk-memory-opt) is no longer needed on 3.1.58.
@@ -20,6 +24,12 @@ rustflags = [
   "-C", "link-arg=-sWASM_BIGINT",
   "-C", "relocation-model=pic",
   "-Z", "link-native-libraries=no",
+  # Appended after rustc's own "-O3", so emcc links at -O0 and skips its
+  # wasm-opt post-processing pass entirely (modern LLVM emits the
+  # bulk-memory-opt feature, which emsdk 3.1.58's bundled wasm-opt rejects
+  # with "Unknown option '--enable-bulk-memory-opt'").  The Rust code itself
+  # is still compiled at opt-level 3 — only the binaryen pass is skipped.
+  "-C", "link-arg=-O0",
 ]
 
 # On macOS, the pyo3 `extension-module` cdylib leaves Python symbols undefined

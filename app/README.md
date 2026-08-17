@@ -33,8 +33,9 @@ python3 -m http.server --directory site 8741
 ```
 
 The wasm wheel must target the Pyodide release bundled by shinylive
-(currently Pyodide 0.27.x = CPython 3.12 + Emscripten 3.1.58); see the
-`wasm-build` job in `.github/workflows/ci.yml`.
+(currently Pyodide 0.27.x = CPython 3.12 + Emscripten 3.1.58, built with the
+pinned `nightly-2025-02-17` Rust toolchain); see the `wasm-build` job in
+`.github/workflows/ci.yml` for the exact recipe.
 
 ## Alignment methods
 

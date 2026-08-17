@@ -211,6 +211,10 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         kwargs = cfg.plot_kwargs()
         if kind == 'kmer':
             kwargs.update(query_group=QUERY_GROUP, target_group=TARGET_GROUP)
+        else:
+            # Keep PAF queries on rows and targets on columns (the default
+            # would plot the union of all names on both axes).
+            kwargs.update(query_names=obj.query_names, target_names=obj.target_names)
         style = nature_style() if cfg.nature else contextlib.nullcontext()
         with style:
             return DotPlotter(obj).plot(**kwargs)
@@ -250,15 +254,15 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         fig.savefig(buf, format=fmt, bbox_inches='tight')
         return buf.getvalue()
 
-    @render.download(filename='dotplot.svg')
+    @render.download_button(filename='dotplot.svg')
     def dl_svg():
         yield _figure_bytes('svg')
 
-    @render.download(filename='dotplot.pdf')
+    @render.download_button(filename='dotplot.pdf')
     def dl_pdf():
         yield _figure_bytes('pdf')
 
-    @render.download(filename='alignment.paf')
+    @render.download_button(filename='alignment.paf')
     def dl_paf():
         res = result()
         req(res)
@@ -269,7 +273,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         else:
             yield paf_text_from_alignment(obj)
 
-    @render.download(filename='query_reordered.fasta')
+    @render.download_button(filename='query_reordered.fasta')
     def dl_fasta():
         res = result()
         req(res)

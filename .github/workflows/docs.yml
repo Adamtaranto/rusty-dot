@@ -17,10 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust nightly with wasm32-unknown-emscripten target
-        # Nightly is required by the -Z link-native-libraries=no flag in
-        # .cargo/config.toml (see the wasm-build job in ci.yml for details).
-        uses: dtolnay/rust-toolchain@nightly
+        # Pinned nightly + emsdk pairing; see the wasm-build job in ci.yml
+        # for why this exact combination is required.
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2025-05-01
           targets: wasm32-unknown-emscripten
       - name: Set up Emscripten SDK
         uses: mymindstorm/setup-emsdk@v14
