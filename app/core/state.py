@@ -15,7 +15,11 @@ ORDER_CHOICES: dict[str, str] = {
     'input': 'Input order',
     'length': 'Sort by size',
     'colinearity': 'Maximise colinearity',
+    'colinearity_ref': 'Colinearity vs fixed reference',
 }
+
+#: Ordering modes that derive orientation info (reversed contigs).
+COLINEARITY_MODES: frozenset[str] = frozenset({'colinearity', 'colinearity_ref'})
 
 
 @dataclass
@@ -25,8 +29,10 @@ class PlotConfig:
     Attributes
     ----------
     contig_order : str
-        One of ``'input'``, ``'length'`` or ``'colinearity'`` (keys of
-        :data:`ORDER_CHOICES`).
+        One of ``'input'``, ``'length'``, ``'colinearity'`` or
+        ``'colinearity_ref'`` (keys of :data:`ORDER_CHOICES`).
+        ``'colinearity_ref'`` keeps the target axis fixed and reorders only
+        the query contigs against it.
     auto_reverse : bool
         Flip contigs detected as reverse-oriented so colinear alignments
         render as forward diagonals.
@@ -54,13 +60,23 @@ class PlotConfig:
     def plot_kwargs(self) -> dict[str, Any]:
         """Translate this config into ``DotPlotter.plot`` keyword arguments.
 
+        ``'colinearity_ref'`` maps to ``contig_order=None`` because the
+        target-fixed reordering is not a plot-level strategy: the app
+        computes explicit name orders (see :func:`core.panels.resolve_orders`)
+        and passes ``query_names=`` / ``target_names=`` /
+        ``reverse_contigs=`` itself.
+
         Returns
         -------
         dict[str, Any]
             Keyword arguments accepted by
             :meth:`rusty_dot.dotplot.DotPlotter.plot`.
         """
-        order = None if self.contig_order == 'input' else self.contig_order
+        order = (
+            self.contig_order
+            if self.contig_order in ('length', 'colinearity')
+            else None
+        )
         return {
             'contig_order': order,
             'auto_reverse': self.auto_reverse,
