@@ -69,6 +69,7 @@ nav:
       - All-vs-All Between Two Indices: tutorials/all_vs_all_two_indices.ipynb
       - Writing Reordered FASTA: tutorials/write_reordered_fasta.ipynb
       - Minimap2 PAF Visualization: tutorials/minimap2_paf_tutorial.ipynb
+      - Reorder & Reorient an Assembly: tutorials/reorder_reorient_assembly.ipynb
   - API Reference:
       - Overview: api/index.md
       - SequenceIndex: api/sequence_index.md
