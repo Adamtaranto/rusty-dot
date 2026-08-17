@@ -1306,3 +1306,82 @@ def test_reverse_contigs_auto_from_pafalignment():
     segs = _panel_segments(fig.axes[0])
     plt.close(fig)
     assert segs  # rendered without error using the auto-detected reversed set
+
+
+def test_hide_internal_axes_removes_internal_boundaries(dotplot_index):
+    """hide_internal_axes=True hides internal ticks/spines, keeps outer frame."""
+    plotter = DotPlotter(dotplot_index)
+    fig = plotter.plot(hide_internal_axes=True)
+    fig.canvas.draw()
+
+    nrows = ncols = 3
+    axes = [fig.axes[i * ncols : (i + 1) * ncols] for i in range(nrows)]
+    for row_idx in range(nrows):
+        for col_idx in range(ncols):
+            ax = axes[row_idx][col_idx]
+            pos = f'panel ({row_idx}, {col_idx})'
+
+            # Spines: internal edges hidden, outer frame intact.
+            assert ax.spines['top'].get_visible() == (row_idx == 0), pos
+            assert ax.spines['bottom'].get_visible() == (row_idx == nrows - 1), pos
+            assert ax.spines['left'].get_visible() == (col_idx == 0), pos
+            assert ax.spines['right'].get_visible() == (col_idx == ncols - 1), pos
+
+            # Tick marks: only on the bottom row / left column.
+            x_ticks = [t.tick1line.get_visible() for t in ax.xaxis.get_major_ticks()]
+            y_ticks = [t.tick1line.get_visible() for t in ax.yaxis.get_major_ticks()]
+            assert all(v == (row_idx == nrows - 1) for v in x_ticks), pos
+            assert all(v == (col_idx == 0) for v in y_ticks), pos
+
+    plt.close(fig)
+
+
+def test_hide_internal_axes_zero_panel_spacing(dotplot_index):
+    """hide_internal_axes=True collapses inter-panel gaps to zero."""
+    plotter = DotPlotter(dotplot_index)
+    for scale_sequences in (True, False):
+        fig = plotter.plot(hide_internal_axes=True, scale_sequences=scale_sequences)
+        gs = fig.axes[0].get_subplotspec().get_gridspec()
+        params = gs.get_subplot_params(fig)
+        assert params.wspace == 0.0
+        assert params.hspace == 0.0
+        plt.close(fig)
+
+
+def test_default_keeps_internal_axes(dotplot_index):
+    """Regression: the default path keeps internal spines/ticks and only
+    suppresses redundant internal tick labels."""
+    plotter = DotPlotter(dotplot_index)
+    fig = plotter.plot()
+    fig.canvas.draw()
+
+    nrows = ncols = 3
+    axes = [fig.axes[i * ncols : (i + 1) * ncols] for i in range(nrows)]
+    for row_idx in range(nrows):
+        for col_idx in range(ncols):
+            ax = axes[row_idx][col_idx]
+            pos = f'panel ({row_idx}, {col_idx})'
+
+            # All spines and tick marks stay visible on every panel.
+            for side in ('top', 'bottom', 'left', 'right'):
+                assert ax.spines[side].get_visible(), pos
+            assert all(t.tick1line.get_visible() for t in ax.xaxis.get_major_ticks()), (
+                pos
+            )
+            assert all(t.tick1line.get_visible() for t in ax.yaxis.get_major_ticks()), (
+                pos
+            )
+
+            # Tick labels only on the bottom row (x) and left column (y).
+            x_labels = [t.label1.get_visible() for t in ax.xaxis.get_major_ticks()]
+            y_labels = [t.label1.get_visible() for t in ax.yaxis.get_major_ticks()]
+            assert all(v == (row_idx == nrows - 1) for v in x_labels), pos
+            assert all(v == (col_idx == 0) for v in y_labels), pos
+
+    # Default spacing is not collapsed to zero.
+    gs = fig.axes[0].get_subplotspec().get_gridspec()
+    params = gs.get_subplot_params(fig)
+    assert params.wspace > 0.0
+    assert params.hspace > 0.0
+
+    plt.close(fig)
