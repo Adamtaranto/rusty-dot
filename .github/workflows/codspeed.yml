@@ -15,8 +15,8 @@ jobs:
     name: Rust benchmarks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.14'
       # The bench binary links `rustydot` (an rlib), which pulls in pyo3 built
@@ -30,7 +30,7 @@ jobs:
           echo "PYO3_PYTHON=$(which python)" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$(python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
       - name: Setup rust toolchain, cache and cargo-codspeed binary
-        uses: moonrepo/setup-rust@v0
+        uses: moonrepo/setup-rust@v1
         with:
           channel: stable
           cache-target: release
@@ -38,7 +38,7 @@ jobs:
       - name: Build the benchmark target(s)
         run: cargo codspeed build
       - name: Run the benchmarks
-        uses: CodSpeedHQ/action@v4
+        uses: CodSpeedHQ/action@v5
         with:
           mode: simulation
           run: cargo codspeed run
@@ -46,8 +46,8 @@ jobs:
     name: Python benchmarks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.14'
       # maturin needs cargo to build the extension from the sdist/source tree.
@@ -59,7 +59,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install '.[test]'
       - name: Run the benchmarks
-        uses: CodSpeedHQ/action@v4
+        uses: CodSpeedHQ/action@v5
         with:
           mode: simulation
           run: pytest python/benchmarks --codspeed

@@ -13,7 +13,7 @@ jobs:
     name: Rust Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
       - name: Add clippy and rustfmt components
@@ -21,7 +21,7 @@ jobs:
           rustup component add clippy
           rustup component add rustfmt
       - name: Cache cargo registry
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -45,7 +45,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -71,15 +71,15 @@ jobs:
     runs-on: ubuntu-latest
     needs: rust-tests
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.14"
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo registry
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -101,15 +101,15 @@ jobs:
     runs-on: ubuntu-latest
     needs: rust-tests
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.14"
       - name: Cache cargo registry
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -132,7 +132,7 @@ jobs:
     # Run independently; a wasm build failure does not block other jobs.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install Rust stable with wasm32-unknown-emscripten target
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -146,13 +146,13 @@ jobs:
           # not matter.
           version: 3.1.65
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           # Pinned to 3.12: Pyodide 0.27 (emsdk 3.1.65 above) ships CPython 3.12,
           # so the wasm wheel must be built with a matching interpreter.
           python-version: "3.12"
       - name: Cache cargo registry
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry

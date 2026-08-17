@@ -50,6 +50,8 @@ repository = "https://github.com/adamtaranto/rusty-dot"
 features = ["pyo3/extension-module"]
 python-source = "python"
 module-name = "rusty_dot._rusty_dot"
+# Bundle the HTML report assets (template/CSS/JS) into wheels and sdists.
+include = [{ path = "python/rusty_dot/_html/**/*", format = ["sdist", "wheel"] }]
 
 [tool.pytest.ini_options]
 addopts = "-v --cov=rusty_dot --cov-branch --cov-report=xml --cov-report=term"

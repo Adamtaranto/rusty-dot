@@ -24,6 +24,10 @@ At its core, it builds a rolling-hash [ntHash](https://github.com/bcgsc/ntHash) 
 - **Identity-based alignment colouring** — when alignments are loaded from a PAF file, pass `color_by_identity=True` to colour each segment by `residue_matches / alignment_block_len` using any Matplotlib colormap (`identity_palette`); `DotPlotter.plot_identity_colorbar()` renders the scale as a standalone figure
 - **`CrossIndex`** multi-group cross-index: N arbitrary sequence groups, configurable group pairs for alignment, per-group contig ordering (insertion order, length, or collinearity), `run_merge` to update cached PAF records, compatible with `DotPlotter`
 - **`PafAlignment.filter_by_min_length()`** — discard short alignment records from a loaded PAF file; filters on query aligned length
+- **Interactive HTML dotplot reports** (`DotPlotter.to_html()`, or an `.html` output path) — single self-contained file with click-to-focus sub-panels, scroll zoom, and a click-a-match detail bar
+- **Nature-journal plot style** — opt-in via the `nature_style()` context manager in `rusty_dot.style`
+- **`plot(hide_internal_axes=True)`** — continuous grid plots without internal axis clutter
+- **Plot-time contig ordering** — `plot(contig_order='length'|'colinearity')` with `auto_reverse=True` to flip reverse-oriented contigs automatically
 - **Full Python bindings** via [PyO3](https://pyo3.rs)
 
 ## Quick Start

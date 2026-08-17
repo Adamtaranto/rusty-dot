@@ -20,7 +20,7 @@ pyo3 = { version = "0.29", features = ["extension-module"] }
 # even without its C compression backends because it tries to produce a
 # standalone .wasm for every crate, which requires a `main` symbol.
 needletail = { version = "0.7", default-features = false, optional = true }
-bio = "3.0"
+bio = "4.0"
 serde = { version = "1.0", features = ["derive"] }
 postcard = { version = "1", features = ["use-std"] }
 ahash = "0.8"
@@ -46,7 +46,7 @@ parallel = ["dep:rayon"]
 tempfile = "3.27"
 # Drop-in criterion API that also registers benchmarks with cargo-codspeed, so
 # the same bench targets run under both `cargo bench` and `cargo codspeed run`.
-codspeed-criterion-compat = "2"
+codspeed-criterion-compat = "5"
 
 [[bench]]
 name = "bench_index"
