@@ -25,7 +25,9 @@
     minimap2: { module: 'minimap2/2.22', program: 'minimap2', outputFile: null },
     lastz: { module: 'lastz/1.04.52', program: 'lastz', outputFile: null },
     nucmer: {
-      module: 'mummer4/4.0.0rc1/nucmer',
+      // Object spec: Aioli's 3-part string form is tool/PROGRAM/version,
+      // so the object form is used to keep the fields unambiguous.
+      module: { tool: 'mummer4', version: '4.0.0rc1', program: 'nucmer' },
       program: 'nucmer',
       outputFile: 'out.delta',
     },
@@ -40,6 +42,23 @@
   var aioliScriptPromise = null; // loads aioli.js once
   var cliPromises = {}; // tool key -> Promise<Aioli instance>
   var runQueue = Promise.resolve(); // serialises runs (shared out.delta etc.)
+
+  // A hung init/exec (bad CDN asset, wedged WebWorker) must reject rather
+  // than block the run queue forever.
+  var RUN_TIMEOUT_MS = 180000;
+
+  function withTimeout(promise, what) {
+    return Promise.race([
+      promise,
+      new Promise(function (resolve, reject) {
+        setTimeout(function () {
+          reject(
+            new Error(what + ' timed out after ' + RUN_TIMEOUT_MS / 1000 + 's')
+          );
+        }, RUN_TIMEOUT_MS);
+      }),
+    ]);
+  }
 
   function loadAioliScript() {
     if (window.Aioli) return Promise.resolve();
@@ -68,11 +87,18 @@
 
   function getCli(tool) {
     if (!cliPromises[tool]) {
-      cliPromises[tool] = loadAioliScript()
-        .then(function () {
-          return new window.Aioli([TOOLS[tool].module]);
-        })
-        .catch(function (err) {
+      cliPromises[tool] = withTimeout(
+        loadAioliScript().then(function () {
+          // printInterleaved:false keeps stdout separate from stderr —
+          // minimap2/lastz write their PAF/general output to stdout but
+          // also log progress to stderr, and the default interleaved
+          // string is unparseable.
+          return new window.Aioli([TOOLS[tool].module], {
+            printInterleaved: false,
+          });
+        }),
+        'Initialising ' + tool + ' from biowasm'
+      ).catch(function (err) {
           cliPromises[tool] = null; // allow retry on the next run
           throw new Error(
             'Could not initialise ' + tool + ' from biowasm: ' + errText(err)
@@ -107,7 +133,9 @@
       { name: TARGET_FILENAME, data: msg.target_fasta },
     ]);
     var cmd = [spec.program].concat(msg.args || []).join(' ');
-    var stdout = await CLI.exec(cmd);
+    var res = await withTimeout(CLI.exec(cmd), msg.tool + ' run');
+    var stdout = res && typeof res === 'object' ? res.stdout : res;
+    var stderr = res && typeof res === 'object' ? res.stderr : '';
     if (spec.outputFile) {
       try {
         return await CLI.fs.readFile(spec.outputFile, { encoding: 'utf8' });
@@ -117,7 +145,7 @@
             ' did not produce ' +
             spec.outputFile +
             ' (tool output: ' +
-            String(stdout).slice(0, 500) +
+            String(stderr || stdout).slice(0, 500) +
             ')'
         );
       }
