@@ -568,6 +568,7 @@ class DotPlotter:
         reverse_contigs: Optional[set[str]] = None,
         contig_order: Optional[str] = None,
         auto_reverse: bool = False,
+        hide_internal_axes: bool = False,
     ) -> matplotlib.figure.Figure:
         """Plot an all-vs-all dotplot grid.
 
@@ -713,6 +714,12 @@ class DotPlotter:
             both are given.  Only ``contig_order='colinearity'`` yields
             orientation information; otherwise this option has no effect.
             Default is ``False``.
+        hide_internal_axes : bool, optional
+            When ``True``, internal panel boundaries are removed so the grid
+            reads as one continuous plot: inter-panel gaps collapse to zero,
+            ticks and spines shared between adjacent panels are hidden, and
+            only the outer frame with its tick labels remains.  Default is
+            ``False``.
 
         Returns
         -------
@@ -780,6 +787,10 @@ class DotPlotter:
         nrows = len(query_names)
         ncols = len(target_names)
 
+        flush_kw: dict[str, float] = (
+            {'wspace': 0.0, 'hspace': 0.0} if hide_internal_axes else {}
+        )
+
         # Activate per-panel segment capture when the destination is an HTML
         # report so _plot_panel / the draw helpers can gid-tag artists and
         # record the exact segments they draw.  Reset unconditionally first so
@@ -811,6 +822,7 @@ class DotPlotter:
                 gridspec_kw={
                     'width_ratios': col_widths,
                     'height_ratios': row_heights,
+                    **flush_kw,
                 },
             )
         else:
@@ -821,6 +833,7 @@ class DotPlotter:
                 ncols,
                 figsize=(fig_w, fig_h),
                 squeeze=False,
+                gridspec_kw=flush_kw if hide_internal_axes else None,
             )
 
         for row_idx, q_name in enumerate(query_names):
@@ -865,6 +878,20 @@ class DotPlotter:
                 if col_idx > 0:
                     ax.tick_params(axis='y', labelleft=False)
 
+                # Remove internal ticks and spines so the grid reads as one
+                # continuous plot, keeping the outer frame intact.
+                if hide_internal_axes:
+                    if row_idx < nrows - 1:
+                        ax.tick_params(axis='x', bottom=False)
+                        ax.spines['bottom'].set_visible(False)
+                    if row_idx > 0:
+                        ax.spines['top'].set_visible(False)
+                    if col_idx > 0:
+                        ax.tick_params(axis='y', left=False)
+                        ax.spines['left'].set_visible(False)
+                    if col_idx < ncols - 1:
+                        ax.spines['right'].set_visible(False)
+
                 # Annotation squares on self-vs-self (diagonal) panels.
                 if annotation is not None and q_name == t_name:
                     self._draw_annotation_squares(ax, q_name, annotation)
@@ -872,7 +899,14 @@ class DotPlotter:
         if title:
             fig.suptitle(title, fontsize=14, y=1.01)
 
-        plt.tight_layout()
+        if hide_internal_axes:
+            # tight_layout() would reinsert inter-panel gaps; keep the panels
+            # flush and just leave margins for the outer labels and titles.
+            fig.subplots_adjust(
+                left=0.1, right=0.98, bottom=0.06, top=0.92, wspace=0.0, hspace=0.0
+            )
+        else:
+            plt.tight_layout()
         if output_path is not None:
             self._save_figure(fig, output_path, dpi=dpi, format=format, title=title)
         return fig
