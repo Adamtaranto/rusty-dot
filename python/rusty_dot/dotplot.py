@@ -262,6 +262,10 @@ class DotPlotter:
             self.paf_alignment: Optional[PafAlignment] = index
         else:
             self.paf_alignment = paf_alignment
+        # Per-plot capture of drawn match segments for HTML report output.
+        # ``None`` when inactive; a dict (panels/ncols/counter/current) while
+        # :meth:`plot` is rendering to an ``.html`` destination.
+        self._html_capture: Optional[dict] = None
 
     def _index_is_paf(self) -> bool:
         """Return ``True`` when *index* is a :class:`~rusty_dot.paf_io.PafAlignment`.
@@ -776,6 +780,19 @@ class DotPlotter:
         nrows = len(query_names)
         ncols = len(target_names)
 
+        # Activate per-panel segment capture when the destination is an HTML
+        # report so _plot_panel / the draw helpers can gid-tag artists and
+        # record the exact segments they draw.  Reset unconditionally first so
+        # a previous failed plot cannot leak stale capture state.
+        self._html_capture = None
+        if output_path is not None and self._is_html_output(output_path, format):
+            self._html_capture = {
+                'panels': {},
+                'ncols': ncols,
+                'counter': 0,
+                'current': None,
+            }
+
         if scale_sequences:
             q_lens = [self.index.get_sequence_length(n) for n in query_names]
             t_lens = [self.index.get_sequence_length(n) for n in target_names]
@@ -857,7 +874,7 @@ class DotPlotter:
 
         plt.tight_layout()
         if output_path is not None:
-            plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
+            self._save_figure(fig, output_path, dpi=dpi, format=format, title=title)
         return fig
 
     def _plot_panel(
@@ -951,6 +968,31 @@ class DotPlotter:
         # Display names: strip 'group:' prefix for CrossIndex internal names.
         display_q = self._strip_group_prefix(query_name)
         display_t = self._strip_group_prefix(target_name)
+
+        # HTML report capture: panels are visited in row-major order by
+        # plot(), so a running counter recovers (row, col) without changing
+        # the grid loop.  The axes group is gid-tagged so the embedded JS can
+        # find it in the SVG, and an empty panel entry is registered for the
+        # draw helpers to fill in.
+        capture = self._html_capture
+        if capture is not None:
+            row, col = divmod(capture['counter'], capture['ncols'])
+            capture['counter'] += 1
+            gid = f'rd-panel-{row}-{col}'
+            ax.set_gid(gid)
+            capture['current'] = gid
+            capture['panels'][gid] = {
+                'query': display_q,
+                'target': display_t,
+                'query_id': query_name,
+                'qlen': int(q_len),
+                'tlen': int(t_len),
+                # Mirrored panels need their embedded sequences fetched from
+                # the mirrored coordinates and reverse-complemented (the
+                # stored sequence is always forward orientation).
+                'reverse_query': reverse_query,
+                'segments': {'fwd': [], 'rev': [], 'identity': []},
+            }
 
         # Effective PAF alignment: per-call override takes precedence.
         effective_paf = (
@@ -1064,8 +1106,8 @@ class DotPlotter:
         ax.tick_params(axis='both', labelsize=6)
         ax.set_aspect('auto')
 
-    @staticmethod
     def _draw_stranded_blocks(
+        self,
         ax: plt.Axes,
         blocks: list[tuple[int, int, int, int, str]],
         dot_color: str,
@@ -1110,6 +1152,23 @@ class DotPlotter:
         fwd = arr[keep & (strand != '-')]
         rev = arr[keep & (strand == '-')]
 
+        # HTML report capture: record the filtered segments in the exact
+        # order they will be drawn (the SVG element <-> payload contract) and
+        # remember the gid suffix for tagging the collections below.
+        capture = self._html_capture
+        panel = None
+        gid_base = ''
+        if capture is not None and capture.get('current'):
+            panel = capture['panels'][capture['current']]
+            # 'rd-panel-<r>-<c>' -> 'rd-matches-<r>-<c>'
+            gid_base = 'rd-matches-' + capture['current'][len('rd-panel-') :]
+            panel['segments']['fwd'] = fwd.astype(np.int64).tolist()
+            panel['segments']['rev'] = rev.astype(np.int64).tolist()
+            # Interactive reports need one SVG element per segment; a
+            # rasterised layer would collapse to a single <image> and kill
+            # click-to-inspect, so force vector output for HTML.
+            rasterized = False
+
         if len(fwd):
             # Forward: (t_start, q_start) -> (t_end, q_end).
             fwd_seg = np.stack(
@@ -1119,17 +1178,18 @@ class DotPlotter:
                 ],
                 axis=1,
             )
-            ax.add_collection(
-                LineCollection(
-                    fwd_seg,
-                    colors=dot_color,
-                    linewidths=dot_size,
-                    alpha=0.7,
-                    rasterized=_resolve_rasterized(
-                        len(fwd_seg), rasterized, rasterization_threshold
-                    ),
-                )
+            fwd_coll = LineCollection(
+                fwd_seg,
+                colors=dot_color,
+                linewidths=dot_size,
+                alpha=0.7,
+                rasterized=_resolve_rasterized(
+                    len(fwd_seg), rasterized, rasterization_threshold
+                ),
             )
+            if panel is not None:
+                fwd_coll.set_gid(f'{gid_base}-fwd')
+            ax.add_collection(fwd_coll)
         if len(rev):
             # Reverse complement: (t_end, q_start) -> (t_start, q_end).
             rev_seg = np.stack(
@@ -1139,20 +1199,21 @@ class DotPlotter:
                 ],
                 axis=1,
             )
-            ax.add_collection(
-                LineCollection(
-                    rev_seg,
-                    colors=rc_color,
-                    linewidths=dot_size,
-                    alpha=0.7,
-                    rasterized=_resolve_rasterized(
-                        len(rev_seg), rasterized, rasterization_threshold
-                    ),
-                )
+            rev_coll = LineCollection(
+                rev_seg,
+                colors=rc_color,
+                linewidths=dot_size,
+                alpha=0.7,
+                rasterized=_resolve_rasterized(
+                    len(rev_seg), rasterized, rasterization_threshold
+                ),
             )
+            if panel is not None:
+                rev_coll.set_gid(f'{gid_base}-rev')
+            ax.add_collection(rev_coll)
 
-    @staticmethod
     def _draw_identity_records(
+        self,
         ax: plt.Axes,
         records: list,
         identity_palette: str,
@@ -1188,6 +1249,17 @@ class DotPlotter:
         norm = mcolors.Normalize(vmin=0, vmax=1)
         segments: list[list[tuple[float, float]]] = []
         colors: list = []
+        # HTML report capture: serialise records in drawing order so the nth
+        # SVG element of the identity collection maps to the nth payload row.
+        capture = self._html_capture
+        panel = None
+        gid_base = ''
+        if capture is not None and capture.get('current'):
+            panel = capture['panels'][capture['current']]
+            gid_base = 'rd-matches-' + capture['current'][len('rd-panel-') :]
+            # Force vector output for HTML: rasterising would collapse the
+            # layer to one <image> and break per-segment click mapping.
+            rasterized = False
         for rec in records:
             if min_length > 0 and rec.query_aligned_len < min_length:
                 continue
@@ -1203,18 +1275,30 @@ class DotPlotter:
                 xs = (rec.target_start, rec.target_end)
             segments.append([(xs[0], rec.query_start), (xs[1], rec.query_end)])
             colors.append(color)
-        if segments:
-            ax.add_collection(
-                LineCollection(
-                    segments,
-                    colors=colors,
-                    linewidths=dot_size,
-                    alpha=0.7,
-                    rasterized=_resolve_rasterized(
-                        len(segments), rasterized, rasterization_threshold
-                    ),
+            if panel is not None:
+                panel['segments']['identity'].append(
+                    [
+                        int(rec.query_start),
+                        int(rec.query_end),
+                        int(rec.target_start),
+                        int(rec.target_end),
+                        round(float(identity), 4),
+                        rec.strand,
+                    ]
                 )
+        if segments:
+            id_coll = LineCollection(
+                segments,
+                colors=colors,
+                linewidths=dot_size,
+                alpha=0.7,
+                rasterized=_resolve_rasterized(
+                    len(segments), rasterized, rasterization_threshold
+                ),
             )
+            if panel is not None:
+                id_coll.set_gid(f'{gid_base}-identity')
+            ax.add_collection(id_coll)
 
     def _records_for_pair(
         self,
@@ -1329,6 +1413,9 @@ class DotPlotter:
         matplotlib.figure.Figure
             A figure containing only the legend.
         """
+        # Legend figures never support HTML capture; clear any stale capture
+        # left by an aborted plot() so _save_figure raises cleanly for HTML.
+        self._html_capture = None
         handles = [
             mpatches.Patch(
                 facecolor=annotation.get_color(ft),
@@ -1342,7 +1429,7 @@ class DotPlotter:
         fig.legend(handles=handles, loc='center', fontsize=10, frameon=True)
         plt.tight_layout()
         if output_path is not None:
-            plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
+            self._save_figure(fig, output_path, dpi=dpi, format=format)
         return fig
 
     def plot_single(
@@ -1469,6 +1556,10 @@ class DotPlotter:
             If *query_group* / *target_group* are provided but *index* is
             not a ``CrossIndex``.
         """
+        # Single-panel figures do not support HTML capture (v1 covers the
+        # grid plot() path only); clear any stale capture defensively.
+        self._html_capture = None
+
         # Resolve group-prefixed names for CrossIndex.
         if query_group is not None or target_group is not None:
             if not self._index_is_cross():
@@ -1604,7 +1695,7 @@ class DotPlotter:
         else:
             plt.tight_layout()
         if output_path is not None:
-            plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
+            self._save_figure(fig, output_path, dpi=dpi, format=format)
         return fig
 
     def plot_identity_colorbar(
@@ -1646,6 +1737,9 @@ class DotPlotter:
         matplotlib.figure.Figure
             A figure containing only the colorbar.
         """
+        # Colorbar figures never support HTML capture; clear any stale
+        # capture left by an aborted plot() so _save_figure raises cleanly.
+        self._html_capture = None
         norm = mcolors.Normalize(vmin=0, vmax=1)
         sm = plt.cm.ScalarMappable(cmap=plt.get_cmap(palette), norm=norm)
         sm.set_array([])
@@ -1657,5 +1751,135 @@ class DotPlotter:
         ax.set_visible(False)
         plt.tight_layout()
         if output_path is not None:
-            plt.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
+            self._save_figure(fig, output_path, dpi=dpi, format=format)
         return fig
+
+    @staticmethod
+    def _is_html_output(
+        output_path: Union[str, Path],
+        format: Optional[str],
+    ) -> bool:
+        """Return ``True`` when the requested output is an HTML report.
+
+        Parameters
+        ----------
+        output_path : str or Path
+            Destination file path.
+        format : str or None
+            Explicit output format, if any.  An explicit non-HTML format
+            (e.g. ``format='svg'`` with a ``.html`` path) wins over the file
+            extension, matching matplotlib's own precedence.
+
+        Returns
+        -------
+        bool
+            ``True`` when ``format='html'`` or, with no explicit format, the
+            path ends in ``.html`` / ``.htm``.
+        """
+        if format is not None:
+            return format.lower() == 'html'
+        return Path(output_path).suffix.lower() in ('.html', '.htm')
+
+    def _save_figure(
+        self,
+        fig: matplotlib.figure.Figure,
+        output_path: Union[str, Path],
+        dpi: int,
+        format: Optional[str] = None,
+        title: Optional[str] = None,
+    ) -> None:
+        """Save a figure, dispatching on the requested output format.
+
+        Routes to the interactive HTML report renderer when the destination
+        is HTML (``.html``/``.htm`` suffix or ``format='html'``); otherwise
+        performs the standard matplotlib save.
+
+        Parameters
+        ----------
+        fig : matplotlib.figure.Figure
+            The figure to save.
+        output_path : str or Path
+            Destination file path.
+        dpi : int
+            Raster resolution passed to matplotlib for non-HTML output.
+        format : str, optional
+            Explicit output format; ``None`` (default) infers from the file
+            extension.
+        title : str, optional
+            Report title for HTML output (unused otherwise).  ``None``
+            (default) uses a generic title.
+
+        Raises
+        ------
+        ValueError
+            If HTML output is requested but no panel capture is active,
+            i.e. the figure was not produced by :meth:`plot` (v1 supports
+            HTML reports for the grid ``plot()`` path only).
+        """
+        if self._is_html_output(output_path, format):
+            capture = self._html_capture
+            try:
+                if capture is None or not capture['panels']:
+                    raise ValueError(
+                        'HTML output is only supported for figures produced '
+                        'by DotPlotter.plot() / DotPlotter.to_html(); save '
+                        'this figure as PNG/SVG/PDF instead.'
+                    )
+                # Local import keeps matplotlib-only workflows free of any
+                # HTML machinery import cost.
+                from rusty_dot._html import build_panel_payload, render_html_report
+
+                # SequenceIndex and CrossIndex expose get_sequence();
+                # PafAlignment does not, so its reports omit sequences.
+                get_seq = getattr(self.index, 'get_sequence', None)
+                payload = build_panel_payload(capture, get_sequence=get_seq)
+                render_html_report(
+                    fig,
+                    payload,
+                    Path(output_path),
+                    title=title if title is not None else 'rusty-dot report',
+                )
+            finally:
+                # Always drop the capture so state never leaks between plots.
+                self._html_capture = None
+        else:
+            fig.savefig(str(output_path), dpi=dpi, bbox_inches='tight', format=format)
+
+    def to_html(
+        self,
+        output_path: Union[str, Path],
+        **plot_kwargs: object,
+    ) -> matplotlib.figure.Figure:
+        """Render the all-vs-all dotplot grid as an interactive HTML report.
+
+        Convenience wrapper around :meth:`plot` that always produces a
+        single self-contained HTML file: the figure is embedded as inline
+        SVG together with the match coordinates (and, when the index stores
+        sequences, the matched query subsequences).  In a browser, panels
+        can be zoomed by clicking or scrolling and individual match lines
+        can be clicked to inspect their coordinates.
+
+        Parameters
+        ----------
+        output_path : str or Path
+            Destination ``.html`` file path.  HTML output is produced even
+            if the suffix differs.
+        **plot_kwargs : object
+            Additional keyword arguments forwarded to :meth:`plot`
+            (e.g. ``query_names``, ``title``, ``color_by_identity``).
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+            The rendered figure, as returned by :meth:`plot`.
+
+        Examples
+        --------
+        >>> plotter = DotPlotter(idx)  # doctest: +SKIP
+        >>> plotter.to_html('report.html', title='asm1 vs asm2')  # doctest: +SKIP
+        """
+        path = Path(output_path)
+        if path.suffix.lower() not in ('.html', '.htm'):
+            # Force HTML dispatch even for non-.html suffixes.
+            plot_kwargs.setdefault('format', 'html')
+        return self.plot(output_path=path, **plot_kwargs)  # type: ignore[arg-type]

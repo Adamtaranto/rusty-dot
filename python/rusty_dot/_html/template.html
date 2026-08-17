@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__RD_TITLE__</title>
+<style>
+__RD_CSS__
+</style>
+</head>
+<body>
+<header id="rd-header">
+  <h1>__RD_TITLE__</h1>
+  <p id="rd-help">
+    <span><kbd>Scroll</kbd> pan vertically</span> &middot;
+    <span><kbd>Shift</kbd>+<kbd>Scroll</kbd> pan horizontally</span> &middot;
+    <span><kbd>Cmd/Ctrl</kbd>+<kbd>Scroll</kbd> zoom</span> &middot;
+    <span><kbd>Drag</kbd> zoom to region</span> &middot;
+    <span><kbd>Click panel</kbd> focus</span> &middot;
+    <span><kbd>Click match</kbd> details</span> &middot;
+    <span><kbd>Esc</kbd> reset</span>
+  </p>
+</header>
+<main id="rd-figure">
+__RD_SVG__
+</main>
+<div id="rd-detail" hidden>
+  <button id="rd-detail-close" type="button" title="Close">&times;</button>
+  <div id="rd-detail-coords"></div>
+  <pre id="rd-detail-seq" hidden></pre>
+</div>
+<script type="application/json" id="rd-data">__RD_DATA__</script>
+<script>
+__RD_JS__
+</script>
+</body>
+</html>
