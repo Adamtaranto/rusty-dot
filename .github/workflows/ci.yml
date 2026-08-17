@@ -73,7 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.14"
       - name: Install Rust stable
@@ -105,7 +105,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.14"
       - name: Cache cargo registry
@@ -146,7 +146,7 @@ jobs:
           # not matter.
           version: 3.1.65
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           # Pinned to 3.12: Pyodide 0.27 (emsdk 3.1.65 above) ships CPython 3.12,
           # so the wasm wheel must be built with a matching interpreter.
