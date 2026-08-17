@@ -1,0 +1,121 @@
+/* rusty-dot interactive report styles.
+   Inlined into <style> in the single-file HTML report. */
+
+:root {
+  --rd-bg: #ffffff;
+  --rd-fg: #1a1a2e;
+  --rd-muted: #667085;
+  --rd-accent: #2563eb;
+  --rd-bar-bg: #111827;
+  --rd-bar-fg: #f9fafb;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--rd-bg);
+  color: var(--rd-fg);
+  /* Leave room for the fixed detail bar at the bottom. */
+  padding-bottom: 10rem;
+}
+
+#rd-header {
+  padding: 0.75rem 1.25rem 0.25rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+#rd-header h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.2rem;
+}
+
+#rd-help {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  color: var(--rd-muted);
+}
+
+#rd-figure {
+  padding: 1rem;
+  overflow: auto;
+}
+
+#rd-figure svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+  /* Wheel events over the SVG are consumed for zooming. */
+  touch-action: none;
+}
+
+/* Panels: pointer feedback plus dimming of unselected panels. */
+g[id^='rd-panel-'] { cursor: pointer; }
+
+g[id^='rd-panel-'].rd-dim { opacity: 0.2; }
+
+/* Match lines: clicks register on the stroke, not the (empty) fill.
+   Widened invisible overlay strokes (added by JS) make hairlines clickable. */
+g[id^='rd-matches-'] * { pointer-events: stroke; cursor: pointer; }
+
+.rd-hit {
+  fill: none;
+  stroke: #000;
+  stroke-opacity: 0;
+  stroke-width: 6px;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.rd-selected-match {
+  /* !important so the highlight beats matplotlib's inline styles. */
+  stroke: #f59e0b !important;
+  stroke-opacity: 0.9 !important;
+  stroke-width: 3px !important;
+}
+
+/* Fixed bottom detail bar showing coords/strand/identity/sequence. */
+#rd-detail {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--rd-bar-bg);
+  color: var(--rd-bar-fg);
+  padding: 0.6rem 2.5rem 0.6rem 1.25rem;
+  font-size: 0.85rem;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+}
+
+#rd-detail-coords { line-height: 1.5; }
+
+#rd-detail-coords b { color: #93c5fd; }
+
+#rd-detail-seq {
+  margin: 0.4rem 0 0;
+  max-height: 5.5rem;
+  overflow: auto;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+}
+
+#rd-detail-close {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.6rem;
+  background: none;
+  border: none;
+  color: var(--rd-bar-fg);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+#rd-detail-close:hover { color: var(--rd-accent); }
