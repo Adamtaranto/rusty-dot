@@ -1,21 +1,36 @@
-# Disable wasm-opt for wasm32-unknown-emscripten builds by forcing opt-level = 0
-# at the rustc level.  When rustc calls emcc as the linker with -O0, emcc skips
-# its wasm-opt post-processing step entirely.
+# Flags for building the Pyodide (browser) wheel.  The target Pyodide release
+# is 0.27.x (bundled by current Shinylive): CPython 3.12 + Emscripten 3.1.58,
+# so builds MUST use emsdk 3.1.58 exactly — a mismatched emcc version produces
+# a wheel whose platform tag micropip rejects at load time.
 #
-# Without this override, maturin's --release flag causes emcc to run wasm-opt
-# with -O3 plus feature flags (including --enable-bulk-memory-opt).  The
-# --enable-bulk-memory-opt flag was added to emcc >= 3.1.65 but the bundled
-# wasm-opt binary in that same EMSDK release does not yet know the option,
-# producing:
+#   SIDE_MODULE=2          build a dynamic library loadable by Pyodide's main
+#                          module (=1 chokes on Rust's lib.rmeta)
+#   WASM_BIGINT            i64 <-> BigInt at the JS boundary
+#   relocation-model=pic   required for side modules (else R_WASM_TABLE_INDEX
+#                          link errors)
+#   link-native-libraries=no  stop rustc passing nonexistent emscripten C libs
+#                          to the linker (nightly-only -Z flag, so wasm builds
+#                          need a nightly toolchain).  Use the pinned
+#                          RUSTUP_TOOLCHAIN=nightly-2025-05-01: newer nightlies
+#                          default to wasm-exceptions (incompatible with
+#                          Pyodide 0.27's non-EH ABI); older ones predate
+#                          stdlib APIs used by bio 4.x.
 #
-#   error: Unknown option '--enable-bulk-memory-opt'
-#
-# Setting opt-level = 0 here for the wasm target does NOT affect native builds;
-# the [target.*] table is target-specific.  The compiled wasm bytecode will be
-# unoptimised, which is acceptable for a CI artefact whose purpose is to verify
-# that the crate links cleanly to wasm32-unknown-emscripten.
+# The earlier opt-level=0 workaround (emsdk 3.1.65's wasm-opt not knowing
+# --enable-bulk-memory-opt) is no longer needed on 3.1.58.
 [target.wasm32-unknown-emscripten]
-rustflags = ["-C", "opt-level=0"]
+rustflags = [
+  "-C", "link-arg=-sSIDE_MODULE=2",
+  "-C", "link-arg=-sWASM_BIGINT",
+  "-C", "relocation-model=pic",
+  "-Z", "link-native-libraries=no",
+  # Appended after rustc's own "-O3", so emcc links at -O0 and skips its
+  # wasm-opt post-processing pass entirely (modern LLVM emits the
+  # bulk-memory-opt feature, which emsdk 3.1.58's bundled wasm-opt rejects
+  # with "Unknown option '--enable-bulk-memory-opt'").  The Rust code itself
+  # is still compiled at opt-level 3 — only the binaryen pass is skipped.
+  "-C", "link-arg=-O0",
+]
 
 # On macOS, the pyo3 `extension-module` cdylib leaves Python symbols undefined
 # to be resolved by the host interpreter at load time.  Standalone `cargo`

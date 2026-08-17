@@ -86,6 +86,9 @@ unfixable = ["D"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D"] # Ignore all pydocstyle rules in tests
+# The Shiny app is UI wiring: dozens of tiny reactive closures where
+# per-function docstrings add noise.  app/core/ (the logic) keeps full D rules.
+"app/app.py" = ["D103"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"

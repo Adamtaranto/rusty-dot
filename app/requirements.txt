@@ -1,0 +1,8 @@
+# Installed by shinylive (micropip) at app startup, before app.py runs.
+# matplotlib and numpy resolve to the Pyodide-built packages bundled with the
+# exported site.  The rusty-dot wasm wheel is NOT listed here: it is bundled
+# into the app's wheels/ directory at export time and installed from the
+# virtual filesystem by ensure_rusty_dot() in app.py (this keeps the app
+# working on any host path without hard-coded wheel URLs).
+matplotlib
+numpy

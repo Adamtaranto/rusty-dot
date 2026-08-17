@@ -26,9 +26,17 @@ from rusty_dot._rusty_dot import (  # noqa: F401
     py_find_kmer_coords,
     py_load_index,
     py_merge_kmer_runs,
-    py_read_fasta,
     py_save_index,
 )
+
+try:
+    from rusty_dot._rusty_dot import py_read_fasta  # noqa: F401
+except ImportError:  # pragma: no cover - wasm-only branch
+    # wasm32-unknown-emscripten wheels are built --no-default-features, which
+    # excludes the needletail-backed FASTA reader (the `fasta` cargo feature).
+    # Everything else works; in-browser callers parse FASTA in Python and use
+    # add_sequence() instead.
+    py_read_fasta = None  # type: ignore[assignment]
 from rusty_dot.annotation import GffAnnotation, GffFeature  # noqa: F401
 from rusty_dot.dotplot import DotPlotter  # noqa: F401
 from rusty_dot.paf_io import (  # noqa: F401
