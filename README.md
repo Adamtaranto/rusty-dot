@@ -38,6 +38,15 @@ hits detected via `compare_sequences_stranded`
 - Export the collinearity layout to FASTA (`CrossIndex.write_fasta()`): contigs
   written in the reordered order with reverse-oriented contigs reverse-complemented
 - **`PafAlignment.filter_by_min_length()`** — discard short alignment records from a loaded PAF file
+- **Interactive HTML dotplot reports** (`DotPlotter.to_html()`, or an `.html`
+  output path): single self-contained file with click-to-focus sub-panels,
+  scroll zoom, and a click-a-match detail bar
+- Opt-in **Nature-journal plot style** via the `nature_style()` context manager
+  in `rusty_dot.style`
+- `plot(hide_internal_axes=True)` for continuous grid plots without internal
+  axis clutter
+- **Plot-time contig ordering** — `plot(contig_order='length'|'colinearity')`
+  with `auto_reverse=True` to flip reverse-oriented contigs automatically
 - Full Python bindings via [PyO3](https://pyo3.rs)
 
 ## Installation
