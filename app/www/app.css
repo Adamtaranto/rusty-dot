@@ -1,0 +1,38 @@
+/* rusty-dot browser app styling. */
+
+.rd-status {
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  border-radius: 6px;
+  background: #eef4fb;
+  color: #1f3a5f;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.rd-status-error {
+  background: #fdecea;
+  color: #7a1c13;
+}
+
+.sidebar h5 {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.sidebar .btn {
+  width: 100%;
+  margin-bottom: 0.35rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .rd-status {
+    background: #1d2b3d;
+    color: #cfe1f5;
+  }
+  .rd-status-error {
+    background: #3d1d1d;
+    color: #f5cfcf;
+  }
+}

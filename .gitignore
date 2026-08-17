@@ -50,3 +50,6 @@ site/
 .coverage
 coverage.xml
 target/
+
+# rusty-dot browser app: wasm wheel dropped in at export time, never committed
+app/wheels/
