@@ -12,7 +12,12 @@
  * Behaviours:
  *  1. Click a panel        -> zoom the SVG viewBox to that panel and dim the
  *                             others; click again (or Esc) resets.
- *  2. Wheel over the SVG   -> uniform zoom in/out centred on the cursor.
+ *  2. Wheel over the SVG   -> vertical pan; Shift+wheel -> horizontal pan;
+ *                             Cmd/Ctrl+wheel (incl. trackpad pinch, which
+ *                             browsers report as ctrl+wheel) -> uniform
+ *                             aspect-preserving zoom centred on the cursor.
+ *                             Pans are clamped to the figure bounds, and at
+ *                             full view the page's natural scroll is kept.
  *  3. Drag inside a panel  -> rubber-band rectangle; on release, zoom to
  *                             that region (constrained to the panel; drags
  *                             under 5px count as plain clicks; Esc cancels).
@@ -171,22 +176,65 @@
   });
 
   // ---------------------------------------------------------------------
-  // 2. Wheel zoom (uniform, centred on the cursor)
+  // 2. Wheel: pan (Shift = horizontal), Cmd/Ctrl+wheel = zoom
   // ---------------------------------------------------------------------
+
+  /* Clamp a candidate viewBox to the figure bounds; zooming out to (or
+   * past) full size snaps back to the home view. */
+  function clampView(vb) {
+    if (vb.w >= homeViewBox.w || vb.h >= homeViewBox.h) {
+      return { x: homeViewBox.x, y: homeViewBox.y, w: homeViewBox.w, h: homeViewBox.h };
+    }
+    vb.x = clampVal(vb.x, homeViewBox.x, homeViewBox.x + homeViewBox.w - vb.w);
+    vb.y = clampVal(vb.y, homeViewBox.y, homeViewBox.y + homeViewBox.h - vb.h);
+    return vb;
+  }
 
   svg.addEventListener(
     'wheel',
     function (evt) {
-      evt.preventDefault();
-      // Same factor on both axes keeps the aspect ratio intact; anchoring
-      // on the pointer keeps the hovered feature under the cursor.
-      var factor = Math.exp(evt.deltaY * 0.002);
       var vb = getViewBox();
-      var pt = eventPoint(evt);
-      vb.x = pt.x - (pt.x - vb.x) * factor;
-      vb.y = pt.y - (pt.y - vb.y) * factor;
-      vb.w *= factor;
-      vb.h *= factor;
+      if (evt.metaKey || evt.ctrlKey) {
+        // Zoom (trackpad pinch arrives as ctrl+wheel).  Same factor on
+        // both axes keeps the aspect ratio intact; anchoring on the
+        // pointer keeps the hovered feature under the cursor.
+        evt.preventDefault();
+        var factor = Math.exp(evt.deltaY * 0.002);
+        var pt = eventPoint(evt);
+        vb.x = pt.x - (pt.x - vb.x) * factor;
+        vb.y = pt.y - (pt.y - vb.y) * factor;
+        vb.w *= factor;
+        vb.h *= factor;
+        setViewBox(clampView(vb));
+        return;
+      }
+      // Pan: vertical by default, horizontal with Shift, clamped to the
+      // figure.  When the pan cannot move (full view, or already at the
+      // relevant edge), fall through WITHOUT preventDefault so the page's
+      // natural scrolling still works.
+      // Shift+wheel is reported via deltaX by some browsers/trackpads.
+      var delta = evt.deltaY !== 0 ? evt.deltaY : evt.deltaX;
+      if (evt.shiftKey) {
+        var stepX = delta * (vb.w / (svg.clientWidth || homeViewBox.w));
+        var newX = clampVal(
+          vb.x + stepX,
+          homeViewBox.x,
+          Math.max(homeViewBox.x, homeViewBox.x + homeViewBox.w - vb.w)
+        );
+        if (newX === vb.x) return;
+        evt.preventDefault();
+        vb.x = newX;
+      } else {
+        var stepY = delta * (vb.h / (svg.clientHeight || homeViewBox.h));
+        var newY = clampVal(
+          vb.y + stepY,
+          homeViewBox.y,
+          Math.max(homeViewBox.y, homeViewBox.y + homeViewBox.h - vb.h)
+        );
+        if (newY === vb.y) return;
+        evt.preventDefault();
+        vb.y = newY;
+      }
       setViewBox(vb);
     },
     { passive: false }

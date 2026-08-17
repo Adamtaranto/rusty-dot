@@ -37,6 +37,20 @@ body {
   color: var(--rd-muted);
 }
 
+#rd-help span { white-space: nowrap; }
+
+/* Key-combo chips in the navigation instruction bar. */
+#rd-help kbd {
+  font-family: inherit;
+  font-size: 0.72rem;
+  color: var(--rd-fg);
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+}
+
 #rd-figure {
   padding: 1rem;
   overflow: auto;
