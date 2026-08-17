@@ -464,9 +464,12 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         # --- W2: interactive plot --- (exports the currently shown view)
         res = result()
         req(res)
+        import matplotlib.pyplot as plt
+
         fig = make_figure(res, config(), layout(), pair=focus())
         buf = io.BytesIO()
         fig.savefig(buf, format=fmt, bbox_inches='tight')
+        plt.close(fig)
         return buf.getvalue()
 
     @render.download_button(filename='dotplot.svg')
@@ -503,19 +506,26 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 out = Path(tmp) / 'query_reordered.fasta'
                 obj.write_fasta(out, group=QUERY_GROUP, order=order, reverse=reverse)
                 yield out.read_bytes()
-        elif isinstance(meta.get('query'), FastaInput):
-            # Coordinate-only alignment (PAF import / external tool) but the
-            # query assembly upload is available: export from its records.
-            yield reordered_fasta_text(meta['query'].records, order, reverse)
         else:
-            ui.notification_show(
-                'Reordered FASTA export needs sequences — upload the query '
-                'assembly (or run a sequence-based method); PAF files carry '
-                'coordinates only.',
-                type='warning',
-                duration=8,
-            )
-            req(False)
+            # Coordinate-only alignment (PAF import / external tool): export
+            # from the query assembly sequences when they are available —
+            # either attached to the result or from the sidebar upload.
+            query = meta.get('query')
+            if not isinstance(query, FastaInput):
+                try:
+                    query = _parse_upload(input.query_fasta, 'query')
+                except ValueError:
+                    query = None
+            if query is None:
+                ui.notification_show(
+                    'Reordered FASTA export needs sequences — upload the '
+                    'query assembly in the sidebar (PAF files carry '
+                    'coordinates only).',
+                    type='warning',
+                    duration=8,
+                )
+                req(False)
+            yield reordered_fasta_text(query.records, order, reverse)
 
 
 app = App(app_ui, server, static_assets=APP_DIR / 'www')
