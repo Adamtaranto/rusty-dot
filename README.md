@@ -5,6 +5,20 @@
 Fast dot plot comparisons of DNA sequences using an FM-Index.
 Written in Rust with PyO3 python bindings.
 
+## Browser app
+
+[![Web App](https://img.shields.io/badge/Web%20App-live-teal)](https://adamtaranto.github.io/rusty-dot/app/)
+
+Try rusty-dot without installing anything:
+**<https://adamtaranto.github.io/rusty-dot/app/>**.
+The app runs entirely in your browser (WebAssembly + Pyodide) — uploaded
+assemblies never leave your machine. Align with the k-mer engine, minimap2,
+LASTZ, or nucmer (or import a PAF file), reconfigure the dotplot without
+recomputing, and download SVG/PDF plots, PAF alignments, and a
+reordered/reoriented query FASTA. See
+[docs/webapp.md](docs/webapp.md) for capabilities and limits, and
+[app/README.md](app/README.md) to run or build it locally.
+
 ## Features
 
 - Read FASTA / gzipped FASTA files via [needletail](https://docs.rs/needletail)
