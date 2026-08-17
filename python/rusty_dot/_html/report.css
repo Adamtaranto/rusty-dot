@@ -40,6 +40,9 @@ body {
 #rd-figure {
   padding: 1rem;
   overflow: auto;
+  /* Prevent text/image selection flicker while drag-selecting a region. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #rd-figure svg {
@@ -67,6 +70,17 @@ g[id^='rd-matches-'] * { pointer-events: stroke; cursor: pointer; }
   stroke-width: 6px;
   pointer-events: stroke;
   cursor: pointer;
+}
+
+/* Rubber-band rectangle drawn while drag-selecting a region to zoom to.
+   non-scaling-stroke keeps the outline hairline at any zoom level. */
+.rd-drag-rect {
+  fill: rgba(37, 99, 235, 0.12);
+  stroke: var(--rd-accent);
+  stroke-width: 1.5px;
+  stroke-dasharray: 5 4;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
 }
 
 .rd-selected-match {
