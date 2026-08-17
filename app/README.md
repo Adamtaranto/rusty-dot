@@ -43,5 +43,5 @@ pinned `nightly-2025-02-17` Rust toolchain); see the `wasm-build` job in
 |---|---|---|
 | k-mer matching | rusty-dot wasm wheel (Pyodide) | ✅ |
 | PAF import | pure Python | ✅ |
-| minimap2 / LASTZ / nucmer | biowasm (Aioli WebWorker) | planned |
+| minimap2 / LASTZ / nucmer | biowasm (Aioli WebWorker; fetched from the biowasm CDN at runtime) | ✅ |
 | BLAST | — | not possible: no production WASM build of BLAST+ exists |
