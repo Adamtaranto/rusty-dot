@@ -1205,3 +1205,73 @@ class TestCrossIndexFasta:
         cross.reorder_for_colinearity('a', 'b', reorder_target=False)
         assert cross.contig_order['b'] == before_b  # target untouched
         assert set(cross.contig_order['a']) == {'fwd', 'rev'}
+
+
+# ---------------------------------------------------------------------------
+# Stranded compute_matches cache
+# ---------------------------------------------------------------------------
+
+
+def _rc_seq(seq):
+    """Return the reverse complement of *seq*."""
+    comp = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}
+    return ''.join(comp[b] for b in reversed(seq))
+
+
+def _stranded_cross():
+    """Two-group CrossIndex whose only query contig is reverse-complemented."""
+    import random
+
+    from rusty_dot.paf_io import CrossIndex
+
+    rng = random.Random(11)
+    chrom = ''.join(rng.choice('ACGT') for _ in range(200))
+    cross = CrossIndex(k=15)
+    cross.add_sequence('q_rc', _rc_seq(chrom), group='qry')
+    cross.add_sequence('chr1', chrom, group='ref')
+    return cross
+
+
+class TestStrandedComputeMatches:
+    """compute_matches caches both-strand records with valid PAF semantics."""
+
+    def test_cache_contains_minus_strand_records(self):
+        """A reverse-complemented contig yields '-' strand cached records."""
+        cross = _stranded_cross()
+        cross.compute_matches('qry', 'ref')
+        records = cross.get_records_for_pair('qry', 'ref')
+        assert records, 'expected cached records for the pair'
+        minus = [r for r in records if r.strand == '-']
+        assert minus, "expected '-' strand records for a reverse-complement contig"
+        for r in minus:
+            # PAF spec: query coordinates are always on the forward strand.
+            assert 0 <= r.query_start < r.query_end <= r.query_len
+            assert 0 <= r.target_start < r.target_end <= r.target_len
+
+    def test_reorder_for_colinearity_flags_reversed_from_cache(self):
+        """reorder_for_colinearity still works after the stranded cache fix."""
+        cross = _stranded_cross()
+        cross.compute_matches('qry', 'ref')
+        cross.reorder_for_colinearity('qry', 'ref')
+        assert cross.reversed_contigs('qry') == {'q_rc'}
+
+    def test_get_paf_text_includes_minus_strand(self):
+        """CrossIndex.get_paf emits '-' strand lines that round-trip cleanly."""
+        cross = _stranded_cross()
+        lines = cross.get_paf(group_pairs=[('qry', 'ref')])
+        minus_lines = [ln for ln in lines if ln.split('\t')[4] == '-']
+        assert minus_lines, "expected '-' strand PAF lines"
+        for ln in minus_lines:
+            rec = PafRecord.from_line(ln)
+            assert rec.strand == '-'
+            assert 0 <= rec.query_start < rec.query_end <= rec.query_len
+            assert 0 <= rec.target_start < rec.target_end <= rec.target_len
+            assert rec.to_line() == ln  # lossless round-trip
+
+    def test_cache_matches_get_paf_output(self):
+        """Cached records and get_paf text agree (same stranded mechanism)."""
+        cross = _stranded_cross()
+        cross.compute_matches('qry', 'ref')
+        cached = sorted(r.to_line() for r in cross.get_records_for_pair('qry', 'ref'))
+        text = sorted(cross.get_paf(group_pairs=[('qry', 'ref')]))
+        assert cached == text

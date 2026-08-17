@@ -1306,3 +1306,268 @@ def test_reverse_contigs_auto_from_pafalignment():
     segs = _panel_segments(fig.axes[0])
     plt.close(fig)
     assert segs  # rendered without error using the auto-detected reversed set
+
+
+# ---------------------------------------------------------------------------
+# Plot-time contig ordering (contig_order / auto_reverse)
+# ---------------------------------------------------------------------------
+
+
+def _random_seq(rng, n):
+    """Return a deterministic pseudo-random DNA sequence of length *n*."""
+    return ''.join(rng.choice('ACGT') for _ in range(n))
+
+
+def _revcomp(seq):
+    """Return the reverse complement of *seq*."""
+    comp = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}
+    return ''.join(comp[b] for b in reversed(seq))
+
+
+def _shuffled_cross_index():
+    """Build a two-group CrossIndex with the query contigs deliberately shuffled.
+
+    The target group ``'ref'`` holds one chromosome made of three distinct
+    60 bp blocks; the query group ``'qry'`` holds one contig per block, added
+    out of colinear order (``c2, c3, c1``).
+
+    Returns
+    -------
+    CrossIndex
+        The populated index (matches not yet computed).
+    """
+    import random
+
+    from rusty_dot.paf_io import CrossIndex
+
+    rng = random.Random(42)
+    blocks = [_random_seq(rng, 60) for _ in range(3)]
+    cross = CrossIndex(k=11)
+    cross.add_sequence('chr1', ''.join(blocks), group='ref')
+    cross.add_sequence('c2', blocks[1], group='qry')
+    cross.add_sequence('c3', blocks[2], group='qry')
+    cross.add_sequence('c1', blocks[0], group='qry')
+    return cross
+
+
+def _grid_query_ylabels(fig, ncols):
+    """Return the y-axis labels of the first column, top-to-bottom."""
+    return [ax.get_ylabel() for i, ax in enumerate(fig.axes) if i % ncols == 0]
+
+
+def _grid_target_titles(fig, ncols):
+    """Return the column titles of the top row, left-to-right."""
+    return [fig.axes[i].get_title() for i in range(ncols)]
+
+
+def test_contig_order_invalid_value_raises(dotplot_index):
+    """An unknown contig_order value raises ValueError listing the options."""
+    plotter = DotPlotter(dotplot_index)
+    with pytest.raises(ValueError, match='contig_order'):
+        plotter.plot(contig_order='bogus')
+
+
+def test_contig_order_default_none_unchanged(dotplot_index):
+    """contig_order=None keeps the default alphabetical ordering."""
+    plotter = DotPlotter(dotplot_index)
+    fig_default = plotter.plot()
+    fig_none = plotter.plot(contig_order=None)
+    try:
+        assert _grid_target_titles(fig_none, 3) == _grid_target_titles(fig_default, 3)
+        assert _grid_target_titles(fig_none, 3) == ['seq1', 'seq2', 'seq3']
+    finally:
+        plt.close(fig_default)
+        plt.close(fig_none)
+
+
+def test_contig_order_length_sorts_descending():
+    """contig_order='length' orders panels by descending sequence length."""
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('short', 'ACGTACGTACGT')  # 12 bp
+    idx.add_sequence('long', 'ACGTACGTACGTACGTACGTACGTACGT')  # 28 bp
+    idx.add_sequence('mid', 'ACGTACGTACGTACGTACGT')  # 20 bp
+    plotter = DotPlotter(idx)
+
+    fig = plotter.plot(contig_order='length')
+    try:
+        expected = ['long', 'mid', 'short']
+        assert _grid_target_titles(fig, 3) == expected
+        assert _grid_query_ylabels(fig, 3) == expected
+    finally:
+        plt.close(fig)
+
+
+def test_contig_order_length_explicit_names_take_precedence():
+    """Explicit query_names keep their order; the unset axis is length-sorted."""
+    idx = SequenceIndex(k=4)
+    idx.add_sequence('short', 'ACGTACGTACGT')
+    idx.add_sequence('long', 'ACGTACGTACGTACGTACGTACGTACGT')
+    idx.add_sequence('mid', 'ACGTACGTACGTACGTACGT')
+    plotter = DotPlotter(idx)
+
+    fig = plotter.plot(contig_order='length', query_names=['short', 'long'])
+    try:
+        # Explicit query order preserved (rows), targets length-sorted (cols).
+        assert _grid_query_ylabels(fig, 3) == ['short', 'long']
+        assert _grid_target_titles(fig, 3) == ['long', 'mid', 'short']
+    finally:
+        plt.close(fig)
+
+
+def test_contig_order_length_crossindex_groups():
+    """contig_order='length' on a CrossIndex reorders the plotted groups."""
+    cross = _shuffled_cross_index()
+    # Make the contigs distinguishable by length.
+    cross.add_sequence('tiny', 'ACGTACGTACGT', group='qry')
+    plotter = DotPlotter(cross)
+
+    fig = plotter.plot(query_group='qry', target_group='ref', contig_order='length')
+    try:
+        labels = _grid_query_ylabels(fig, 1)
+        assert labels[0] in {'c1', 'c2', 'c3'}  # all 60 bp, ties allowed
+        assert labels[-1] == 'tiny'
+    finally:
+        plt.close(fig)
+    # The group order itself was updated in place.
+    assert cross.contig_order['qry'][-1] == 'tiny'
+
+
+def test_contig_order_colinearity_crossindex_restores_order():
+    """'colinearity' on a shuffled two-group CrossIndex restores colinear order."""
+    cross = _shuffled_cross_index()
+    assert cross.contig_order['qry'] == ['c2', 'c3', 'c1']  # shuffled on entry
+    plotter = DotPlotter(cross)
+
+    fig = plotter.plot(
+        query_group='qry', target_group='ref', contig_order='colinearity'
+    )
+    try:
+        assert _grid_query_ylabels(fig, 1) == ['c1', 'c2', 'c3']
+    finally:
+        plt.close(fig)
+    assert cross.contig_order['qry'] == ['c1', 'c2', 'c3']
+
+
+def test_contig_order_colinearity_sequenceindex_uses_optimal_order():
+    """'colinearity' on a bare SequenceIndex uses optimal_contig_order."""
+    import random
+
+    rng = random.Random(7)
+    blocks = [_random_seq(rng, 60) for _ in range(3)]
+    idx = SequenceIndex(k=11)
+    idx.add_sequence('chr1', ''.join(blocks))
+    idx.add_sequence('c2', blocks[1])
+    idx.add_sequence('c3', blocks[2])
+    idx.add_sequence('c1', blocks[0])
+    plotter = DotPlotter(idx)
+
+    fig = plotter.plot(
+        target_names=['chr1'],
+        contig_order='colinearity',
+    )
+    try:
+        labels = _grid_query_ylabels(fig, 1)
+        # The three block contigs appear in colinear order along chr1.
+        block_rows = [n for n in labels if n in {'c1', 'c2', 'c3'}]
+        assert block_rows == ['c1', 'c2', 'c3']
+    finally:
+        plt.close(fig)
+
+
+def test_contig_order_auto_reverse_mirrors_reversed_contig():
+    """auto_reverse=True mirrors a reverse-oriented contig like reverse_contigs."""
+    import random
+
+    from rusty_dot.paf_io import CrossIndex
+
+    rng = random.Random(99)
+    chrom = _random_seq(rng, 120)
+    cross = CrossIndex(k=11)
+    # 'qry' added first so group auto-detection uses it as the query axis.
+    cross.add_sequence('q1', _revcomp(chrom), group='qry')
+    cross.add_sequence('chr1', chrom, group='ref')
+    plotter = DotPlotter(cross)
+
+    def _segs(**kwargs):
+        # No explicit groups: 'colinearity' auto-detects the two groups.
+        fig = plotter.plot(contig_order='colinearity', **kwargs)
+        segs = _panel_segments(fig.axes[0])
+        plt.close(fig)
+        return segs
+
+    auto_segs = _segs(auto_reverse=True)
+    explicit_segs = _segs(reverse_contigs={'q1'})
+    plain_segs = _segs(reverse_contigs=set())
+
+    assert cross.reversed_contigs('qry') == {'q1'}
+    assert auto_segs  # something was drawn
+    # auto_reverse reproduces the explicit reverse_contigs rendering ...
+    assert auto_segs == explicit_segs
+    # ... and differs from the unmirrored rendering.
+    assert auto_segs != plain_segs
+
+
+def test_contig_order_auto_reverse_explicit_reverse_contigs_wins():
+    """An explicit reverse_contigs argument overrides auto_reverse."""
+    import random
+
+    from rusty_dot.paf_io import CrossIndex
+
+    rng = random.Random(99)
+    chrom = _random_seq(rng, 120)
+    cross = CrossIndex(k=11)
+    cross.add_sequence('chr1', chrom, group='ref')
+    cross.add_sequence('q1', _revcomp(chrom), group='qry')
+    plotter = DotPlotter(cross)
+
+    fig_override = plotter.plot(
+        query_group='qry',
+        target_group='ref',
+        contig_order='colinearity',
+        auto_reverse=True,
+        reverse_contigs=set(),  # explicitly disable mirroring
+    )
+    segs_override = _panel_segments(fig_override.axes[0])
+    plt.close(fig_override)
+
+    fig_auto = plotter.plot(
+        query_group='qry',
+        target_group='ref',
+        contig_order='colinearity',
+        auto_reverse=True,
+    )
+    segs_auto = _panel_segments(fig_auto.axes[0])
+    plt.close(fig_auto)
+
+    assert segs_override != segs_auto
+
+
+def test_plot_from_computed_cache_renders_reverse_segments():
+    """Plotting via groups from the compute_matches cache shows '-' matches.
+
+    Regression test: the forward-strand-only cache used to blank panels for
+    reverse-oriented contigs when the pre-computed records were used for
+    rendering.
+    """
+    import random
+
+    from rusty_dot.paf_io import CrossIndex
+
+    rng = random.Random(21)
+    chrom = ''.join(rng.choice('ACGT') for _ in range(200))
+    cross = CrossIndex(k=15)
+    cross.add_sequence('chr1', chrom, group='ref')
+    cross.add_sequence('q_rc', _revcomp(chrom), group='qry')
+    cross.compute_matches('qry', 'ref')
+    assert ('qry', 'ref') in cross.computed_group_pairs
+
+    plotter = DotPlotter(cross)
+    fig = plotter.plot(query_group='qry', target_group='ref')
+    segs = _panel_segments(fig.axes[0])
+    plt.close(fig)
+
+    assert segs, 'expected segments rendered from the cached records'
+    # Reverse matches are drawn anti-diagonal (x decreasing).
+    assert any(x0 > x1 for x0, _y0, x1, _y1 in segs), (
+        'expected at least one reverse (anti-diagonal) segment from the cache'
+    )
