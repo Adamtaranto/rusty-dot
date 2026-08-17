@@ -133,23 +133,25 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7
-      - name: Install Rust stable with wasm32-unknown-emscripten target
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust nightly with wasm32-unknown-emscripten target
+        # Nightly is required by the -Z link-native-libraries=no flag in
+        # .cargo/config.toml (standard for PyO3 side-module builds).
+        uses: dtolnay/rust-toolchain@nightly
         with:
           targets: wasm32-unknown-emscripten
       - name: Set up Emscripten SDK
         uses: mymindstorm/setup-emsdk@v14
         with:
-          # 3.1.65 is the version used by Pyodide 0.27.
-          # wasm-opt is bypassed entirely via .cargo/config.toml (opt-level=0
-          # for wasm32-unknown-emscripten), so the exact Binaryen version does
-          # not matter.
-          version: 3.1.65
+          # MUST match the Emscripten version of the target Pyodide release.
+          # Pyodide 0.27.x (bundled by current Shinylive) = emsdk 3.1.58.
+          # The wheel platform tag derives from this version and micropip
+          # rejects mismatches.
+          version: 3.1.58
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          # Pinned to 3.12: Pyodide 0.27 (emsdk 3.1.65 above) ships CPython 3.12,
-          # so the wasm wheel must be built with a matching interpreter.
+          # Pinned to 3.12: Pyodide 0.27 ships CPython 3.12.7, so the wasm
+          # wheel must be built against a matching interpreter version.
           python-version: "3.12"
       - name: Cache cargo registry
         uses: actions/cache@v6
@@ -167,6 +169,14 @@ jobs:
           --target wasm32-unknown-emscripten
           --no-default-features
           -i python3.12
+      - name: Check wheel platform tag
+        run: |
+          ls target/wheels/
+          ls target/wheels/*cp312-cp312-emscripten_3_1_58_wasm32.whl
+      - name: Smoke-test wheel under Pyodide (Node)
+        run: |
+          npm install pyodide@0.27.7
+          node scripts/wasm_smoke_test.mjs target/wheels/*cp312*emscripten*.whl
       - name: Upload wasm wheel artifact
         uses: actions/upload-artifact@v7
         with:
