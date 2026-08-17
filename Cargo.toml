@@ -46,7 +46,7 @@ parallel = ["dep:rayon"]
 tempfile = "3.27"
 # Drop-in criterion API that also registers benchmarks with cargo-codspeed, so
 # the same bench targets run under both `cargo bench` and `cargo codspeed run`.
-codspeed-criterion-compat = "2"
+codspeed-criterion-compat = "5"
 
 [[bench]]
 name = "bench_index"
