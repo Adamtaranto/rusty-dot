@@ -56,6 +56,19 @@
 
   var homeViewBox = getViewBox();
   setViewBox(homeViewBox); // ensure the attribute exists for later edits
+  // Without this, the default 'xMidYMid meet' would render single-axis
+  // viewBox changes as a pan instead of an anisotropic zoom.
+  svg.setAttribute('preserveAspectRatio', 'none');
+
+  /* Escape text destined for innerHTML (sequence names come from user
+   * FASTA headers and must not inject markup). */
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      );
+    });
+  }
 
   /* Bounding box of an element expressed in the root SVG's viewBox space
    * (getBBox alone ignores ancestor transforms). */
@@ -116,12 +129,25 @@
     selectedPanel = panel;
     var box = bboxInRootSpace(panel);
     var pad = Math.max(box.w, box.h) * 0.03;
-    setViewBox({
+    var vb = {
       x: box.x - pad,
       y: box.y - pad,
       w: box.w + 2 * pad,
       h: box.h + 2 * pad,
-    });
+    };
+    // preserveAspectRatio is 'none', so grow the box to the figure's own
+    // aspect ratio to avoid stretching the selected panel.
+    var ratio = homeViewBox.w / homeViewBox.h;
+    if (vb.w / vb.h > ratio) {
+      var newH = vb.w / ratio;
+      vb.y -= (newH - vb.h) / 2;
+      vb.h = newH;
+    } else {
+      var newW = vb.h * ratio;
+      vb.x -= (newW - vb.w) / 2;
+      vb.w = newW;
+    }
+    setViewBox(vb);
     panelGroups.forEach(function (g) {
       g.classList.toggle('rd-dim', g !== panel);
     });
@@ -206,11 +232,11 @@
     }
 
     var html =
-      '<b>' + panel.query + '</b>:' + seg[0].toLocaleString() +
+      '<b>' + escapeHtml(panel.query) + '</b>:' + seg[0].toLocaleString() +
       '–' + seg[1].toLocaleString() +
-      ' &times; <b>' + panel.target + '</b>:' + seg[2].toLocaleString() +
+      ' &times; <b>' + escapeHtml(panel.target) + '</b>:' + seg[2].toLocaleString() +
       '–' + seg[3].toLocaleString() +
-      ' &middot; strand ' + strand +
+      ' &middot; strand ' + escapeHtml(strand) +
       ' &middot; ' + (seg[1] - seg[0]).toLocaleString() + ' bp';
     if (identity !== null) {
       html += ' &middot; identity ' + (identity * 100).toFixed(1) + '%';

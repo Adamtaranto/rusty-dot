@@ -807,6 +807,10 @@ class DotPlotter:
                 'query_id': query_name,
                 'qlen': int(q_len),
                 'tlen': int(t_len),
+                # Mirrored panels need their embedded sequences fetched from
+                # the mirrored coordinates and reverse-complemented (the
+                # stored sequence is always forward orientation).
+                'reverse_query': reverse_query,
                 'segments': {'fwd': [], 'rev': [], 'identity': []},
             }
 
@@ -980,6 +984,10 @@ class DotPlotter:
             gid_base = 'rd-matches-' + capture['current'][len('rd-panel-') :]
             panel['segments']['fwd'] = fwd.astype(np.int64).tolist()
             panel['segments']['rev'] = rev.astype(np.int64).tolist()
+            # Interactive reports need one SVG element per segment; a
+            # rasterised layer would collapse to a single <image> and kill
+            # click-to-inspect, so force vector output for HTML.
+            rasterized = False
 
         if len(fwd):
             # Forward: (t_start, q_start) -> (t_end, q_end).
@@ -1069,6 +1077,9 @@ class DotPlotter:
         if capture is not None and capture.get('current'):
             panel = capture['panels'][capture['current']]
             gid_base = 'rd-matches-' + capture['current'][len('rd-panel-') :]
+            # Force vector output for HTML: rasterising would collapse the
+            # layer to one <image> and break per-segment click mapping.
+            rasterized = False
         for rec in records:
             if min_length > 0 and rec.query_aligned_len < min_length:
                 continue
@@ -1222,6 +1233,9 @@ class DotPlotter:
         matplotlib.figure.Figure
             A figure containing only the legend.
         """
+        # Legend figures never support HTML capture; clear any stale capture
+        # left by an aborted plot() so _save_figure raises cleanly for HTML.
+        self._html_capture = None
         handles = [
             mpatches.Patch(
                 facecolor=annotation.get_color(ft),
@@ -1543,6 +1557,9 @@ class DotPlotter:
         matplotlib.figure.Figure
             A figure containing only the colorbar.
         """
+        # Colorbar figures never support HTML capture; clear any stale
+        # capture left by an aborted plot() so _save_figure raises cleanly.
+        self._html_capture = None
         norm = mcolors.Normalize(vmin=0, vmax=1)
         sm = plt.cm.ScalarMappable(cmap=plt.get_cmap(palette), norm=norm)
         sm.set_array([])

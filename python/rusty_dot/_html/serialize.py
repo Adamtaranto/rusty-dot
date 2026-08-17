@@ -49,6 +49,27 @@ MAX_EMBEDDED_RESIDUES = 2_000_000
 # Segment layers whose entries carry a query-side sequence slice.
 _LAYERS = ('fwd', 'rev', 'identity')
 
+# Complement table for reverse-complementing embedded sequence slices.
+# Unmapped characters (ambiguity codes other than N) pass through unchanged.
+_COMPLEMENT = str.maketrans('ACGTacgtNn', 'TGCAtgcaNn')
+
+
+def _revcomp(seq: str) -> str:
+    """Reverse-complement a DNA string (N and case preserved).
+
+    Parameters
+    ----------
+    seq : str
+        DNA sequence; characters outside ``ACGTNacgtn`` are reversed but not
+        complemented.
+
+    Returns
+    -------
+    str
+        The reverse complement.
+    """
+    return seq.translate(_COMPLEMENT)[::-1]
+
 
 def _total_query_residues(panels: dict[str, dict[str, Any]]) -> int:
     """Sum the query-side span of every captured segment.
@@ -80,25 +101,42 @@ def _panel_sequences(
 ) -> dict[str, list[str]]:
     """Slice the query sequence for every segment of one panel.
 
+    When the panel was rendered with a reverse-oriented query
+    (``reverse_query`` set by :meth:`~rusty_dot.dotplot.DotPlotter.plot`
+    via *reverse_contigs*), the captured coordinates are mirrored
+    (``q' = qlen - q``) relative to the stored forward-orientation sequence.
+    The substring is then taken from the original (un-mirrored) region and
+    reverse-complemented so it reads exactly as displayed on the plot.
+
     Parameters
     ----------
     panel : dict
         Raw capture entry for one panel (``segments`` lists of
-        ``[qs, qe, ...]`` rows).
+        ``[qs, qe, ...]`` rows, plus ``qlen`` and ``reverse_query``).
     query_seq : str
-        Full query sequence for this panel's row.
+        Full query sequence for this panel's row (forward orientation, as
+        stored in the index).
 
     Returns
     -------
     dict
         ``{layer: [substring, ...]}`` with one query-side substring per
-        segment, in segment order.
+        segment, in segment order and display orientation.
     """
+    reverse = bool(panel.get('reverse_query', False))
+    qlen = int(panel['qlen'])
     seqs: dict[str, list[str]] = {}
     for layer in _LAYERS:
-        seqs[layer] = [
-            query_seq[int(seg[0]) : int(seg[1])] for seg in panel['segments'][layer]
-        ]
+        slices = []
+        for seg in panel['segments'][layer]:
+            qs, qe = int(seg[0]), int(seg[1])
+            if reverse:
+                # Mirrored display coords -> original region, then revcomp
+                # so the fragment matches the plotted orientation.
+                slices.append(_revcomp(query_seq[qlen - qe : qlen - qs]))
+            else:
+                slices.append(query_seq[qs:qe])
+        seqs[layer] = slices
     return seqs
 
 

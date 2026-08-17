@@ -423,3 +423,95 @@ def test_capture_reset_between_plots(html_index, tmp_path):
     assert plotter._html_capture is None
     # Non-HTML figures carry no gid tags.
     assert all(ax.get_gid() is None for ax in fig2.axes)
+
+
+# ---------------------------------------------------------------------------
+# Review regression tests
+# ---------------------------------------------------------------------------
+
+
+def _revcomp(seq):
+    """Reverse complement of an uppercase ACGTN string."""
+    return seq.translate(str.maketrans('ACGTN', 'TGCAN'))[::-1]
+
+
+def test_reverse_contigs_sequences_match_display_orientation(html_index, tmp_path):
+    """Mirrored panels embed the revcomp of the original mirrored region."""
+    out = tmp_path / 'rev.html'
+    fig = DotPlotter(html_index).to_html(out, reverse_contigs={'seq1'})
+    plt.close(fig)
+
+    payload = _read_payload(out)
+    assert payload['has_sequences'] is True
+    for panel in payload['panels'].values():
+        full = html_index.get_sequence(panel['query'])
+        qlen = panel['qlen']
+        mirrored = panel['query'] == 'seq1'
+        for layer in ('fwd', 'rev'):
+            for seq, seg in zip(panel['seqs'][layer], panel['segments'][layer]):
+                qs, qe = seg[0], seg[1]
+                if mirrored:
+                    assert seq == _revcomp(full[qlen - qe : qlen - qs])
+                else:
+                    assert seq == full[qs:qe]
+
+
+def test_rasterized_true_still_produces_clickable_paths(html_index, tmp_path):
+    """HTML output forces vector match layers even with rasterized=True."""
+    out = tmp_path / 'raster.html'
+    fig = DotPlotter(html_index).to_html(out, rasterized=True)
+    plt.close(fig)
+
+    payload = _read_payload(out)
+    html = out.read_text()
+    for gid, panel in payload['panels'].items():
+        row, col = gid.rsplit('-', 2)[1:]
+        for layer in ('fwd', 'rev'):
+            n_segs = len(panel['segments'][layer])
+            if n_segs == 0:
+                continue
+            i = html.find(f'id="rd-matches-{row}-{col}-{layer}"')
+            assert i != -1
+            group = html[i : html.find('</g>', i)]
+            assert '<image' not in group
+            assert group.count('<path') + group.count('<use') == n_segs
+
+
+def test_title_is_html_escaped(html_index, tmp_path):
+    """Markup in the report title is escaped, not injected."""
+    out = tmp_path / 'esc.html'
+    fig = DotPlotter(html_index).to_html(out, title='<script>alert(1)</script>')
+    plt.close(fig)
+
+    html = out.read_text()
+    head = html.split('</head>')[0]
+    assert '<script>alert(1)</script>' not in head
+    assert '&lt;script&gt;alert(1)&lt;/script&gt;' in html
+
+
+def test_stale_capture_does_not_leak_into_colorbar(html_index, tmp_path, monkeypatch):
+    """An aborted HTML plot() must not let later figures reuse its capture."""
+    plotter = DotPlotter(html_index)
+
+    # Abort plot() mid-grid, after capture is active and partially filled.
+    original = DotPlotter._plot_panel
+    calls = {'n': 0}
+
+    def exploding_panel(self, *args, **kwargs):
+        calls['n'] += 1
+        if calls['n'] >= 2:
+            raise RuntimeError('boom')
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(DotPlotter, '_plot_panel', exploding_panel)
+    with pytest.raises(RuntimeError, match='boom'):
+        plotter.plot(output_path=tmp_path / 'aborted.html')
+    monkeypatch.setattr(DotPlotter, '_plot_panel', original)
+    plt.close('all')
+    assert plotter._html_capture is not None  # leaked by the abort...
+
+    # ...but the colorbar clears it and refuses HTML output.
+    with pytest.raises(ValueError, match='HTML output'):
+        plotter.plot_identity_colorbar(output_path=tmp_path / 'cbar.html')
+    plt.close('all')
+    assert plotter._html_capture is None

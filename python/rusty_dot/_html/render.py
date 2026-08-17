@@ -9,6 +9,7 @@ on unique slot tokens).
 
 from __future__ import annotations
 
+import html as html_mod
 from importlib.resources import files
 import io
 import json
@@ -108,12 +109,18 @@ def render_html_report(
     # escaping '</' is invisible to JSON.parse but safe in HTML.
     data = data.replace('</', '<\\/')
 
+    # Assemble on the pristine template: trusted assets and the (escaped)
+    # title go in via str.replace; the large machine-generated SVG and JSON
+    # blocks are spliced with a one-shot split so their content is never
+    # re-scanned for slot tokens (a sequence name that happened to contain a
+    # token string could otherwise corrupt the document).
     html = _load_asset('template.html')
-    html = html.replace(_SLOT_TITLE, title)
     html = html.replace(_SLOT_CSS, _load_asset('report.css'))
     html = html.replace(_SLOT_JS, _load_asset('report.js'))
-    html = html.replace(_SLOT_DATA, data)
-    html = html.replace(_SLOT_SVG, svg)
+    html = html.replace(_SLOT_TITLE, html_mod.escape(title))
+    head, rest = html.split(_SLOT_SVG, 1)
+    mid, tail = rest.split(_SLOT_DATA, 1)
+    html = head + svg + mid + data + tail
 
     output_path.write_text(html, encoding='utf-8')
     _log.info(
