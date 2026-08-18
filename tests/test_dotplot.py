@@ -1650,3 +1650,27 @@ def test_plot_from_computed_cache_renders_reverse_segments():
     assert any(x0 > x1 for x0, _y0, x1, _y1 in segs), (
         'expected at least one reverse (anti-diagonal) segment from the cache'
     )
+
+
+def test_identity_colorbar_appends_key_axes():
+    """identity_colorbar=True adds one colorbar axes; off by default."""
+    import matplotlib.pyplot as plt
+
+    from rusty_dot.paf_io import PafAlignment, PafRecord
+
+    records = [
+        PafRecord('q1', 4000, 0, 3000, '+', 't1', 5000, 0, 3000, 2400, 3000, 255),
+        PafRecord('q1', 4000, 3000, 4000, '+', 't1', 5000, 3000, 4000, 990, 1000, 255),
+    ]
+    aln = PafAlignment(records)
+    fig_plain = DotPlotter(aln).plot(color_by_identity=True)
+    fig_keyed = DotPlotter(aln).plot(color_by_identity=True, identity_colorbar=True)
+    assert len(fig_keyed.axes) == len(fig_plain.axes) + 1
+    cbar_ax = fig_keyed.axes[-1]
+    assert cbar_ax.get_ylabel() == 'Identity (%)'
+    # identity_colorbar without color_by_identity is a no-op.
+    fig_off = DotPlotter(aln).plot(identity_colorbar=True)
+    assert len(fig_off.axes) == len(fig_plain.axes)
+    plt.close(fig_plain)
+    plt.close(fig_keyed)
+    plt.close(fig_off)

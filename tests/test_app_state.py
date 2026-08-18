@@ -259,3 +259,101 @@ def test_generated_report_contains_bridge_and_panels(kmer_setup, tmp_path):
     assert 'window.parent.postMessage' in html
     # Injected regex survived Python string escaping intact.
     assert r'/^rd-panel-(\d+)-(\d+)$/' in html
+
+
+# ----------------------------------------------------- UX round 2 helpers
+
+
+def test_strip_report_header_hides_report_hint_bar():
+    pytest.importorskip('shiny')  # app.py imports shiny at module level
+    import app as app_module
+
+    html = '<html><head><title>t</title></head><body><svg/></body></html>'
+    out = app_module.strip_report_header(html)
+    assert '#rd-header{display:none}' in out
+    assert out.index('#rd-header') < out.index('</head>')
+    # No head tag: style is prepended, document body untouched.
+    naked = app_module.strip_report_header('<svg/>')
+    assert naked.startswith('<style>')
+    assert naked.endswith('<svg/>')
+
+
+def test_method_choices_exclude_paf_input_mode():
+    pytest.importorskip('shiny')
+    import app as app_module
+
+    choices = app_module._method_choices()
+    assert 'paf' not in choices
+    assert {'kmer', 'minimap2', 'lastz', 'nucmer'} <= set(choices)
+
+
+def test_plot_config_identity_kwargs():
+    from core.state import PlotConfig
+
+    kwargs = PlotConfig().plot_kwargs()
+    assert kwargs['color_by_identity'] is False
+    assert kwargs['identity_palette'] == 'viridis'
+    kwargs = PlotConfig(color_by_identity=True, identity_palette='plasma')
+    assert kwargs.plot_kwargs()['color_by_identity'] is True
+    assert kwargs.plot_kwargs()['identity_palette'] == 'plasma'
+
+
+def test_identity_colored_plot_from_mixed_identity_records():
+    """color_by_identity renders per-record identity colours for PAF results."""
+    import matplotlib.pyplot as plt
+
+    from rusty_dot import DotPlotter
+    from rusty_dot.paf_io import PafAlignment, PafRecord
+
+    def rec(q, t, matches, block):
+        return PafRecord(
+            query_name=q,
+            query_len=5000,
+            query_start=0,
+            query_end=block,
+            strand='+',
+            target_name=t,
+            target_len=5000,
+            target_start=0,
+            target_end=block,
+            residue_matches=matches,
+            alignment_block_len=block,
+            mapping_quality=255,
+        )
+
+    aln = PafAlignment([rec('q1', 't1', 4000, 4000), rec('q2', 't1', 2000, 4000)])
+    fig = DotPlotter(aln).plot(
+        query_names=['q1', 'q2'],
+        target_names=['t1'],
+        color_by_identity=True,
+        identity_palette='plasma',
+    )
+    assert fig.axes
+    plt.close(fig)
+
+
+def test_self_align_kmer_index_and_plot():
+    """Self-alignment reuses one FastaInput for both groups."""
+    from core.cache import SessionCache
+    from core.fasta import parse_fasta_bytes
+    import matplotlib.pyplot as plt
+
+    from rusty_dot import DotPlotter
+    from rusty_dot.paf_io import PafAlignment
+
+    seq = 'ACGTTGCAAGGCTTAACCGGTTAACGGCCAATT' * 8
+    q = parse_fasta_bytes(f'>c1\n{seq}\n>c2\n{seq[::-1]}\n'.encode())
+    cache = SessionCache()
+    idx = cache.kmer_index(11, q, q)
+    # Same digest on both sides: the cache key is still well-formed and a
+    # second call hits the cache.
+    assert cache.kmer_index(11, q, q) is idx
+    paf = PafAlignment(idx.get_records_for_pair(QUERY_GROUP, TARGET_GROUP))
+    # The self-vs-self diagonal must be present (c1 x c1 full-length match).
+    diag = [r for r in paf.records if r.query_name == r.target_name]
+    assert diag
+    fig = DotPlotter(idx, paf_alignment=paf).plot(
+        query_group=QUERY_GROUP, target_group=TARGET_GROUP
+    )
+    assert fig.axes
+    plt.close(fig)

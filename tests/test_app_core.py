@@ -259,3 +259,56 @@ def test_runtime_platform_tag_shape():
 
     tag = runtime_platform_tag()
     assert tag and '-' not in tag and '.' not in tag
+
+
+# --------------------------------------------- PAF/assembly name validation
+
+
+def test_validate_query_names_all_match():
+    from core.validate import validate_query_names
+
+    assert validate_query_names(['q1', 'q2'], ['q1', 'q2'], ['t1']) == []
+
+
+def test_validate_query_names_none_match():
+    from core.validate import validate_query_names
+
+    warnings = validate_query_names(['a', 'b'], ['q1'], ['t1'])
+    assert len(warnings) == 1
+    assert 'None of the uploaded assembly contig names' in warnings[0]
+    assert 'target column' not in warnings[0]
+
+
+def test_validate_query_names_swapped_inputs_hint():
+    from core.validate import validate_query_names
+
+    warnings = validate_query_names(['t1', 't2'], ['q1'], ['t1', 't2'])
+    assert len(warnings) == 1
+    assert 'DO match the PAF target column' in warnings[0]
+
+
+def test_validate_query_names_partial_overlap_both_directions():
+    from core.validate import validate_query_names
+
+    warnings = validate_query_names(['q1', 'extra'], ['q1', 'ghost'], ['t1'])
+    assert len(warnings) == 2
+    assert any('no alignments in the PAF' in w and 'extra' in w for w in warnings)
+    assert any('not in the uploaded assembly' in w and 'ghost' in w for w in warnings)
+
+
+def test_validate_query_names_ambiguous_duplicates():
+    from core.validate import validate_query_names
+
+    warnings = validate_query_names(['q1'], ['q1', 'shared'], ['t1', 'shared'])
+    assert any('BOTH the PAF query and target columns' in w for w in warnings)
+    assert any('shared' in w for w in warnings)
+
+
+def test_validate_query_names_preview_truncates():
+    from core.validate import validate_query_names
+
+    missing = [f'c{i}' for i in range(10)]
+    warnings = validate_query_names(['q1', *missing], ['q1'], ['t1'])
+    assert len(warnings) == 1
+    assert '10 assembly contig(s)' in warnings[0]
+    assert '…' in warnings[0]

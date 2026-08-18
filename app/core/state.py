@@ -47,6 +47,12 @@ class PlotConfig:
         Minimum match length (bp) to draw.
     title : str or None
         Optional figure title.
+    color_by_identity : bool
+        Colour match segments by percent identity instead of the default
+        forward/reverse colouring (meaningful for tool/PAF alignments only;
+        k-mer matches are always 100% identity).
+    identity_palette : str
+        Matplotlib colormap name used when *color_by_identity* is on.
     """
 
     contig_order: str = 'input'
@@ -56,6 +62,8 @@ class PlotConfig:
     dot_size: float = 0.5
     min_length: int = 0
     title: str | None = field(default=None)
+    color_by_identity: bool = False
+    identity_palette: str = 'viridis'
 
     def plot_kwargs(self) -> dict[str, Any]:
         """Translate this config into ``DotPlotter.plot`` keyword arguments.
@@ -84,4 +92,6 @@ class PlotConfig:
             'dot_size': self.dot_size,
             'min_length': self.min_length,
             'title': self.title,
+            'color_by_identity': self.color_by_identity,
+            'identity_palette': self.identity_palette,
         }

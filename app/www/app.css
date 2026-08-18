@@ -108,3 +108,23 @@
     background: #f5f5f5;
   }
 }
+
+/* Disabled download placeholders (no result generated yet). */
+.rd-dl-disabled {
+  width: 100%;
+  margin-bottom: 0.35rem;
+  opacity: 0.5;
+  cursor: not-allowed;
+  border: 1px solid #ccc;
+}
+
+.rd-dl-note {
+  font-size: 0.8rem;
+  color: #6c757d;
+  margin-bottom: 0.5rem;
+}
+
+/* Hidden helper outputs (e.g. #result_kind drives conditional panels). */
+.rd-hidden {
+  display: none;
+}
