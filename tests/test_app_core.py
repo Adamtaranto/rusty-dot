@@ -219,3 +219,96 @@ def test_write_fasta_reordered_like_the_app(tmp_path):
     assert set(order) == {'q1', 'q2'}
     for name in order:
         assert f'>{name}' in text
+
+
+# ------------------------------------------------------- wheel selection
+
+
+def test_pick_wasm_wheel_matches_platform():
+    from pathlib import Path
+
+    from core.wheels import pick_wasm_wheel
+
+    tag = 'emscripten_3_1_58_wasm32'
+    good = Path('wheels/rusty_dot-0.1.0-cp312-cp312-emscripten_3_1_58_wasm32.whl')
+    stale = Path('wheels/rusty_dot-0.1.0-cp312-cp312-emscripten_3_1_65_wasm32.whl')
+    # A stale wheel from another Emscripten version sorts last lexically —
+    # the picker must select by platform tag, not sort order.
+    assert pick_wasm_wheel([good, stale], tag) == good
+    assert pick_wasm_wheel([stale, good], tag) == good
+    # Multiple matches: lexically last (highest version) wins.
+    newer = Path('wheels/rusty_dot-0.2.0-cp312-cp312-emscripten_3_1_58_wasm32.whl')
+    assert pick_wasm_wheel([good, newer, stale], tag) == newer
+
+
+def test_pick_wasm_wheel_errors():
+    from pathlib import Path
+
+    from core.wheels import pick_wasm_wheel
+    import pytest as _pytest
+
+    with _pytest.raises(RuntimeError, match='No rusty-dot wasm wheel'):
+        pick_wasm_wheel([], 'emscripten_3_1_58_wasm32')
+    stale = Path('wheels/rusty_dot-0.1.0-cp312-cp312-emscripten_3_1_65_wasm32.whl')
+    with _pytest.raises(RuntimeError, match='different Pyodide'):
+        pick_wasm_wheel([stale], 'emscripten_3_1_58_wasm32')
+
+
+def test_runtime_platform_tag_shape():
+    from core.wheels import runtime_platform_tag
+
+    tag = runtime_platform_tag()
+    assert tag and '-' not in tag and '.' not in tag
+
+
+# --------------------------------------------- PAF/assembly name validation
+
+
+def test_validate_query_names_all_match():
+    from core.validate import validate_query_names
+
+    assert validate_query_names(['q1', 'q2'], ['q1', 'q2'], ['t1']) == []
+
+
+def test_validate_query_names_none_match():
+    from core.validate import validate_query_names
+
+    warnings = validate_query_names(['a', 'b'], ['q1'], ['t1'])
+    assert len(warnings) == 1
+    assert 'None of the uploaded assembly contig names' in warnings[0]
+    assert 'target column' not in warnings[0]
+
+
+def test_validate_query_names_swapped_inputs_hint():
+    from core.validate import validate_query_names
+
+    warnings = validate_query_names(['t1', 't2'], ['q1'], ['t1', 't2'])
+    assert len(warnings) == 1
+    assert 'DO match the PAF target column' in warnings[0]
+
+
+def test_validate_query_names_partial_overlap_both_directions():
+    from core.validate import validate_query_names
+
+    warnings = validate_query_names(['q1', 'extra'], ['q1', 'ghost'], ['t1'])
+    assert len(warnings) == 2
+    assert any('no alignments in the PAF' in w and 'extra' in w for w in warnings)
+    assert any('not in the uploaded assembly' in w and 'ghost' in w for w in warnings)
+
+
+def test_validate_query_names_ambiguous_duplicates():
+    from core.validate import validate_query_names
+
+    warnings = validate_query_names(['q1'], ['q1', 'shared'], ['t1', 'shared'])
+    assert any('BOTH the PAF query and target columns' in w for w in warnings)
+    assert any('shared' in w for w in warnings)
+
+
+def test_validate_query_names_preview_truncates():
+    from core.validate import validate_query_names
+
+    missing = [f'c{i}' for i in range(10)]
+    warnings = validate_query_names(['q1', *missing], ['q1'], ['t1'])
+    assert len(warnings) == 1
+    assert '10 assembly contig(s)' in warnings[0]
+    assert '…' in warnings[0]

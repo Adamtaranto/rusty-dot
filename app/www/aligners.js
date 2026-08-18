@@ -117,6 +117,10 @@
   async function runAligner(msg) {
     var spec = TOOLS[msg.tool];
     if (!spec) throw new Error('Unknown aligner tool: ' + msg.tool);
+    if (!window.Aioli) sendProgress(msg.request_id, msg.tool, 'loading-aioli');
+    if (!cliPromises[msg.tool]) {
+      sendProgress(msg.request_id, msg.tool, 'initialising-tool');
+    }
     var CLI = await getCli(msg.tool);
     if (spec.outputFile) {
       // Remove any output left by a previous run on this cached CLI
@@ -133,7 +137,9 @@
       { name: TARGET_FILENAME, data: msg.target_fasta },
     ]);
     var cmd = [spec.program].concat(msg.args || []).join(' ');
+    sendProgress(msg.request_id, msg.tool, 'aligning');
     var res = await withTimeout(CLI.exec(cmd), msg.tool + ' run');
+    sendProgress(msg.request_id, msg.tool, 'reading-output');
     var stdout = res && typeof res === 'object' ? res.stdout : res;
     var stderr = res && typeof res === 'object' ? res.stderr : '';
     if (spec.outputFile) {
@@ -155,6 +161,18 @@
 
   function sendResult(payload) {
     window.Shiny.setInputValue('aligner_result', payload, { priority: 'event' });
+  }
+
+  // Stage updates for the in-flight run ('loading-aioli',
+  // 'initialising-tool', 'aligning', 'reading-output').  Pre-warm runs have
+  // no request id and stay silent.
+  function sendProgress(requestId, tool, stage) {
+    if (!requestId || !window.Shiny || !window.Shiny.setInputValue) return;
+    window.Shiny.setInputValue(
+      'aligner_progress',
+      { request_id: requestId, tool: tool, stage: stage },
+      { priority: 'event' }
+    );
   }
 
   function handleMessage(msg) {
@@ -193,6 +211,21 @@
       setTimeout(register, 100);
     }
   }
+
+  // Pre-warm: start downloading a biowasm tool as soon as the user selects
+  // it in the method menu, so the (one-time, ~seconds) CDN fetch overlaps
+  // with choosing files and options instead of delaying the first Run.
+  // getCli() caches the instance, so Run reuses whatever this started.
+  document.addEventListener('change', function (ev) {
+    var el = ev.target;
+    if (!el || el.id !== 'method') return;
+    if (TOOLS[el.value]) {
+      getCli(el.value).catch(function () {
+        // Ignore here: cliPromises resets itself on failure, and the real
+        // run reports CDN errors to the user properly.
+      });
+    }
+  });
 
   register();
 })();

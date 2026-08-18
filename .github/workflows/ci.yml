@@ -168,7 +168,11 @@ jobs:
       - name: Install maturin
         run: pip install maturin
       - name: Build wasm wheel
+        # rm: the cargo cache restores target/wheels from earlier runs
+        # (other Emscripten versions); stale wheels must not reach the
+        # artifact (one previously shipped inside the deployed app).
         run: >
+          rm -rf target/wheels &&
           maturin build --release
           --target wasm32-unknown-emscripten
           --no-default-features
@@ -185,4 +189,4 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: wasm-wheel
-          path: target/wheels/*.whl
+          path: target/wheels/*cp312-cp312-emscripten_3_1_58_wasm32.whl

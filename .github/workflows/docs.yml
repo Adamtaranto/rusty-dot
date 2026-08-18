@@ -44,7 +44,12 @@ jobs:
       - name: Install maturin
         run: pip install maturin
       - name: Build wasm wheel
+        # The cargo cache restores target/ including wheels from earlier
+        # runs (potentially built against other Emscripten versions), so
+        # clear target/wheels first and upload only the matching tag —
+        # a stale wheel in app/wheels/ has shipped a broken site before.
         run: >
+          rm -rf target/wheels &&
           maturin build --release
           --target wasm32-unknown-emscripten
           --no-default-features
@@ -55,7 +60,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: app-wasm-wheel
-          path: target/wheels/*.whl
+          path: target/wheels/*cp312-cp312-emscripten_3_1_58_wasm32.whl
 
   deploy:
     name: Assemble site (docs + browser app) and deploy
@@ -84,6 +89,8 @@ jobs:
         # The wheel in app/wheels/ is bundled into the exported app.json and
         # installed from the Pyodide virtual filesystem at app startup.
         run: shinylive export app site/app
+      - name: Add loading splash to the exported app
+        run: python scripts/add_loading_splash.py site/app/index.html
       - name: Deploy site to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:

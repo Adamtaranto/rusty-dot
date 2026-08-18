@@ -8,8 +8,49 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- Browser app: the embedded interactive report no longer shows its own
+  navigation-hint header (the app-level hint bar already covers it);
+  standalone HTML report exports keep their header.
+- Browser app: download buttons are disabled until a comparison has produced
+  content, and the reordered-FASTA download is offered only when sequences
+  are available.
+
+- Browser app: the deploy pipeline could bundle stale wasm wheels restored
+  from the CI cargo cache, and the app installed whichever wheel sorted
+  last — a mismatched Emscripten tag that micropip rejects, breaking app
+  startup. The workflows now clear `target/wheels` before building and only
+  publish the matching tag, and the app selects the bundled wheel by the
+  running Pyodide's platform tag.
+
 ### Added
 
+- Browser app: PAF is now a top-level input mode (assemblies vs alignment)
+  instead of an alignment-method entry — selecting PAF hides the method and
+  FASTA controls, with an optional query-assembly upload to enable the
+  reordered-FASTA download.
+- Browser app: self-alignment option ("Align assembly to itself") — upload
+  one assembly instead of the same file twice.
+- Browser app: per-stage progress messages for every alignment method,
+  including live biowasm stages (runtime load, tool download, aligning).
+- `DotPlotter.plot(identity_colorbar=True)`: append an identity colour key
+  (0-100 %) at the right of the figure when colouring by identity; the
+  browser app shows the key automatically.
+- Browser app: uploading a query assembly alongside a PAF now validates the
+  contig names against the PAF query column, warning when nothing matches
+  (with a swapped-query/target hint), when contigs or sequences are missing
+  on either side, and when names appear in both PAF columns.
+- Browser app: numeric plot options (line width, min match length) are
+  debounced — holding the spinner arrows re-renders once with the settled
+  value instead of once per 0.1 step.
+- Browser app: colour alignments by percent identity (palette selectable)
+  for methods that report identity (minimap2, LASTZ, nucmer, PAF import);
+  k-mer matches are exact so the option is hidden there.
+- Browser app: loading splash screen with staged progress messages while the
+  Pyodide runtime downloads and boots (previously a blank page for many
+  seconds), and biowasm aligner binaries now pre-download in the background
+  as soon as the tool is selected instead of on the first Run.
 - Browser app (`app/`): fully client-side assembly comparison built with
   Shiny for Python and deployed as a static Shinylive/Pyodide site alongside
   the docs at <https://adamtaranto.github.io/rusty-dot/app/>. Upload

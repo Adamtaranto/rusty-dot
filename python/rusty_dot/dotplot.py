@@ -569,6 +569,7 @@ class DotPlotter:
         contig_order: Optional[str] = None,
         auto_reverse: bool = False,
         hide_internal_axes: bool = False,
+        identity_colorbar: bool = False,
     ) -> matplotlib.figure.Figure:
         """Plot an all-vs-all dotplot grid.
 
@@ -720,6 +721,10 @@ class DotPlotter:
             ticks and spines shared between adjacent panels are hidden, and
             only the outer frame with its tick labels remains.  Default is
             ``False``.
+        identity_colorbar : bool, optional
+            When ``True`` and *color_by_identity* is on, append a vertical
+            identity colour key (0-100 %) at the right of the figure.
+            Ignored without *color_by_identity*.  Default is ``False``.
 
         Returns
         -------
@@ -907,6 +912,17 @@ class DotPlotter:
             )
         else:
             plt.tight_layout()
+        if color_by_identity and identity_colorbar:
+            # After the layout pass: fig.colorbar steals its own space from
+            # the panel axes, which tight_layout would otherwise fight.
+            sm = matplotlib.cm.ScalarMappable(
+                norm=mcolors.Normalize(vmin=0, vmax=1),
+                cmap=plt.get_cmap(identity_palette),
+            )
+            cbar = fig.colorbar(sm, ax=fig.axes, fraction=0.035, pad=0.02, aspect=35)
+            cbar.set_label('Identity (%)')
+            cbar.set_ticks([0.0, 0.25, 0.5, 0.75, 1.0])
+            cbar.set_ticklabels(['0', '25', '50', '75', '100'])
         if output_path is not None:
             self._save_figure(fig, output_path, dpi=dpi, format=format, title=title)
         return fig
