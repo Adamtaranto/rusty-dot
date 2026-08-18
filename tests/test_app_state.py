@@ -223,6 +223,7 @@ def test_reordered_fasta_text_line_wrapping():
 
 
 def test_inject_panel_bridge_places_script_before_body_close():
+    pytest.importorskip('shiny')  # app.py imports shiny at module level
     import app as app_module
 
     html = '<html><body><svg></svg></body></html>'
@@ -236,6 +237,7 @@ def test_inject_panel_bridge_places_script_before_body_close():
 
 def test_generated_report_contains_bridge_and_panels(kmer_setup, tmp_path):
     """End-to-end: to_html + injection yields panels and a valid bridge."""
+    pytest.importorskip('shiny')  # app.py imports shiny at module level
     import app as app_module
     from rusty_dot import DotPlotter
     from rusty_dot.paf_io import PafAlignment
