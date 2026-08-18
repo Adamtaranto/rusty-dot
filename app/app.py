@@ -33,6 +33,7 @@ from core.export import reordered_fasta_text
 from core.fasta import FastaInput, parse_fasta_bytes
 from core.panels import panel_pair, resolve_orders
 from core.state import ORDER_CHOICES, PlotConfig
+from core.validate import validate_query_names
 from core.wheels import pick_wasm_wheel, runtime_platform_tag
 import matplotlib  # noqa: F401  (ensures shinylive bundles the pyodide package)
 import numpy  # noqa: F401
@@ -398,8 +399,18 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                         raise ValueError('Please upload a PAF file.')
                     text = Path(files[0]['datapath']).read_text()
                     alignment = paf_alignment_from_text(text)
+                    query = None
+                    if input.paf_query_fasta():
+                        progress.set(2, message='Parsing query assembly…')
+                        query = _parse_upload(input.paf_query_fasta, 'query')
+                        for warning in validate_query_names(
+                            query.names,
+                            alignment.query_names,
+                            alignment.target_names,
+                        ):
+                            ui.notification_show(warning, type='warning', duration=12)
                     progress.set(3, message=f'{len(alignment)} alignment(s) loaded')
-                    result.set(('paf', alignment, {'query': None, 'target': None}))
+                    result.set(('paf', alignment, {'query': query, 'target': None}))
                 return
             method = input.method()
             if method not in AVAILABLE_METHODS:

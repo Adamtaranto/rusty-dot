@@ -37,6 +37,10 @@ and this project adheres to
 - `DotPlotter.plot(identity_colorbar=True)`: append an identity colour key
   (0-100 %) at the right of the figure when colouring by identity; the
   browser app shows the key automatically.
+- Browser app: uploading a query assembly alongside a PAF now validates the
+  contig names against the PAF query column, warning when nothing matches
+  (with a swapped-query/target hint), when contigs or sequences are missing
+  on either side, and when names appear in both PAF columns.
 - Browser app: numeric plot options (line width, min match length) are
   debounced — holding the spinner arrows re-renders once with the settled
   value instead of once per 0.1 step.
