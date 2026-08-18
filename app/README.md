@@ -37,6 +37,17 @@ The wasm wheel must target the Pyodide release bundled by shinylive
 pinned `nightly-2025-02-17` Rust toolchain); see the `wasm-build` job in
 `.github/workflows/ci.yml` for the exact recipe.
 
+## Usage notes
+
+- **Input modes**: upload two assemblies (FASTA/FASTA.gz) *or* a
+  precomputed PAF alignment. In PAF mode the aligner options are hidden; an
+  optional query-assembly upload enables the reordered-FASTA download.
+- **Self-alignment**: tick "Align assembly to itself" to compare one
+  assembly against itself without uploading it twice.
+- **Identity colouring**: for methods that report identity (minimap2,
+  LASTZ, nucmer, PAF import) alignments can be coloured by % identity
+  instead of forward/reverse strand.
+
 ## Alignment methods
 
 | Method | Runs | Status |

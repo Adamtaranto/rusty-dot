@@ -89,6 +89,9 @@ def _method_choices() -> dict[str, str]:
     return {
         key: (label if key in AVAILABLE_METHODS else f'{label} — coming soon')
         for key, label in METHOD_LABELS.items()
+        # PAF import is an input *mode* (the input_mode radio), not an
+        # alignment method — with a PAF there is nothing left to align.
+        if key != 'paf'
     }
 
 
@@ -138,63 +141,112 @@ def inject_panel_bridge(html: str) -> str:
     return html[:idx] + _PANEL_DBLCLICK_JS + html[idx:]
 
 
+_HIDE_REPORT_HEADER_CSS = '<style>#rd-header{display:none}</style>'
+
+
+def strip_report_header(html: str) -> str:
+    """Hide the report's built-in title/navigation header for embedding.
+
+    The standalone HTML report carries its own header with navigation hints
+    (``#rd-header`` in ``_html/template.html``); inside the app that
+    duplicates the app-level hint bar, so the embed hides it with CSS.
+    Standalone ``to_html`` exports are unaffected.
+
+    Parameters
+    ----------
+    html : str
+        Full HTML report text produced by ``DotPlotter.to_html``.
+
+    Returns
+    -------
+    str
+        The report with a header-hiding style spliced in before ``</head>``
+        (prepended if no closing head tag is found).
+    """
+    idx = html.find('</head>')
+    if idx == -1:
+        return _HIDE_REPORT_HEADER_CSS + html
+    return html[:idx] + _HIDE_REPORT_HEADER_CSS + html[idx:]
+
+
 # --- end W2 ------------------------------------------------------------------
 
 
 app_ui = ui.page_sidebar(
     ui.sidebar(
         ui.h5('Input'),
-        ui.input_file(
-            'query_fasta',
-            'Query assembly (FASTA / .gz)',
-            accept=['.fa', '.fasta', '.fna', '.gz'],
-        ),
-        ui.input_file(
-            'target_fasta',
-            'Target / reference assembly (FASTA / .gz)',
-            accept=['.fa', '.fasta', '.fna', '.gz'],
-        ),
-        ui.input_select('method', 'Alignment method', choices=_method_choices()),
-        ui.panel_conditional(
-            "input.method === 'kmer'",
-            ui.input_slider('k', 'k-mer size', min=8, max=64, value=21, step=1),
-            ui.input_checkbox('merge', 'Merge adjacent matches', True),
+        ui.input_radio_buttons(
+            'input_mode',
+            None,
+            {'fasta': 'Assemblies (FASTA)', 'paf': 'Alignment (PAF)'},
+            selected='fasta',
+            inline=True,
         ),
         ui.panel_conditional(
-            "input.method === 'paf'",
+            "input.input_mode === 'fasta'",
+            ui.input_file(
+                'query_fasta',
+                'Query assembly (FASTA / .gz)',
+                accept=['.fa', '.fasta', '.fna', '.gz'],
+            ),
+            ui.input_checkbox('self_align', 'Align assembly to itself', False),
+            ui.panel_conditional(
+                '!input.self_align',
+                ui.input_file(
+                    'target_fasta',
+                    'Target / reference assembly (FASTA / .gz)',
+                    accept=['.fa', '.fasta', '.fna', '.gz'],
+                ),
+            ),
+            ui.input_select('method', 'Alignment method', choices=_method_choices()),
+            ui.panel_conditional(
+                "input.method === 'kmer'",
+                ui.input_slider('k', 'k-mer size', min=8, max=64, value=21, step=1),
+                ui.input_checkbox('merge', 'Merge adjacent matches', True),
+            ),
+            # --- W1: biowasm aligner options ---
+            ui.panel_conditional(
+                "input.method === 'minimap2'",
+                ui.input_select(
+                    'mm2_preset',
+                    'Preset (-x)',
+                    choices={p: p for p in MINIMAP2_PRESETS},
+                    selected='asm20',
+                ),
+                ui.input_numeric(
+                    'mm2_k', 'k-mer size (-k, 0 = preset default)', 0, min=0, max=28
+                ),
+                ui.input_numeric(
+                    'mm2_w', 'Minimizer window (-w, 0 = preset default)', 0, min=0
+                ),
+            ),
+            ui.panel_conditional(
+                "input.method === 'lastz'",
+                ui.input_numeric('lastz_step', 'Seed step (--step)', 1, min=1),
+                ui.input_checkbox('lastz_gapped', 'Gapped extension', True),
+                ui.input_checkbox(
+                    'lastz_notransition', 'Exact seeds only (--notransition)', False
+                ),
+            ),
+            ui.panel_conditional(
+                "input.method === 'nucmer'",
+                ui.input_numeric('nucmer_l', 'Min match length (-l)', 20, min=1),
+                ui.input_numeric('nucmer_c', 'Min cluster length (-c)', 65, min=1),
+                ui.input_checkbox(
+                    'nucmer_maxmatch', 'Use all matches (--maxmatch)', False
+                ),
+            ),
+            # --- end W1 ---
+        ),
+        ui.panel_conditional(
+            "input.input_mode === 'paf'",
             ui.input_file('paf_file', 'PAF file', accept=['.paf', '.txt']),
-        ),
-        # --- W1: biowasm aligner options ---
-        ui.panel_conditional(
-            "input.method === 'minimap2'",
-            ui.input_select(
-                'mm2_preset',
-                'Preset (-x)',
-                choices={p: p for p in MINIMAP2_PRESETS},
-                selected='asm20',
-            ),
-            ui.input_numeric(
-                'mm2_k', 'k-mer size (-k, 0 = preset default)', 0, min=0, max=28
-            ),
-            ui.input_numeric(
-                'mm2_w', 'Minimizer window (-w, 0 = preset default)', 0, min=0
+            ui.input_file(
+                'paf_query_fasta',
+                'Query assembly (optional — enables the reordered-FASTA download)',
+                accept=['.fa', '.fasta', '.fna', '.gz'],
             ),
         ),
-        ui.panel_conditional(
-            "input.method === 'lastz'",
-            ui.input_numeric('lastz_step', 'Seed step (--step)', 1, min=1),
-            ui.input_checkbox('lastz_gapped', 'Gapped extension', True),
-            ui.input_checkbox(
-                'lastz_notransition', 'Exact seeds only (--notransition)', False
-            ),
-        ),
-        ui.panel_conditional(
-            "input.method === 'nucmer'",
-            ui.input_numeric('nucmer_l', 'Min match length (-l)', 20, min=1),
-            ui.input_numeric('nucmer_c', 'Min cluster length (-c)', 65, min=1),
-            ui.input_checkbox('nucmer_maxmatch', 'Use all matches (--maxmatch)', False),
-        ),
-        # --- end W1 ---
         ui.input_action_button('run', 'Run comparison', class_='btn-primary'),
         ui.hr(),
         ui.h5('Plot options'),
@@ -204,16 +256,29 @@ app_ui = ui.page_sidebar(
         ui.input_checkbox('auto_reverse', 'Auto-flip reversed contigs', False),
         ui.input_checkbox('hide_internal_axes', 'Hide internal axes', False),
         ui.input_checkbox('nature', 'Nature journal style', False),
+        # Identity colouring only makes sense for tool/PAF alignments (k-mer
+        # matches are always 100% identity); output.result_kind is a hidden
+        # text output that tracks the current result.
+        ui.panel_conditional(
+            "output.result_kind === 'paf'",
+            ui.input_checkbox('color_by_identity', 'Colour by % identity', False),
+            ui.panel_conditional(
+                'input.color_by_identity',
+                ui.input_select(
+                    'identity_palette',
+                    'Identity palette',
+                    choices=['viridis', 'plasma', 'cividis', 'coolwarm'],
+                ),
+            ),
+        ),
         ui.input_numeric('min_length', 'Min match length (bp)', 0, min=0),
         ui.input_numeric('dot_size', 'Line width', 0.5, min=0.1, max=5, step=0.1),
         ui.hr(),
         ui.h5('Downloads'),
-        ui.download_button('dl_svg', 'Plot (SVG)'),
-        ui.download_button('dl_pdf', 'Plot (PDF)'),
-        ui.download_button('dl_paf', 'Alignment (PAF)'),
-        ui.download_button('dl_fasta', 'Reordered query (FASTA)'),
+        ui.output_ui('downloads'),
         width=320,
     ),
+    ui.div(ui.output_text('result_kind'), class_='rd-hidden'),
     ui.output_ui('status'),
     # --- W2: interactive plot ---
     ui.output_ui('plot_area'),
@@ -251,38 +316,56 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         raw = Path(files[0]['datapath']).read_bytes()
         return parse_fasta_bytes(raw)
 
+    def _parse_inputs(progress=None) -> tuple[FastaInput, FastaInput]:
+        """Parse the query (and target, or reuse query when self-aligning)."""
+        if progress is not None:
+            progress.set(0, message='Parsing query assembly…')
+        query = _parse_upload(input.query_fasta, 'query')
+        if input.self_align():
+            return query, query
+        if progress is not None:
+            progress.set(1, message='Parsing target assembly…')
+        return query, _parse_upload(input.target_fasta, 'target')
+
     @reactive.effect
     @reactive.event(input.run)
     async def _run():
         req(ready())
-        method = input.method()
-        if method not in AVAILABLE_METHODS:
-            ui.notification_show(
-                f'{METHOD_LABELS[method]} is not available yet.',
-                type='warning',
-            )
-            return
+        mode = input.input_mode()
         try:
-            with ui.Progress(min=0, max=3) as progress:
-                if method == 'kmer':
-                    progress.set(0, message='Parsing assemblies…')
-                    query = _parse_upload(input.query_fasta, 'query')
-                    target = _parse_upload(input.target_fasta, 'target')
-                    progress.set(1, message=f'Building k-mer index (k={input.k()})…')
-                    index = cache.kmer_index(
-                        input.k(), query, target, merge=input.merge()
-                    )
-                    progress.set(3, message='Done')
-                    result.set(('kmer', index, {'query': query, 'target': target}))
-                elif method == 'paf':
-                    progress.set(0, message='Parsing PAF…')
+            if mode == 'paf':
+                with ui.Progress(min=0, max=3) as progress:
+                    progress.set(1, message='Parsing PAF…')
                     files = input.paf_file()
                     if not files:
                         raise ValueError('Please upload a PAF file.')
                     text = Path(files[0]['datapath']).read_text()
                     alignment = paf_alignment_from_text(text)
-                    progress.set(3, message='Done')
+                    progress.set(3, message=f'{len(alignment)} alignment(s) loaded')
                     result.set(('paf', alignment, {'query': None, 'target': None}))
+                return
+            method = input.method()
+            if method not in AVAILABLE_METHODS:
+                ui.notification_show(
+                    f'{METHOD_LABELS[method]} is not available yet.',
+                    type='warning',
+                )
+                return
+            if method != 'kmer':
+                return  # biowasm tools are handled by _run_biowasm
+            with ui.Progress(min=0, max=4) as progress:
+                query, target = _parse_inputs(progress)
+                progress.set(
+                    2,
+                    message=(
+                        f'Building k-mer index (k={input.k()}, '
+                        f'{len(query.records)}×{len(target.records)} contigs)…'
+                    ),
+                )
+                index = cache.kmer_index(input.k(), query, target, merge=input.merge())
+                progress.set(3, message='Rendering dotplot…')
+                result.set(('kmer', index, {'query': query, 'target': target}))
+                progress.set(4, message='Done')
         except ValueError as exc:
             ui.notification_show(str(exc), type='error', duration=8)
 
@@ -328,12 +411,13 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         if aligner_pending() is not None:
             aligner_pending.set(None)
             ui.notification_remove(_NOTIF_ID)
+        if input.input_mode() != 'fasta':
+            return
         method = input.method()
         if method not in BIOWASM_TOOLS:
             return
         try:
-            query = _parse_upload(input.query_fasta, 'query')
-            target = _parse_upload(input.target_fasta, 'target')
+            query, target = _parse_inputs()
             params = _tool_params(method)
             args = build_tool_args(method, params)
             query_text = fasta_text(query.records)
@@ -422,6 +506,26 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             ('paf', alignment, {'query': info['query'], 'target': info['target']})
         )
 
+    @reactive.effect
+    @reactive.event(input.aligner_progress)
+    def _on_aligner_progress():
+        prog = input.aligner_progress()
+        info = aligner_pending()
+        if not prog or not info or prog.get('request_id') != info['request_id']:
+            return  # stale or pre-warm activity, not the run in flight
+        stage_msgs = {
+            'loading-aioli': 'Loading the biowasm runtime…',
+            'initialising-tool': (
+                f'Downloading {METHOD_LABELS[info["method"]]} from the '
+                'biowasm CDN (first use only)…'
+            ),
+            'aligning': f'Running {METHOD_LABELS[info["method"]]}…',
+            'reading-output': 'Reading alignment output…',
+        }
+        msg = stage_msgs.get(prog.get('stage'))
+        if msg:
+            ui.notification_show(msg, id=_NOTIF_ID, duration=None)
+
     # --- end W1: biowasm aligners ---
 
     @reactive.calc
@@ -433,6 +537,8 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             nature=input.nature(),
             dot_size=input.dot_size() or 0.5,
             min_length=int(input.min_length() or 0),
+            color_by_identity=bool(input.color_by_identity()),
+            identity_palette=input.identity_palette() or 'viridis',
         )
 
     # --- W2: interactive plot ------------------------------------------------
@@ -484,6 +590,10 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         kwargs = cfg.plot_kwargs()
         # Ordering is fully explicit (see layout()); never reorder in-plot.
         kwargs.update(contig_order=None, auto_reverse=False)
+        if kind == 'kmer':
+            # k-mer matches are exact: identity is uniformly 100%, so
+            # identity colouring would be a misleading single-colour plot.
+            kwargs['color_by_identity'] = False
         kwargs['reverse_contigs'] = set(lay['reverse'])
         if pair is not None and cfg.title is None:
             kwargs['title'] = f'{pair[0]} vs {pair[1]}'
@@ -520,7 +630,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             fig = make_figure(res, config(), layout(), pair=pair, output_path=path)
             html = path.read_text(encoding='utf-8')
         plt.close(fig)
-        return inject_panel_bridge(html)
+        return strip_report_header(inject_panel_bridge(html))
 
     @reactive.calc
     def overview_html() -> str:
@@ -628,6 +738,68 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             )
         return None
 
+    @output(suspend_when_hidden=False)
+    @render.text
+    def result_kind():
+        # Hidden output driving panel_conditional visibility (e.g. the
+        # identity-colouring controls, shown only for tool/PAF results).
+        # suspend_when_hidden=False: the output lives in a display:none div,
+        # which Shiny would otherwise never update.
+        res = result()
+        return res[0] if res else ''
+
+    def _has_sequences(res) -> bool:
+        """Whether a reordered-FASTA export is possible for this result."""
+        kind, _obj, meta = res
+        return (
+            kind == 'kmer'
+            or isinstance(meta.get('query'), FastaInput)
+            or bool(input.paf_query_fasta())
+        )
+
+    @render.ui
+    def downloads():
+        res = result()
+        if res is None:
+            return ui.div(
+                ui.tags.button(
+                    'Plot (SVG)', class_='btn rd-dl-disabled', disabled=True
+                ),
+                ui.tags.button(
+                    'Plot (PDF)', class_='btn rd-dl-disabled', disabled=True
+                ),
+                ui.tags.button(
+                    'Alignment (PAF)', class_='btn rd-dl-disabled', disabled=True
+                ),
+                ui.tags.button(
+                    'Reordered query (FASTA)',
+                    class_='btn rd-dl-disabled',
+                    disabled=True,
+                ),
+                ui.div('Run a comparison first.', class_='rd-dl-note'),
+            )
+        parts = [
+            ui.download_button('dl_svg', 'Plot (SVG)'),
+            ui.download_button('dl_pdf', 'Plot (PDF)'),
+            ui.download_button('dl_paf', 'Alignment (PAF)'),
+        ]
+        if _has_sequences(res):
+            parts.append(ui.download_button('dl_fasta', 'Reordered query (FASTA)'))
+        else:
+            parts += [
+                ui.tags.button(
+                    'Reordered query (FASTA)',
+                    class_='btn rd-dl-disabled',
+                    disabled=True,
+                ),
+                ui.div(
+                    'FASTA export needs sequences — upload the query '
+                    'assembly in the sidebar.',
+                    class_='rd-dl-note',
+                ),
+            ]
+        return ui.div(*parts)
+
     @render.plot
     def dotplot():
         # --- W2: interactive plot --- (static fallback; honours drill-down)
@@ -688,7 +860,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             query = meta.get('query')
             if not isinstance(query, FastaInput):
                 try:
-                    query = _parse_upload(input.query_fasta, 'query')
+                    query = _parse_upload(input.paf_query_fasta, 'query')
                 except ValueError:
                     query = None
             if query is None:
