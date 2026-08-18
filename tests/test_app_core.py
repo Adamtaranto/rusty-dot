@@ -180,7 +180,7 @@ def test_plot_config_kwargs_mapping():
     kwargs = cfg.plot_kwargs()
     assert kwargs['contig_order'] == 'colinearity'
     assert kwargs['auto_reverse'] is True
-    assert set(ORDER_CHOICES) == {'input', 'length', 'colinearity'}
+    assert {'input', 'length', 'colinearity', 'colinearity_ref'} == set(ORDER_CHOICES)
 
 
 # ------------------------------------------------------- app-level smoke
