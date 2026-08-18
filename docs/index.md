@@ -70,6 +70,9 @@ plotter.plot_identity_colorbar(palette="viridis", output_path="colorbar.png")
 
 ## Documentation Sections
 
+- **[Web App](webapp.md)** — try rusty-dot in your browser, no installation
+  required: a fully client-side assembly-comparison app (files never leave
+  your machine).
 - **[Installation](installation.md)** — how to install rusty-dot and its dependencies.
 - **[Tutorials](tutorials/quickstart.ipynb)** — step-by-step Jupyter notebook walkthroughs.
 - **[API Reference](api/index.md)** — full documentation for all classes and functions.
