@@ -34,6 +34,12 @@ and this project adheres to
   one assembly instead of the same file twice.
 - Browser app: per-stage progress messages for every alignment method,
   including live biowasm stages (runtime load, tool download, aligning).
+- `DotPlotter.plot(identity_colorbar=True)`: append an identity colour key
+  (0-100 %) at the right of the figure when colouring by identity; the
+  browser app shows the key automatically.
+- Browser app: numeric plot options (line width, min match length) are
+  debounced — holding the spinner arrows re-renders once with the settled
+  value instead of once per 0.1 step.
 - Browser app: colour alignments by percent identity (palette selectable)
   for methods that report identity (minimap2, LASTZ, nucmer, PAF import);
   k-mer matches are exact so the option is hidden there.

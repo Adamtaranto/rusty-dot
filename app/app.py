@@ -14,6 +14,7 @@ import logging
 from pathlib import Path
 import sys
 import tempfile
+import time
 import uuid
 
 from core.align import (
@@ -139,6 +140,62 @@ def inject_panel_bridge(html: str) -> str:
     if idx == -1:
         return html + _PANEL_DBLCLICK_JS
     return html[:idx] + _PANEL_DBLCLICK_JS + html[idx:]
+
+
+def debounce(delay_secs: float):
+    """Debounce a reactive calculation (standard Shiny recipe).
+
+    Wraps a ``reactive.calc``-decorated function so downstream consumers
+    only see a new value once the source has been stable for *delay_secs*.
+    Used for numeric inputs whose spinner arrows would otherwise trigger a
+    full plot re-render for every 0.1 step.
+
+    Parameters
+    ----------
+    delay_secs : float
+        Quiet period before the new value propagates.
+
+    Returns
+    -------
+    Callable
+        Decorator for a ``reactive.calc`` function.
+    """
+
+    def wrapper(f):
+        when = reactive.value(None)
+        trigger = reactive.value(0)
+
+        @reactive.effect(priority=102)
+        def _primer():
+            try:
+                f()
+            except Exception:  # noqa: BLE001 - value read only to register deps
+                pass
+            with reactive.isolate():
+                when.set(time.monotonic() + delay_secs)
+
+        @reactive.effect(priority=101)
+        def _timer():
+            deadline = when()
+            if deadline is None:
+                return
+            now = time.monotonic()
+            if now >= deadline:
+                when.set(None)
+                with reactive.isolate():
+                    trigger.set(trigger() + 1)
+            else:
+                reactive.invalidate_later(deadline - now)
+
+        @reactive.calc
+        @reactive.event(trigger, ignore_none=False)
+        def debounced():
+            with reactive.isolate():
+                return f()
+
+        return debounced
+
+    return wrapper
 
 
 _HIDE_REPORT_HEADER_CSS = '<style>#rd-header{display:none}</style>'
@@ -528,6 +585,19 @@ def server(input, output, session) -> None:  # noqa: A002, D103
 
     # --- end W1: biowasm aligners ---
 
+    # Numeric spinner arrows fire one input event per 0.1 step; without a
+    # quiet period every step triggers a full plot re-render.  Only the
+    # settled value should reach config().
+    @debounce(0.7)
+    @reactive.calc
+    def dot_size_settled() -> float:
+        return input.dot_size() or 0.5
+
+    @debounce(0.7)
+    @reactive.calc
+    def min_length_settled() -> int:
+        return int(input.min_length() or 0)
+
     @reactive.calc
     def config() -> PlotConfig:
         return PlotConfig(
@@ -535,8 +605,8 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             auto_reverse=input.auto_reverse(),
             hide_internal_axes=input.hide_internal_axes(),
             nature=input.nature(),
-            dot_size=input.dot_size() or 0.5,
-            min_length=int(input.min_length() or 0),
+            dot_size=dot_size_settled(),
+            min_length=min_length_settled(),
             color_by_identity=bool(input.color_by_identity()),
             identity_palette=input.identity_palette() or 'viridis',
         )
@@ -594,6 +664,8 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             # k-mer matches are exact: identity is uniformly 100%, so
             # identity colouring would be a misleading single-colour plot.
             kwargs['color_by_identity'] = False
+        # Identity colouring is unreadable without a key.
+        kwargs['identity_colorbar'] = bool(kwargs.get('color_by_identity'))
         kwargs['reverse_contigs'] = set(lay['reverse'])
         if pair is not None and cfg.title is None:
             kwargs['title'] = f'{pair[0]} vs {pair[1]}'
