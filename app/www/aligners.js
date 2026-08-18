@@ -194,5 +194,20 @@
     }
   }
 
+  // Pre-warm: start downloading a biowasm tool as soon as the user selects
+  // it in the method menu, so the (one-time, ~seconds) CDN fetch overlaps
+  // with choosing files and options instead of delaying the first Run.
+  // getCli() caches the instance, so Run reuses whatever this started.
+  document.addEventListener('change', function (ev) {
+    var el = ev.target;
+    if (!el || el.id !== 'method') return;
+    if (TOOLS[el.value]) {
+      getCli(el.value).catch(function () {
+        // Ignore here: cliPromises resets itself on failure, and the real
+        // run reports CDN errors to the user properly.
+      });
+    }
+  });
+
   register();
 })();

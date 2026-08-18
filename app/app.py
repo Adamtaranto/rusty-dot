@@ -32,6 +32,7 @@ from core.export import reordered_fasta_text
 from core.fasta import FastaInput, parse_fasta_bytes
 from core.panels import panel_pair, resolve_orders
 from core.state import ORDER_CHOICES, PlotConfig
+from core.wheels import pick_wasm_wheel, runtime_platform_tag
 import matplotlib  # noqa: F401  (ensures shinylive bundles the pyodide package)
 import numpy  # noqa: F401
 from shiny import App, reactive, render, req, ui
@@ -64,14 +65,11 @@ async def ensure_rusty_dot() -> None:
     if sys.platform == 'emscripten':
         import micropip  # noqa: PLC0415 - pyodide-only module
 
-        wheels = sorted(APP_DIR.glob('wheels/*.whl'))
-        if not wheels:
-            raise RuntimeError(
-                'No rusty-dot wasm wheel bundled with the app '
-                '(expected app/wheels/*.whl at export time).'
-            )
-        logger.info('Installing bundled wheel %s', wheels[-1].name)
-        await micropip.install(f'emfs:{wheels[-1]}')
+        wheel = pick_wasm_wheel(
+            list(APP_DIR.glob('wheels/*.whl')), runtime_platform_tag()
+        )
+        logger.info('Installing bundled wheel %s', wheel.name)
+        await micropip.install(f'emfs:{wheel}')
         _boot_done = True
         return
     raise RuntimeError(

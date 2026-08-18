@@ -219,3 +219,43 @@ def test_write_fasta_reordered_like_the_app(tmp_path):
     assert set(order) == {'q1', 'q2'}
     for name in order:
         assert f'>{name}' in text
+
+
+# ------------------------------------------------------- wheel selection
+
+
+def test_pick_wasm_wheel_matches_platform():
+    from pathlib import Path
+
+    from core.wheels import pick_wasm_wheel
+
+    tag = 'emscripten_3_1_58_wasm32'
+    good = Path('wheels/rusty_dot-0.1.0-cp312-cp312-emscripten_3_1_58_wasm32.whl')
+    stale = Path('wheels/rusty_dot-0.1.0-cp312-cp312-emscripten_3_1_65_wasm32.whl')
+    # A stale wheel from another Emscripten version sorts last lexically —
+    # the picker must select by platform tag, not sort order.
+    assert pick_wasm_wheel([good, stale], tag) == good
+    assert pick_wasm_wheel([stale, good], tag) == good
+    # Multiple matches: lexically last (highest version) wins.
+    newer = Path('wheels/rusty_dot-0.2.0-cp312-cp312-emscripten_3_1_58_wasm32.whl')
+    assert pick_wasm_wheel([good, newer, stale], tag) == newer
+
+
+def test_pick_wasm_wheel_errors():
+    from pathlib import Path
+
+    from core.wheels import pick_wasm_wheel
+    import pytest as _pytest
+
+    with _pytest.raises(RuntimeError, match='No rusty-dot wasm wheel'):
+        pick_wasm_wheel([], 'emscripten_3_1_58_wasm32')
+    stale = Path('wheels/rusty_dot-0.1.0-cp312-cp312-emscripten_3_1_65_wasm32.whl')
+    with _pytest.raises(RuntimeError, match='different Pyodide'):
+        pick_wasm_wheel([stale], 'emscripten_3_1_58_wasm32')
+
+
+def test_runtime_platform_tag_shape():
+    from core.wheels import runtime_platform_tag
+
+    tag = runtime_platform_tag()
+    assert tag and '-' not in tag and '.' not in tag

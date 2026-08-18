@@ -8,8 +8,21 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- Browser app: the deploy pipeline could bundle stale wasm wheels restored
+  from the CI cargo cache, and the app installed whichever wheel sorted
+  last — a mismatched Emscripten tag that micropip rejects, breaking app
+  startup. The workflows now clear `target/wheels` before building and only
+  publish the matching tag, and the app selects the bundled wheel by the
+  running Pyodide's platform tag.
+
 ### Added
 
+- Browser app: loading splash screen with staged progress messages while the
+  Pyodide runtime downloads and boots (previously a blank page for many
+  seconds), and biowasm aligner binaries now pre-download in the background
+  as soon as the tool is selected instead of on the first Run.
 - Browser app (`app/`): fully client-side assembly comparison built with
   Shiny for Python and deployed as a static Shinylive/Pyodide site alongside
   the docs at <https://adamtaranto.github.io/rusty-dot/app/>. Upload
