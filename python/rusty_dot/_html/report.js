@@ -165,13 +165,39 @@
     });
   }
 
+  /* When an embedding app drills down on double-click (it sets
+   * window.RD_DBLCLICK_DRILLDOWN from its injected bridge script), defer
+   * the single-click focus zoom briefly so the first click of a
+   * double-click never fires it — otherwise a double-click zooms into the
+   * panel and then swaps views, a disorienting in-and-out sequence.
+   * Standalone reports have no drill-down, so clicks stay instant. */
+  var DBLCLICK_GRACE_MS = 300;
+  var pendingPanelTimer = null;
+
+  function cancelPendingPanelClick() {
+    if (pendingPanelTimer !== null) {
+      clearTimeout(pendingPanelTimer);
+      pendingPanelTimer = null;
+    }
+  }
+
+  document.addEventListener('dblclick', cancelPendingPanelClick, true);
+
   panelGroups.forEach(function (panel) {
     panel.addEventListener('click', function (evt) {
       // A completed drag-zoom releases a click too; swallow that one.
       if (consumeDragClick()) return;
       // Match clicks are handled (and stopped) by the match handler below.
       evt.stopPropagation();
-      selectPanel(panel);
+      if (!window.RD_DBLCLICK_DRILLDOWN) {
+        selectPanel(panel);
+        return;
+      }
+      cancelPendingPanelClick();
+      pendingPanelTimer = setTimeout(function () {
+        pendingPanelTimer = null;
+        selectPanel(panel);
+      }, DBLCLICK_GRACE_MS);
     });
   });
 
