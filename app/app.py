@@ -407,6 +407,33 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             progress.set(1, message='Parsing target assembly…')
         return query, _parse_upload(input.target_fasta, 'target')
 
+    # The k-mer index stores per-base-pair hash entries (~100 bytes/bp
+    # measured natively, both strands) — under Pyodide's 2 GB heap that
+    # caps indexable sequence around 16 Mb combined.  Exceeding it does
+    # not fail gracefully: the wasm allocator aborts and takes the whole
+    # Python runtime down, so refuse up front with a way forward.
+    _KMER_HARD_LIMIT = 16 * 1024 * 1024
+    _KMER_WARN_LIMIT = 8 * 1024 * 1024
+
+    def _check_kmer_memory(query: FastaInput, target: FastaInput) -> None:
+        if sys.platform != 'emscripten':
+            return  # native runs are bounded by system RAM, not the wasm heap
+        total = query.total_length + (0 if target is query else target.total_length)
+        if total > _KMER_HARD_LIMIT:
+            raise ValueError(
+                f'Combined assemblies are {total / 1e6:.0f} Mb — the k-mer '
+                'index needs more memory than the browser allows above '
+                '~16 Mb and would crash the app. Use minimap2 (or LASTZ / '
+                'nucmer) for assemblies this size.'
+            )
+        if total > _KMER_WARN_LIMIT:
+            ui.notification_show(
+                'Large input for the k-mer method — if the app runs out of '
+                'memory, switch to minimap2.',
+                type='warning',
+                duration=10,
+            )
+
     @reactive.effect
     @reactive.event(input.run)
     async def _run():
@@ -445,6 +472,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 return  # biowasm tools are handled by _run_biowasm
             with ui.Progress(min=0, max=4) as progress:
                 query, target = _parse_inputs(progress)
+                _check_kmer_memory(query, target)
                 progress.set(
                     2,
                     message=(
