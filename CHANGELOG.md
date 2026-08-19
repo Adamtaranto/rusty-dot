@@ -10,6 +10,17 @@ and this project adheres to
 
 ### Performance
 
+- The per-sequence k-mer index was restructured from two hash maps
+  (~100 bytes per base pair) into a single canonical-hash CSR table
+  (~13-16 bytes/bp, both strands included), and match computation now
+  intersects indexes with a sorted two-pointer walk emitting raw hit pairs
+  instead of building per-k-mer String maps.  On a real 37 Mb × 37 Mb
+  fungal assembly pair: index build 6.4 s → 3.4 s, match computation
+  20 s → 3.5 s, peak memory roughly quartered — and the k-mer method now
+  completes in the browser (~5 min upload → interactive plot) where it
+  previously aborted the 2 GB wasm heap fatally. Match output is unchanged
+  (byte-verified, parity-tested against exact search).
+
 - `SequenceIndex.compare_pairs_stranded`: batched both-strand comparison of
   many sequence pairs in a single native call (GIL released, parallel on
   native builds), with an optional `min_block_len` filter that drops short
