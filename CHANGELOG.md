@@ -58,10 +58,10 @@ and this project adheres to
 - Browser app: progress messages while rusty-dot itself is working
   (parsing, index build, contig ordering, report rendering), plus a
   "mounting assemblies" stage for the biowasm tools.
-- Browser app: the k-mer method now refuses inputs beyond ~16 Mb combined
-  with guidance to use minimap2 — the k-mer index needs ~100 bytes per
-  base pair, and exceeding the 2 GB browser heap previously crashed the
-  whole app irrecoverably mid-run.
+- Browser app: the k-mer method now refuses inputs beyond ~80 Mb combined
+  with guidance to use minimap2 (and warns above 40 Mb that big runs take
+  minutes) — exceeding the 2 GB browser heap previously crashed the whole
+  app irrecoverably mid-run.
 
 ### Fixed
 
