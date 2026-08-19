@@ -71,11 +71,42 @@ def content_digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()[:16]
 
 
+#: Whitespace bytes deleted from sequence blocks in one C-level pass.
+_SEQ_WHITESPACE = b'\r\n\t\x0b\x0c '
+
+
+def _lineno(data: bytes, offset: int) -> int:
+    """Return the 1-based line number of a byte offset (error paths only).
+
+    Parameters
+    ----------
+    data : bytes
+        The full decompressed input.
+    offset : int
+        Byte offset into *data*.
+
+    Returns
+    -------
+    int
+        1-based line number containing *offset*.
+    """
+    return data.count(b'\n', 0, offset) + 1
+
+
 def parse_fasta_bytes(data: bytes) -> FastaInput:
     """Parse FASTA (optionally gzip-compressed) from raw bytes.
 
-    Handles multi-line sequences, CRLF line endings, and blank lines.
-    Sequence characters are kept as-is apart from surrounding whitespace.
+    Handles multi-line sequences, CRLF line endings, blank lines, and
+    old-style ``;`` comment lines.  All whitespace inside sequence data is
+    removed.
+
+    The parser works directly on the raw bytes in per-record blocks — record
+    boundaries are located with :meth:`bytes.find` and whitespace is stripped
+    with a single :meth:`bytes.translate` pass per record — instead of
+    decoding and splitting the whole file into per-line strings.  On
+    multi-megabyte uploads under Pyodide this cuts peak memory from roughly
+    four times the file size to about two, and avoids millions of short-lived
+    line objects.
 
     Parameters
     ----------
@@ -102,45 +133,75 @@ def parse_fasta_bytes(data: bytes) -> FastaInput:
             data = gzip.decompress(data)
         except (OSError, EOFError) as exc:
             raise ValueError(f'Could not decompress gzip input: {exc}') from exc
-    try:
-        text = data.decode('utf-8')
-    except UnicodeDecodeError as exc:
-        raise ValueError('Input is not UTF-8 text — is this a FASTA file?') from exc
 
-    names: list[str] = []
-    seqs: list[list[str]] = []
-    seen: set[str] = set()
-    for lineno, raw_line in enumerate(text.splitlines(), start=1):
-        line = raw_line.strip()
-        if not line:
-            continue
-        if line.startswith('>'):
-            name = line[1:].split(maxsplit=1)[0] if len(line) > 1 else ''
-            if not name:
-                raise ValueError(f'Empty contig name at line {lineno}')
-            if name in seen:
-                raise ValueError(f'Duplicate contig name {name!r} at line {lineno}')
-            seen.add(name)
-            names.append(name)
-            seqs.append([])
-        elif line.startswith(';'):
-            # Old-style FASTA comment line.
-            continue
-        else:
-            if not names:
-                raise ValueError(
-                    f'Sequence data before first ">" header at line {lineno}'
-                )
-            seqs[-1].append(line)
-
-    if not names:
+    # Find the first meaningful line: skip blank lines and ';' comments.
+    pos = 0
+    size = len(data)
+    while pos < size:
+        nl = data.find(b'\n', pos)
+        end = size if nl == -1 else nl
+        stripped = data[pos:end].strip()
+        if stripped and not stripped.startswith(b';'):
+            break
+        pos = end + 1
+    if pos >= size:
         raise ValueError('No FASTA records found in input')
+    if data[pos : pos + 1] != b'>':
+        nl = data.find(b'\n', pos)
+        first_line = data[pos : size if nl == -1 else nl]
+        try:
+            first_line.decode('utf-8')
+        except UnicodeDecodeError as exc:
+            raise ValueError('Input is not UTF-8 text — is this a FASTA file?') from exc
+        raise ValueError(
+            f'Sequence data before first ">" header at line {_lineno(data, pos)}'
+        )
+
+    # Record boundaries: every '>' at the start of a line.  A '\n>' scan
+    # covers CRLF ('\r\n>') and blank lines before headers too.
+    offsets: list[int] = [pos]
+    search = pos
+    while True:
+        nxt = data.find(b'\n>', search)
+        if nxt == -1:
+            break
+        offsets.append(nxt + 1)
+        search = nxt + 1
+    offsets.append(size)
+
     records: list[tuple[str, str]] = []
-    for name, parts in zip(names, seqs):
-        seq = ''.join(parts)
-        if not seq:
+    seen: set[str] = set()
+    for start, stop in zip(offsets, offsets[1:]):
+        block = data[start:stop]
+        nl = block.find(b'\n')
+        header = (block if nl == -1 else block[:nl]).strip()
+        seq_block = b'' if nl == -1 else block[nl + 1 :]
+        try:
+            header_text = header.decode('utf-8')
+        except UnicodeDecodeError as exc:
+            raise ValueError('Input is not UTF-8 text — is this a FASTA file?') from exc
+        name = header_text[1:].split(maxsplit=1)[0] if len(header_text) > 1 else ''
+        if not name:
+            raise ValueError(f'Empty contig name at line {_lineno(data, start)}')
+        if name in seen:
+            raise ValueError(
+                f'Duplicate contig name {name!r} at line {_lineno(data, start)}'
+            )
+        seen.add(name)
+        if b';' in seq_block:
+            # Rare path: drop old-style ';' comment lines inside the record.
+            seq_block = b'\n'.join(
+                ln for ln in seq_block.split(b'\n') if not ln.lstrip().startswith(b';')
+            )
+        seq_bytes = seq_block.translate(None, _SEQ_WHITESPACE)
+        if not seq_bytes:
             raise ValueError(f'Contig {name!r} has no sequence')
+        try:
+            seq = seq_bytes.decode('utf-8')
+        except UnicodeDecodeError as exc:
+            raise ValueError('Input is not UTF-8 text — is this a FASTA file?') from exc
         records.append((name, seq))
+
     logger.info(
         'Parsed %d FASTA record(s), %d residues total (digest %s)',
         len(records),

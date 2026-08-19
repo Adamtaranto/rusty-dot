@@ -61,6 +61,29 @@ def test_parse_header_name_is_first_token():
     assert fi.names == ['contig_1']
 
 
+def test_parse_internal_whitespace_stripped_from_sequence():
+    # Spaces and tabs inside sequence lines are removed, not preserved.
+    fi = parse_fasta_bytes(b'>a\nAC GT\tAC\n>b\n GG GG \n')
+    assert fi.records == (('a', 'ACGTAC'), ('b', 'GGGG'))
+
+
+def test_parse_no_trailing_newline():
+    fi = parse_fasta_bytes(b'>a\nACGT\n>b\nTTTT')
+    assert fi.records == (('a', 'ACGT'), ('b', 'TTTT'))
+
+
+def test_parse_blank_line_before_header():
+    fi = parse_fasta_bytes(b'>a\nACGT\n\n\n>b\nTTTT\n')
+    assert fi.names == ['a', 'b']
+
+
+def test_parse_error_line_numbers_reported():
+    with pytest.raises(ValueError, match='line 3'):
+        parse_fasta_bytes(b'>a\nACGT\n>a\nGGGG\n')
+    with pytest.raises(ValueError, match='line 2'):
+        parse_fasta_bytes(b';comment\nACGT\n>a\nACGT\n')
+
+
 @pytest.mark.parametrize(
     ('data', 'match'),
     [
