@@ -856,8 +856,16 @@ class DotPlotter:
         if tracks_on:
             # Single-pair layout with side annotation tracks: a 2×2 gridspec
             # (mirroring plot_single) — y-track left of the main panel,
-            # x-track below it, empty corner.
-            fig_w = fig_h = figsize_per_panel
+            # x-track below it, empty corner.  The main panel keeps the
+            # sequences' aspect ratio (like the grid layout does).
+            if scale_sequences:
+                q_len_bp = self.index.get_sequence_length(query_names[0])
+                t_len_bp = self.index.get_sequence_length(target_names[0])
+                max_len = max(q_len_bp, t_len_bp, 1)
+                fig_w = figsize_per_panel * (t_len_bp / max_len)
+                fig_h = figsize_per_panel * (q_len_bp / max_len)
+            else:
+                fig_w = fig_h = figsize_per_panel
             ts = annotation_track_size
             fig = plt.figure(figsize=(fig_w + ts, fig_h + ts))
             gs = fig.add_gridspec(
@@ -1005,6 +1013,14 @@ class DotPlotter:
                             for f in drawn
                         ]
 
+        # Focused single-pair views: enforce exact bp-per-inch parity on
+        # both axes.  The proportional figsize only approximates it (axis
+        # labels and titles skew the final axes box slightly).  Shared track
+        # axes forbid box-adjustable aspect, so the tracks layout relies on
+        # its proportional gridspec instead.
+        if nrows == 1 and ncols == 1 and scale_sequences and not tracks_on:
+            axes[0][0].set_aspect('equal', adjustable='box')
+
         # Side annotation tracks (single-pair layout only).
         drew_track_features = False
         if tracks_on:
@@ -1068,7 +1084,9 @@ class DotPlotter:
         if tracks_on:
             # The 2x2 track gridspec is not tight_layout-compatible (shared
             # axes + fixed ratios); its explicit h/wspace already lay it out.
-            fig.subplots_adjust(left=0.14, right=0.96, bottom=0.12, top=0.9)
+            # Margins span equal fractions horizontally and vertically so
+            # the gridspec ratios (and thus the panel's aspect) stay true.
+            fig.subplots_adjust(left=0.13, right=0.97, bottom=0.08, top=0.92)
         elif hide_internal_axes:
             # tight_layout() would reinsert inter-panel gaps; keep the panels
             # flush and just leave margins for the outer labels and titles.

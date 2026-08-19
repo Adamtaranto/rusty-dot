@@ -183,23 +183,28 @@
 
   document.addEventListener('dblclick', cancelPendingPanelClick, true);
 
-  panelGroups.forEach(function (panel) {
-    panel.addEventListener('click', function (evt) {
-      // A completed drag-zoom releases a click too; swallow that one.
-      if (consumeDragClick()) return;
-      // Match clicks are handled (and stopped) by the match handler below.
-      evt.stopPropagation();
-      if (!window.RD_DBLCLICK_DRILLDOWN) {
-        selectPanel(panel);
-        return;
-      }
-      cancelPendingPanelClick();
-      pendingPanelTimer = setTimeout(function () {
-        pendingPanelTimer = null;
-        selectPanel(panel);
-      }, DBLCLICK_GRACE_MS);
+  /* Click-to-focus only makes sense with several panels to choose from:
+   * in a single-panel report (the drill-down view) it would just recentre
+   * the one visible plot, so leave clicks alone there. */
+  if (panelGroups.length > 1) {
+    panelGroups.forEach(function (panel) {
+      panel.addEventListener('click', function (evt) {
+        // A completed drag-zoom releases a click too; swallow that one.
+        if (consumeDragClick()) return;
+        // Match clicks are handled (and stopped) by the match handler below.
+        evt.stopPropagation();
+        if (!window.RD_DBLCLICK_DRILLDOWN) {
+          selectPanel(panel);
+          return;
+        }
+        cancelPendingPanelClick();
+        pendingPanelTimer = setTimeout(function () {
+          pendingPanelTimer = null;
+          selectPanel(panel);
+        }, DBLCLICK_GRACE_MS);
+      });
     });
-  });
+  }
 
   // ---------------------------------------------------------------------
   // 2. Wheel: pan (Shift = horizontal), Cmd/Ctrl+wheel = zoom

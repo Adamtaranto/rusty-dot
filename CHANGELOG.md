@@ -87,6 +87,13 @@ and this project adheres to
 
 ### Fixed
 
+- Interactive reports: clicking the plot in a single-panel report (the
+  app's drill-down view) no longer recentres it — click-to-focus only
+  applies when there are multiple panels to choose from.
+- Focused single-pair views now keep the sequences' true aspect ratio:
+  the annotation-track layout sizes its figure proportionally to the two
+  sequence lengths, and trackless single-pair plots enforce exact
+  bp-per-inch parity on both axes.
 - Browser app: the embedded interactive report no longer shows its own
   navigation-hint header (the app-level hint bar already covers it);
   standalone HTML report exports keep their header.
