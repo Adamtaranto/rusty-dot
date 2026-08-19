@@ -136,7 +136,7 @@ fn gravity_order(
 /// Build the in-memory index data (rolling-hash k-mer index) for a single sequence.
 ///
 /// This is the CPU-heavy per-sequence work (a single O(n) ntHash scan building
-/// the forward and reverse-complement hash maps).  It is a free function taking
+/// the canonical-hash k-mer table).  It is a free function taking
 /// no `&self` so it can be called from a rayon parallel iterator while building
 /// many sequences concurrently.
 fn build_sequence_data(seq: &str, k: usize) -> Result<SequenceData, RustyDotError> {
@@ -181,7 +181,7 @@ fn build_many_sequence_data(
 
 /// In-memory store for a single sequence's index data.
 struct SequenceData {
-    /// Rolling-hash k-mer index (forward + reverse-complement hash maps).
+    /// Rolling-hash k-mer index (canonical-hash CSR table, both strands).
     index: KmerIndex,
     /// Original sequence bytes (without sentinel), used for matching (byte
     /// verification) and serialization.
@@ -193,8 +193,9 @@ struct SequenceData {
 /// PyO3-exposed class for building and querying k-mer indexes for DNA sequences.
 ///
 /// Each sequence added to the index receives its **own independent k-mer
-/// index** — forward and reverse-complement ntHash maps built in a single O(n)
-/// pass (see [`crate::kmer_hash`]).  Per-sequence indexes are independent, so
+/// index** — a compact canonical-hash ntHash table covering both strands,
+/// built in a single O(n) pass (see [`crate::kmer_hash`]).  Per-sequence
+/// indexes are independent, so
 /// adding more sequences never modifies an existing one.
 ///
 /// The index behaves as a **dictionary of per-sequence k-mer indexes**:
@@ -203,8 +204,8 @@ struct SequenceData {
 ///   calling either method multiple times accumulates sequences rather than
 ///   replacing them.
 /// * If `add_sequence` (or `load_fasta`) is called with a name that already
-///   exists in the index, the existing entry is **silently overwritten** with a
-///   new index for the new sequence.
+///   exists in the index, a `UserWarning` is emitted and the existing entry
+///   is overwritten with a new index for the new sequence.
 /// * Pairwise comparisons always operate on exactly two independent indexes.
 ///
 /// The `k` value is fixed at construction time and applies to all sequences.
@@ -452,18 +453,17 @@ impl SequenceIndex {
 
     /// Add a single sequence to the index.
     ///
-    /// Builds a **new independent FM-index** for `seq` using rust-bio and
-    /// stores it alongside the k-mer set and raw sequence bytes.  The
-    /// rust-bio FM-index is constructed once and cannot be extended; each
-    /// call to `add_sequence` creates a separate FM-index for that sequence
-    /// only.
+    /// Builds a **new independent k-mer index** for `seq` (a canonical
+    /// ntHash table covering both strands) and stores it alongside the raw
+    /// sequence bytes.  Each call to `add_sequence` creates a separate index
+    /// for that sequence only.
     ///
     /// Calling `add_sequence` does **not** affect any other sequence already
-    /// in the index — each sequence has its own isolated FM-index.
+    /// in the index — each sequence has its own isolated k-mer index.
     ///
     /// If a sequence with `name` already exists in the index, a
     /// `UserWarning` is emitted and the existing entry is **overwritten**
-    /// with a new FM-index for the new `seq`.
+    /// with a new index for the new `seq`.
     ///
     /// Parameters
     /// ----------
@@ -477,7 +477,7 @@ impl SequenceIndex {
     /// Raises
     /// ------
     /// ValueError
-    ///     If the FM-index cannot be built (e.g., invalid characters).
+    ///     If the k-mer index cannot be built (e.g., invalid input).
     pub fn add_sequence(&mut self, py: Python<'_>, name: &str, seq: &str) -> PyResult<()> {
         if self.sequences.contains_key(name) {
             let warnings = py.import("warnings")?;
@@ -503,7 +503,7 @@ impl SequenceIndex {
     /// Load all sequences from a FASTA or gzipped FASTA file and add them to the index.
     ///
     /// Parses the file with needletail (automatic gzip detection) and
-    /// builds a fresh **independent FM-index** for each record.
+    /// builds a fresh **independent k-mer index** for each record.
     ///
     /// Sequences already in the index are **preserved** — `load_fasta` only
     /// adds new entries (or overwrites entries whose name already exists).
@@ -566,7 +566,7 @@ impl SequenceIndex {
             records.push((name, seq));
         }
 
-        // Pass 2: build the FM-index + k-mer set for every record in parallel.
+        // Pass 2: build the k-mer index for every record in parallel.
         // Release the GIL so the rayon worker threads run unhindered; this call
         // performs no Python interaction.
         let k = self.k;

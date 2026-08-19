@@ -5,7 +5,7 @@ It is implemented in Rust (via [PyO3](https://pyo3.rs)) for maximum performance.
 
 ## How multiple sequences are stored
 
-Each sequence added to a `SequenceIndex` receives its **own independent k-mer index** — forward and reverse-complement [ntHash](https://github.com/bcgsc/ntHash) maps built in a single O(n) pass over the sequence.
+Each sequence added to a `SequenceIndex` receives its **own independent k-mer index** — a compact canonical-hash [ntHash](https://github.com/bcgsc/ntHash) table covering both strands, built in a single O(n) pass over the sequence.
 
 This means:
 

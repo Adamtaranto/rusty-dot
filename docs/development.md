@@ -25,7 +25,7 @@ cargo --version
 ### Create a conda environment
 
 A minimal conda environment file is provided at `environment.yml`.
-It pins Python to 3.13 and installs the key Python dependencies.
+It pins Python to 3.14 (free-threaded build) and installs the key Python dependencies.
 
 ```bash
 conda env create -f environment.yml
@@ -225,11 +225,11 @@ pip install '.[test]'
 pytest python/benchmarks --codspeed
 ```
 
-They cover the `CrossIndex` build + `compute_matches` path and dotplot rendering.
+They cover FASTA byte parsing, the `CrossIndex` build + `compute_matches` path, contig reordering, dotplot rendering, and HTML report generation.
 
 ## Building the documentation locally
 
-Install the docs dependencies (included in `pip install maturin --extras dev,docs`):
+Install the docs dependencies (included in `maturin develop --extras dev,docs`):
 
 ```bash
 mkdocs serve

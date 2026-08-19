@@ -6,13 +6,21 @@
 version: 2
 updates:
   - package-ecosystem: "cargo"
-    directory: "/" # Location of package manifests
+    directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    groups:
+      monthly-batch:
+        patterns:
+          - "*"
   - package-ecosystem: "github-actions"
-    directory: "/" # Location of GitHub Actions workflows (.github/workflows)
+    directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    groups:
+      monthly-batch:
+        patterns:
+          - "*"
 #  - package-ecosystem: "pip"
 #    directory: "/" # Location of pyproject.toml for Python dependencies
 #    schedule:

@@ -9,8 +9,8 @@ class SequenceIndex:
     """Rolling-hash k-mer index for DNA sequence comparison.
 
     Each sequence added to the index receives its **own independent k-mer
-    index** — forward and reverse-complement ntHash maps built in a single
-    O(n) scan.  Indexes are built per sequence and independent of one another,
+    index** — a compact canonical-hash ntHash table covering both strands,
+    built in a single O(n) scan.  Indexes are per sequence and independent,
     so adding more sequences never modifies an existing entry.
 
     The index behaves as a **dictionary of per-sequence k-mer indexes**:
@@ -56,7 +56,7 @@ class SequenceIndex:
 
     >>> idx = SequenceIndex(k=10)
     >>> idx.add_sequence("seq1", "ACGTACGT")
-    >>> idx.add_sequence("seq1", "GGGGGGGG")  # silently replaces the previous seq1
+    >>> idx.add_sequence("seq1", "GGGGGGGG")  # replaces seq1, emits a UserWarning
     """
 
     def __init__(self, k: int) -> None:
@@ -78,8 +78,8 @@ class SequenceIndex:
     def add_sequence(self, name: str, seq: str) -> None:
         """Add a single sequence to the index.
 
-        Builds a **new independent k-mer index** for ``seq`` (forward and
-        reverse-complement ntHash maps) and stores it alongside the raw
+        Builds a **new independent k-mer index** for ``seq`` (a canonical
+        ntHash table covering both strands) and stores it alongside the raw
         sequence bytes.  Each call creates a separate index for that sequence
         only; adding sequences never modifies existing indexes.
 
@@ -484,7 +484,7 @@ class SequenceIndex:
     def save(self, path: str) -> None:
         """Serialise the index to a binary file.
 
-        Stores the original sequence bytes and k-mer sets using postcard.
+        Stores the original sequence bytes using postcard.
         The k-mer index is rebuilt from the sequence bytes when the file is
         loaded, so the on-disk format is compact and version-independent.
 
@@ -503,8 +503,8 @@ class SequenceIndex:
     def load(self, path: str) -> None:
         """Load sequences from a previously serialised index file.
 
-        Deserialises sequence bytes and k-mer sets from a file written by
-        ``save``, then rebuilds the k-mer index for each sequence in memory.
+        Deserialises sequence bytes from a file written by ``save``, then
+        rebuilds the k-mer index for each sequence in memory.
 
         Parameters
         ----------

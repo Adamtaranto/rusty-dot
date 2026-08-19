@@ -19,20 +19,27 @@ from the docs site.
 
 | Category | Options |
 |---|---|
-| Input | Upload query and target assemblies as FASTA or gzipped FASTA (`.fa`, `.fasta`, `.fna`, or any of these gzipped), or import a pre-computed PAF file |
-| Alignment — offline | **k-mer matching** with rusty-dot's rolling-hash engine (the Rust crate compiled to a wasm wheel, running in Pyodide); **PAF import** (pure Python). Both work fully offline once the app has loaded. |
-| Alignment — via biowasm | **minimap2 2.22**, **LASTZ 1.04.52**, and **nucmer (MUMmer4)** run in-browser via the [biowasm](https://biowasm.com) CDN. These fetch the tool binaries from biowasm.com at runtime, so they need a network connection. |
-| Plot reconfiguration (no recompute) | Sort contigs by size or maximise colinearity, auto-flip reverse-oriented contigs, hide internal axes, minimum alignment length filter, identity colouring |
+| Input | Upload query and target assemblies as FASTA or gzipped FASTA (`.fa`, `.fasta`, `.fna`, or any of these gzipped), align an assembly to itself ("Align assembly to itself"), or import a pre-computed PAF file |
+| Alignment — offline | **k-mer matching** with rusty-dot's rolling-hash engine (the Rust crate compiled to a wasm wheel, running in Pyodide); **PAF import** (pure Python). Both work fully offline once the app has loaded. The k-mer method also offers a compute-time "min match block" filter (default 50 bp) that drops short blocks before they are materialised — changing it re-runs the comparison. |
+| Alignment — via biowasm | **minimap2 2.22** (preset `asm20` by default), **LASTZ 1.04.52** (`--step=20 --notransition` by default), and **nucmer (MUMmer4)** (`-l 100 -c 200` by default) run in-browser via the [biowasm](https://biowasm.com) CDN — assembly-scale defaults; the tool binaries are fetched from biowasm.com at runtime, so these need a network connection. Runs can be cancelled mid-flight (switch method or re-run), and each run's exact command line and stderr appear in the collapsible **Aligner log**. |
+| Plot reconfiguration (no recompute) | Sort contigs by size or maximise colinearity, auto-flip reverse-oriented contigs, hide internal axes, minimum alignment length filter, identity colouring (tool/PAF results only — k-mer matches are exact, so the option is hidden there) |
 | Annotations | Upload GFF3 tracks for either assembly; per-type toggles and colours, diagonal shading, side tracks in the focused pair view, clickable features |
 | Downloads | Plot as SVG or PDF, alignments as PAF, and the reordered/reoriented query assembly as FASTA |
+| Diagnostics | Live wasm-heap memory readout in the sidebar; animated processing indicator while anything is computing |
 
 ## Limits and notes
 
 - **Memory**: browser WebAssembly is capped at roughly 2 GB, so the app is
   best suited to viral, bacterial, and fungal-scale assemblies. For large
   plant or animal genomes, use rusty-dot [locally](installation.md) instead.
-- **First load**: the app downloads a ~30 MB Python/wasm runtime on first
-  visit; it is cached by the browser, so subsequent loads are fast.
+  The sidebar shows the live wasm-heap usage against this cap.
+- **k-mer input limit**: the k-mer method refuses inputs beyond **~80 Mb
+  combined** (and warns above 40 Mb that big runs take minutes) — its index
+  would exhaust the browser heap beyond that. minimap2 / LASTZ / nucmer
+  handle larger inputs; they warn above ~200 MB combined.
+- **First load**: the app downloads roughly 45 MB of Python/wasm runtime
+  assets on first visit; they are cached by the browser, so subsequent loads
+  are fast.
 - **Why no BLAST?** No production WebAssembly build of NCBI BLAST+ exists, so
   BLAST cannot run in the browser. MUMmer4's `nucmer` is offered as the
   closest substitute for sensitive genome-vs-genome alignment.

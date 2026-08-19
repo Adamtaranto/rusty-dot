@@ -1,8 +1,7 @@
-"""
-rusty-dot: Fast dot plot comparisons of DNA sequences using an FM-Index.
+"""rusty-dot: fast dot plots of DNA via a canonical ntHash k-mer index.
 
 This package provides:
-- Rust-backed FM-index for fast k-mer lookup (via PyO3 bindings)
+- Rust-backed canonical-hash k-mer index for fast lookup (via PyO3 bindings)
 - Python classes for building and querying sequence indexes
 - Dotplot visualization tools
 - PAF file I/O with CIGAR string parsing

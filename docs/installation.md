@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python 3.9 or later
+- Python 3.9 – 3.14
 - A working Rust toolchain (for building from source)
 - [maturin](https://www.maturin.rs/) ≥ 1.0
 
