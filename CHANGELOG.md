@@ -29,6 +29,13 @@ and this project adheres to
   the detail bar shows the feature's name, type, coordinates, strand,
   parent and source.
 - README section and dotplot-tutorial examples for annotation overlays.
+- Browser app: GFF3 annotation uploads for the query and/or target
+  assembly (`.gff`/`.gff3`/`.gz`) with per-feature-type visibility
+  toggles and colour pickers (native colour inputs via a small Shiny
+  binding). Features shade self-vs-self panels behind the alignments
+  (including cross-group self-alignments), the focused drill-down view
+  adds side annotation tracks, and features are clickable in the
+  interactive report.
 
 ### Performance
 
@@ -94,6 +101,11 @@ and this project adheres to
   the annotation-track layout sizes its figure proportionally to the two
   sequence lengths, and trackless single-pair plots enforce exact
   bp-per-inch parity on both axes.
+- Browser app: double-clicking a sub-plot to open the standalone
+  single-pair view no longer zooms into the panel first and then swaps
+  views — the single-click focus zoom now waits briefly and is cancelled
+  by a double-click. Standalone HTML reports (no drill-down) keep
+  instant clicks.
 - Browser app: the embedded interactive report no longer shows its own
   navigation-hint header (the app-level hint bar already covers it);
   standalone HTML report exports keep their header.

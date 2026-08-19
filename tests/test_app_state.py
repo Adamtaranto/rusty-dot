@@ -229,6 +229,9 @@ def test_inject_panel_bridge_places_script_before_body_close():
     html = '<html><body><svg></svg></body></html>'
     out = app_module.inject_panel_bridge(html)
     assert 'rd-panel-dblclick' in out
+    # The bridge declares its dblclick drill-down so report.js defers the
+    # single-click focus zoom (no zoom-then-swap on double-click).
+    assert 'RD_DBLCLICK_DRILLDOWN = true' in out
     assert out.index('<script>') < out.index('</body>')
     assert out.endswith('</body></html>')
     # No closing body tag: script is appended.
