@@ -397,6 +397,45 @@ class SequenceIndex:
         """
         ...
 
+    def compare_pairs_stranded(
+        self,
+        pairs: list[tuple[str, str]],
+        merge: bool = True,
+    ) -> list[list[tuple[int, int, int, int, str]]]:
+        """Find shared k-mer matches for many (query, target) pairs at once.
+
+        Batched equivalent of :meth:`compare_sequences_stranded`: every pair
+        is computed inside a single native call with the GIL released (and in
+        parallel where the extension was built with the ``parallel`` feature).
+        Prefer this over per-pair calls for all-vs-all comparisons of
+        many-contig assemblies, where the per-call overhead dominates.
+
+        Parameters
+        ----------
+        pairs : list[tuple[str, str]]
+            Ordered ``(query_name, target_name)`` pairs to compare.  Names
+            may repeat; each entry produces one result list.
+        merge : bool, optional
+            Whether to merge co-linear k-mer runs.  Forward runs are merged
+            by diagonal; reverse runs are merged by anti-diagonal.
+            Default is ``True``.
+
+        Returns
+        -------
+        list[list[tuple[int, int, int, int, str]]]
+            One list per input pair, in input order, of
+            ``(query_start, query_end, target_start, target_end, strand)``
+            tuples.  Coordinates are 0-based; end positions are exclusive.
+            ``strand`` is ``"+"`` for forward matches and ``"-"`` for
+            reverse-complement matches.
+
+        Raises
+        ------
+        KeyError
+            If any sequence name is not present in the index.
+        """
+        ...
+
     def optimal_contig_order(
         self,
         query_names: list[str],

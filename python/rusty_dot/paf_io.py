@@ -1652,28 +1652,8 @@ class CrossIndex:
         """
         q_len = self._index.get_sequence_length(q_int)
         t_len = self._index.get_sequence_length(t_int)
-        records: list[PafRecord] = []
-        for qs, qe, ts, te, strand in self._index.compare_sequences_stranded(
-            q_int, t_int, merge
-        ):
-            block = max(qe - qs, te - ts)
-            records.append(
-                PafRecord(
-                    query_name=q_name,
-                    query_len=q_len,
-                    query_start=qs,
-                    query_end=qe,
-                    strand=strand,
-                    target_name=t_name,
-                    target_len=t_len,
-                    target_start=ts,
-                    target_end=te,
-                    residue_matches=block,
-                    alignment_block_len=block,
-                    mapping_quality=255,
-                )
-            )
-        return records
+        matches = self._index.compare_sequences_stranded(q_int, t_int, merge)
+        return self._records_from_matches(q_name, t_name, q_len, t_len, matches)
 
     def _stranded_records(
         self,
@@ -1705,12 +1685,81 @@ class CrossIndex:
             One record per stranded match block across every (query, target)
             pair, using un-prefixed names.
         """
+        pairs = [
+            (self._make_internal(query_group, q), self._make_internal(target_group, t))
+            for q in q_names
+            for t in t_names
+        ]
+        name_pairs = [(q, t) for q in q_names for t in t_names]
+
+        batch = getattr(self._index, 'compare_pairs_stranded', None)
         records: list[PafRecord] = []
-        for q in q_names:
-            qi = self._make_internal(query_group, q)
-            for t in t_names:
-                ti = self._make_internal(target_group, t)
+        if batch is not None:
+            # One native call for the whole Q x T grid: the Rust side computes
+            # every pair with the GIL released (and in parallel off-wasm),
+            # instead of Q x T separate Python->Rust round-trips.
+            lengths = {
+                internal: self._index.get_sequence_length(internal)
+                for pair in pairs
+                for internal in pair
+            }
+            for (qi, ti), (q, t), matches in zip(
+                pairs, name_pairs, batch(pairs, merge)
+            ):
+                records.extend(
+                    self._records_from_matches(
+                        q, t, lengths[qi], lengths[ti], matches
+                    )
+                )
+        else:  # pragma: no cover - older compiled extension without the batch API
+            for (qi, ti), (q, t) in zip(pairs, name_pairs):
                 records.extend(self._stranded_pair_records(qi, ti, q, t, merge))
+        return records
+
+    @staticmethod
+    def _records_from_matches(
+        q_name: str,
+        t_name: str,
+        q_len: int,
+        t_len: int,
+        matches: list[tuple[int, int, int, int, str]],
+    ) -> list[PafRecord]:
+        """Convert stranded match tuples for one pair into PAF records.
+
+        Parameters
+        ----------
+        q_name, t_name : str
+            Un-prefixed names written into the records.
+        q_len, t_len : int
+            Full sequence lengths for the pair.
+        matches : list[tuple[int, int, int, int, str]]
+            ``(query_start, query_end, target_start, target_end, strand)``
+            tuples as returned by the k-mer engine.
+
+        Returns
+        -------
+        list[PafRecord]
+            One record per stranded match block.
+        """
+        records: list[PafRecord] = []
+        for qs, qe, ts, te, strand in matches:
+            block = max(qe - qs, te - ts)
+            records.append(
+                PafRecord(
+                    query_name=q_name,
+                    query_len=q_len,
+                    query_start=qs,
+                    query_end=qe,
+                    strand=strand,
+                    target_name=t_name,
+                    target_len=t_len,
+                    target_start=ts,
+                    target_end=te,
+                    residue_matches=block,
+                    alignment_block_len=block,
+                    mapping_quality=255,
+                )
+            )
         return records
 
     def reversed_contigs(self, group: str) -> set[str]:
