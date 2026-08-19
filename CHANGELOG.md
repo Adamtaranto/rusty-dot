@@ -8,6 +8,28 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added (GFF annotations)
+
+- GFF3 parsing upgrades: `parse_attributes()` with percent-decoding,
+  `GffFeature.feature_id`/`.parent`/`.name` properties,
+  `GffAnnotation.from_text()`/`.from_bytes()` constructors (gzip detected
+  by magic bytes; `from_file` also reads `.gz`), embedded `##FASTA`
+  section handling, and multi-part feature grouping via `iter_groups()`.
+- Dotplot annotation overlays reworked: diagonal feature squares now draw
+  **behind** the alignment segments and mirror correctly on
+  reverse-displayed contigs; a feature-type colour legend is added
+  automatically (`annotation_legend=False` to disable).
+- Side annotation tracks on focused single-pair plots
+  (`plot(annotation_tracks=True)` with `annotation_query=` /
+  `annotation_target=`): lane-packed feature shapes with strand arrows
+  for gene/mRNA/exon/CDS/ORF, rounded rectangles for unstranded types,
+  and connector lines joining multi-part CDS groups.  `plot_single` now
+  renders its tracks through the same engine.
+- Interactive HTML reports: diagonal annotation features are clickable —
+  the detail bar shows the feature's name, type, coordinates, strand,
+  parent and source.
+- README section and dotplot-tutorial examples for annotation overlays.
+
 ### Performance
 
 - The per-sequence k-mer index was restructured from two hash maps
@@ -65,6 +87,13 @@ and this project adheres to
 
 ### Fixed
 
+- Interactive reports: clicking the plot in a single-panel report (the
+  app's drill-down view) no longer recentres it — click-to-focus only
+  applies when there are multiple panels to choose from.
+- Focused single-pair views now keep the sequences' true aspect ratio:
+  the annotation-track layout sizes its figure proportionally to the two
+  sequence lengths, and trackless single-pair plots enforce exact
+  bp-per-inch parity on both axes.
 - Browser app: the embedded interactive report no longer shows its own
   navigation-hint header (the app-level hint bar already covers it);
   standalone HTML report exports keep their header.

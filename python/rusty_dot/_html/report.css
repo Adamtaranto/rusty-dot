@@ -147,3 +147,8 @@ g[id^='rd-matches-'] * { pointer-events: stroke; cursor: pointer; }
 }
 
 #rd-detail-close:hover { color: var(--rd-accent); }
+
+/* Diagonal-panel GFF features are clickable. */
+.rd-annot {
+  cursor: pointer;
+}

@@ -205,6 +205,11 @@ def build_panel_payload(
                 for layer in _LAYERS
             },
         }
+        # Diagonal-panel GFF features: one dict per drawn patch, in draw
+        # order — the report JS maps the SVG children of the panel's
+        # 'rd-annot-<r>-<c>' group back to these entries by index.
+        if panel.get('annotations'):
+            entry['annotations'] = [dict(a) for a in panel['annotations']]
         if embed:
             qid = panel['query_id']
             if qid not in seq_cache:

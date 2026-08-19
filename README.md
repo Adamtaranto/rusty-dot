@@ -232,6 +232,46 @@ cross.write_fasta("assembly_a.sorted.fasta", "a")  # forward reference, unchange
 cross.write_fasta("assembly_b.sorted.fasta", "b")  # reordered + reoriented
 ```
 
+## GFF Annotation Overlays
+
+Overlay GFF3 features on dotplots. Feature types are auto-coloured from a
+qualitative palette (override per type), and a colour legend is added
+automatically.
+
+```python
+from rusty_dot import DotPlotter, SequenceIndex
+from rusty_dot.annotation import GffAnnotation
+
+# From a file (gzip detected automatically), text, or raw bytes.
+ann = GffAnnotation.from_file("features.gff3.gz")
+ann = ann.keep_feature_types(["gene", "CDS", "repeat_region"])
+ann.set_colors({"gene": "#2c7fb8"})
+
+plotter = DotPlotter(idx)
+
+# Diagonal squares: features shade self-vs-self panels behind the alignments.
+plotter.plot(annotation=ann, output_path="annotated_grid.png")
+
+# Focused single-pair view with side annotation tracks: lane-packed feature
+# shapes left of the y axis and below the x axis, direction arrows for
+# stranded types (gene/mRNA/exon/CDS/ORF), and connector lines joining
+# multi-part CDS groups.
+plotter.plot(
+    query_names=["chr1"],
+    target_names=["chr2"],
+    annotation_query=ann,
+    annotation_target=ann,
+    annotation_tracks=True,
+    output_path="annotated_pair.png",
+)
+
+# Interactive HTML reports make diagonal features clickable (name, type,
+# coordinates, strand, parent shown in the detail bar).
+plotter.to_html("report.html", annotation=ann)
+```
+
+See the dotplot tutorial for rendered examples.
+
 ## Filtering PAF Alignments by Length
 
 Use `PafAlignment.filter_by_min_length` to remove short alignment records after
