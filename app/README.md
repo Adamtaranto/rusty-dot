@@ -47,6 +47,11 @@ pinned `nightly-2025-02-17` Rust toolchain); see the `wasm-build` job in
 - **Identity colouring**: for methods that report identity (minimap2,
   LASTZ, nucmer, PAF import) alignments can be coloured by % identity
   instead of forward/reverse strand.
+- **Instant display options**: line width and min match length are applied
+  client-side inside the interactive report (CSS + postMessage) — changing
+  them never re-renders the plot. Contig orders are cached per ordering
+  mode, so re-selecting "maximise colinearity" after trying another mode is
+  instant.
 - **GFF annotations**: upload GFF3 files (`.gff`/`.gff3`/`.gz`) for the
   query and/or target assembly. Detected feature types get per-type
   visibility toggles and colour pickers; features shade self-vs-self
