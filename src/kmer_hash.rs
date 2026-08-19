@@ -414,25 +414,68 @@ pub fn shared_fwd_pairs(
 ) -> Vec<(usize, usize)> {
     let mut pairs: Vec<(usize, usize)> = Vec::new();
     for_shared_groups(q_index, t_index, |q_entries, t_entries| {
-        let (q_plain, q_flag) = split_by_flag(q_entries);
-        let (t_plain, t_flag) = split_by_flag(t_entries);
-        for (q_pos, t_pos) in [(&q_plain, &t_plain), (&q_flag, &t_flag)] {
-            if q_pos.is_empty() || t_pos.is_empty() {
-                continue;
-            }
-            let q_rep = &q_seq[q_pos[0]..q_pos[0] + k];
-            let t_rep = &t_seq[t_pos[0]..t_pos[0] + k];
-            if q_rep != t_rep {
-                continue;
-            }
-            for &qp in q_pos.iter() {
-                for &tp in t_pos.iter() {
-                    pairs.push((qp, tp));
-                }
-            }
-        }
+        emit_fwd_group(q_seq, t_seq, k, q_entries, t_entries, &mut pairs);
     });
     pairs
+}
+
+/// Emit the forward-strand hit pairs for one shared canonical group.
+///
+/// Iterates the two flag classes in place (no per-group allocation — this
+/// path runs once per shared hash and dominates comparison time on large
+/// sequences).
+#[inline]
+fn emit_fwd_group(
+    q_seq: &[u8],
+    t_seq: &[u8],
+    k: usize,
+    q_entries: &[u32],
+    t_entries: &[u32],
+    pairs: &mut Vec<(usize, usize)>,
+) {
+    for flag in [0u32, FLAG_BIT] {
+        let Some(&q_first) = q_entries.iter().find(|&&e| e & FLAG_BIT == flag) else {
+            continue;
+        };
+        let Some(&t_first) = t_entries.iter().find(|&&e| e & FLAG_BIT == flag) else {
+            continue;
+        };
+        // Verify one representative k-mer to reject hash collisions.
+        let q0 = pos_of(q_first);
+        let t0 = pos_of(t_first);
+        if q_seq[q0..q0 + k] != t_seq[t0..t0 + k] {
+            continue;
+        }
+        for &qe in q_entries.iter().filter(|&&e| e & FLAG_BIT == flag) {
+            for &te in t_entries.iter().filter(|&&e| e & FLAG_BIT == flag) {
+                pairs.push((pos_of(qe), pos_of(te)));
+            }
+        }
+    }
+}
+
+/// Raw `(query_pos, target_pos)` hit pairs for one strand.
+pub type HitPairs = Vec<(usize, usize)>;
+
+/// Emit both strands' hit pairs in a **single** walk over the two indexes.
+///
+/// Equivalent to calling [`shared_fwd_pairs`] and [`shared_rev_pairs`] but
+/// intersecting the sorted hash arrays only once — the walk itself is a
+/// significant share of comparison time on large sequences.
+pub fn shared_stranded_pairs(
+    q_seq: &[u8],
+    q_index: &KmerIndex,
+    t_seq: &[u8],
+    t_index: &KmerIndex,
+    k: usize,
+) -> (HitPairs, HitPairs) {
+    let mut fwd: HitPairs = Vec::new();
+    let mut rev: HitPairs = Vec::new();
+    for_shared_groups(q_index, t_index, |q_entries, t_entries| {
+        emit_fwd_group(q_seq, t_seq, k, q_entries, t_entries, &mut fwd);
+        emit_rev_group(q_seq, t_seq, k, q_entries, t_entries, &mut rev);
+    });
+    (fwd, rev)
 }
 
 /// Emit raw reverse-strand hit pairs `(query_pos, rc_target_pos)` for two
@@ -451,37 +494,60 @@ pub fn shared_rev_pairs(
 ) -> Vec<(usize, usize)> {
     let mut pairs: Vec<(usize, usize)> = Vec::new();
     for_shared_groups(q_index, t_index, |q_entries, t_entries| {
-        let (q_plain, q_flag) = split_by_flag(q_entries);
-        let (t_plain, t_flag) = split_by_flag(t_entries);
-        for (q_pos, t_pos) in [(&q_plain, &t_flag), (&q_flag, &t_plain)] {
-            if q_pos.is_empty() || t_pos.is_empty() {
+        emit_rev_group(q_seq, t_seq, k, q_entries, t_entries, &mut pairs);
+    });
+    pairs
+}
+
+/// Emit the reverse-strand hit pairs for one shared canonical group.
+#[inline]
+fn emit_rev_group(
+    q_seq: &[u8],
+    t_seq: &[u8],
+    k: usize,
+    q_entries: &[u32],
+    t_entries: &[u32],
+    pairs: &mut Vec<(usize, usize)>,
+) {
+    {
+        // Opposite flag classes (in place, no per-group allocation): the
+        // target windows are the reverse complement of the query windows.
+        for (q_flag, t_flag) in [(0u32, FLAG_BIT), (FLAG_BIT, 0u32)] {
+            let Some(&q_first) = q_entries.iter().find(|&&e| e & FLAG_BIT == q_flag) else {
+                continue;
+            };
+            let Some(&t_first) = t_entries.iter().find(|&&e| e & FLAG_BIT == t_flag) else {
+                continue;
+            };
+            let q0 = pos_of(q_first);
+            let t0 = pos_of(t_first);
+            if crate::strand::revcomp(&q_seq[q0..q0 + k]) != t_seq[t0..t0 + k] {
                 continue;
             }
-            let q_rep = &q_seq[q_pos[0]..q_pos[0] + k];
-            let t_rep = &t_seq[t_pos[0]..t_pos[0] + k];
-            if crate::strand::revcomp(q_rep) != t_rep {
-                continue;
-            }
-            for &qp in q_pos.iter() {
-                for &tp in t_pos.iter() {
-                    pairs.push((qp, tp));
+            for &qe in q_entries.iter().filter(|&&e| e & FLAG_BIT == q_flag) {
+                for &te in t_entries.iter().filter(|&&e| e & FLAG_BIT == t_flag) {
+                    pairs.push((pos_of(qe), pos_of(te)));
                 }
             }
         }
         // Palindromic k-mers: a forward co-occurrence is also an RC match.
-        if !q_plain.is_empty() && !t_plain.is_empty() {
-            let q_rep = &q_seq[q_plain[0]..q_plain[0] + k];
-            let t_rep = &t_seq[t_plain[0]..t_plain[0] + k];
-            if q_rep == t_rep && crate::strand::revcomp(q_rep) == q_rep {
-                for &qp in q_plain.iter() {
-                    for &tp in t_plain.iter() {
-                        pairs.push((qp, tp));
-                    }
+        let Some(&q_first) = q_entries.iter().find(|&&e| e & FLAG_BIT == 0) else {
+            return;
+        };
+        let Some(&t_first) = t_entries.iter().find(|&&e| e & FLAG_BIT == 0) else {
+            return;
+        };
+        let q0 = pos_of(q_first);
+        let t0 = pos_of(t_first);
+        let q_rep = &q_seq[q0..q0 + k];
+        if q_rep == &t_seq[t0..t0 + k] && crate::strand::revcomp(q_rep) == q_rep {
+            for &qe in q_entries.iter().filter(|&&e| e & FLAG_BIT == 0) {
+                for &te in t_entries.iter().filter(|&&e| e & FLAG_BIT == 0) {
+                    pairs.push((pos_of(qe), pos_of(te)));
                 }
             }
         }
-    });
-    pairs
+    }
 }
 
 #[cfg(test)]

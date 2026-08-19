@@ -7,7 +7,7 @@
 
 use crate::error::RustyDotError;
 use crate::kmer::build_kmer_set;
-use crate::kmer_hash::{shared_fwd_pairs, shared_rev_pairs, KmerIndex};
+use crate::kmer_hash::{shared_fwd_pairs, shared_stranded_pairs, KmerIndex};
 use crate::merge::{merge_fwd_pairs, merge_rev_fwd_pairs, merge_rev_pairs, CoordPair};
 use crate::paf::coords_to_paf;
 use crate::serialize::{load_index, save_index, IndexCollection, SerializableSequence};
@@ -282,10 +282,10 @@ fn compute_pair_stranded(
 
     let mut all_pairs: Vec<CoordPair> = Vec::new();
 
-    // + strand hits.  The pair-based path skips the per-k-mer String maps
-    // entirely — on repeat-rich assembly pairs those maps dominated the peak
-    // memory of a comparison.
-    let fwd_hits = shared_fwd_pairs(
+    // Both strands from a single walk over the two indexes.  The pair-based
+    // path skips the per-k-mer String maps entirely — on repeat-rich
+    // assembly pairs those maps dominated the peak memory of a comparison.
+    let (fwd_hits, rev_hits) = shared_stranded_pairs(
         &query.seq_bytes,
         &query.index,
         &target.seq_bytes,
@@ -308,13 +308,6 @@ fn compute_pair_stranded(
     }
 
     // - strand hits
-    let rev_hits = shared_rev_pairs(
-        &query.seq_bytes,
-        &query.index,
-        &target.seq_bytes,
-        &target.index,
-        k,
-    );
     if !rev_hits.is_empty() {
         if merge {
             // Apply both anti-diagonal and co-diagonal merging for RC hits,
