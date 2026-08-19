@@ -322,3 +322,21 @@ def test_html_report_annotations_payload_and_click_wiring(tmp_path):
     # Click wiring shipped with the report.
     assert 'showAnnotationDetail' in html
     assert 'rd-annot-' in html
+
+
+def test_diagonal_squares_on_cross_index_self_alignment():
+    """Same contig under two group prefixes counts as a self panel."""
+    from rusty_dot.paf_io import CrossIndex
+
+    seq = 'ACGTTGCAAGGCCTTAGCTAGGATCCGATCGATTACGGCATGCATTGCACGTAGCTAGCATCG' * 10
+    cross = CrossIndex(k=11)
+    cross.add_sequence('c1', seq, group='query')
+    cross.add_sequence('c1', seq, group='target')
+    cross.compute_matches('query', 'target', True)
+    ann = GffAnnotation.from_text('c1\tt\tgene\t11\t100\t.\t+\t.\tID=g')
+    fig = DotPlotter(cross).plot(
+        query_group='query', target_group='target', annotation=ann
+    )
+    squares = [c for ax in fig.axes for c in ax.collections if c.get_zorder() == 0.5]
+    assert squares, 'self panel across group prefixes must draw squares'
+    plt.close(fig)

@@ -964,7 +964,18 @@ class DotPlotter:
 
                 # Annotation squares on self-vs-self (diagonal) panels,
                 # drawn behind the alignments and mirrored with the axis.
-                if annotation is not None and q_name == t_name:
+                # A CrossIndex self-comparison stores the same sequence
+                # under two group prefixes ('query:c1' vs 'target:c1'), so
+                # also treat equal display names as self when the lengths
+                # match (two *different* assemblies sharing a contig name
+                # will almost never share its exact length too).
+                is_self_panel = q_name == t_name or (
+                    self._strip_group_prefix(q_name)
+                    == self._strip_group_prefix(t_name)
+                    and self.index.get_sequence_length(q_name)
+                    == self.index.get_sequence_length(t_name)
+                )
+                if annotation is not None and is_self_panel:
                     reverse = self._strip_group_prefix(q_name) in reverse_set
                     annot_gid = (
                         f'rd-annot-{row_idx}-{col_idx}'
