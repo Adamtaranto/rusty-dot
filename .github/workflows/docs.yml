@@ -24,7 +24,7 @@ jobs:
           toolchain: nightly-2025-05-01
           targets: wasm32-unknown-emscripten
       - name: Set up Emscripten SDK
-        uses: mymindstorm/setup-emsdk@v14
+        uses: mymindstorm/setup-emsdk@v16
         with:
           # MUST match the Pyodide release bundled by shinylive
           # (Pyodide 0.27.x = CPython 3.12 + Emscripten 3.1.58).
@@ -79,7 +79,7 @@ jobs:
       - name: Install docs dependencies
         run: pip install ".[docs]" shinylive
       - name: Download wasm wheel into the app
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: app-wasm-wheel
           path: app/wheels
