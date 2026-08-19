@@ -57,6 +57,9 @@ include = [{ path = "python/rusty_dot/_html/**/*", format = ["sdist", "wheel"] }
 addopts = "-v --cov=rusty_dot --cov-branch --cov-report=xml --cov-report=term"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+markers = [
+    "private_data: benchmarks against private local assemblies (opt-in via RUSTY_DOT_PRIVATE_DATA=1; data never committed)",
+]
 
 [tool.ruff]
 target-version = "py310"

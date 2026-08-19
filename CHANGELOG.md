@@ -8,6 +8,23 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Performance
+
+- `SequenceIndex.compare_pairs_stranded`: batched both-strand comparison of
+  many sequence pairs in a single native call (GIL released, parallel on
+  native builds), with an optional `min_block_len` filter that drops short
+  match blocks before they are materialised as Python objects — repeat-rich
+  assembly pairs can otherwise produce millions of records.
+  `CrossIndex.compute_matches` gains the same `min_block_len` option and now
+  computes the whole Q×T grid through one batched call.
+- `CrossIndex.reorder_for_colinearity` reuses the match records cached by
+  `compute_matches` instead of recomputing the full match grid (72 s → 11 s
+  on a real 37 Mb × 37 Mb fungal assembly pair, and 0.2 s when combined with
+  `min_block_len=50`).
+- Browser app: `parse_fasta_bytes` rewritten as a single-pass byte-level
+  parser — ~7.5× faster on a 37 Mb assembly (754 ms → 101 ms) with peak
+  allocations reduced from ~4× to ~1.5× the file size.
+
 ### Fixed
 
 - Browser app: the embedded interactive report no longer shows its own

@@ -841,6 +841,87 @@ impl SequenceIndex {
             .collect())
     }
 
+    /// Find shared k-mer matches for many (query, target) pairs in one call.
+    ///
+    /// Batched equivalent of `compare_sequences_stranded`: all pairs are
+    /// computed inside a single native call with the GIL released, in parallel
+    /// when the `parallel` feature is enabled.  This removes the per-pair
+    /// Python-call overhead that dominates all-vs-all comparisons of
+    /// many-contig assemblies (Q x T round-trips collapse into one).
+    ///
+    /// Parameters
+    /// ----------
+    /// pairs : list[tuple[str, str]]
+    ///     Ordered ``(query_name, target_name)`` pairs to compare.  Names may
+    ///     repeat; each entry produces one result list.
+    /// merge : bool, optional
+    ///     Whether to merge co-linear k-mer runs. Default is True.
+    /// min_block_len : int, optional
+    ///     Drop matches whose longest span (query or target) is shorter than
+    ///     this many bases, before crossing back into Python.  Repeat-rich
+    ///     genome pairs can produce millions of short blocks; filtering here
+    ///     avoids materialising them as Python objects. Default is 0 (keep
+    ///     all).
+    ///
+    /// Returns
+    /// -------
+    /// list[list[tuple[int, int, int, int, str]]]
+    ///     One list per input pair, in input order, of
+    ///     (query_start, query_end, target_start, target_end, strand) tuples.
+    ///     Strand is ``"+"`` for forward and ``"-"`` for reverse-complement
+    ///     matches.
+    ///
+    /// Raises
+    /// ------
+    /// KeyError
+    ///     If any sequence name is not found.
+    #[pyo3(signature = (pairs, merge=true, min_block_len=0))]
+    pub fn compare_pairs_stranded(
+        &self,
+        py: Python<'_>,
+        pairs: Vec<(String, String)>,
+        merge: bool,
+        min_block_len: usize,
+    ) -> PyResult<Vec<Vec<StrandedMatch>>> {
+        for (q, t) in &pairs {
+            for name in [q, t] {
+                if !self.sequences.contains_key(name.as_str()) {
+                    return Err(pyo3::exceptions::PyKeyError::new_err(format!(
+                        "Sequence '{}' not found",
+                        name
+                    )));
+                }
+            }
+        }
+
+        let k = self.k;
+        let sequences = &self.sequences;
+        // Release the GIL: the batch does no Python interaction.
+        let results = py.detach(|| compute_pairs_stranded_batch(sequences, k, &pairs, merge));
+        Ok(results
+            .into_iter()
+            .map(|coords| {
+                coords
+                    .into_iter()
+                    .filter(|c| {
+                        min_block_len == 0
+                            || (c.query_end - c.query_start).max(c.target_end - c.target_start)
+                                >= min_block_len
+                    })
+                    .map(|c| {
+                        (
+                            c.query_start,
+                            c.query_end,
+                            c.target_start,
+                            c.target_end,
+                            (c.strand as char).to_string(),
+                        )
+                    })
+                    .collect()
+            })
+            .collect())
+    }
+
     /// Compute the optimal ordering of query and target contigs to maximise collinearity.
     ///
     /// Uses a gravity-centre algorithm inspired by d-genies: for each query contig the
