@@ -144,7 +144,7 @@ jobs:
           toolchain: nightly-2025-05-01
           targets: wasm32-unknown-emscripten
       - name: Set up Emscripten SDK
-        uses: mymindstorm/setup-emsdk@v14
+        uses: mymindstorm/setup-emsdk@v16
         with:
           # MUST match the Emscripten version of the target Pyodide release.
           # Pyodide 0.27.x (bundled by current Shinylive) = emsdk 3.1.58.
