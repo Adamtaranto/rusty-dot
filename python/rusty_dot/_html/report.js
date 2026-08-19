@@ -437,7 +437,10 @@
 
   /* Wire up every match group: index its drawable children in document
    * order (the serialisation contract) and overlay each with an invisible
-   * wide-stroke clone so hairline matches are easy to click. */
+   * wide-stroke clone so hairline matches are easy to click.  Each segment
+   * is also registered with its query-side length so the embedding app can
+   * filter by minimum match length client-side (behaviour 6). */
+  var segmentRegistry = []; // {el, hit, qlen}
   var matchGroups = Array.prototype.slice.call(
     svg.querySelectorAll('g[id^="rd-matches-"]')
   );
@@ -447,6 +450,8 @@
     if (!m) return;
     var panelGid = 'rd-panel-' + m[1] + '-' + m[2];
     var layer = m[3];
+    var panel = payload.panels[panelGid];
+    var segs = panel && panel.segments ? panel.segments[layer] : null;
 
     var children = Array.prototype.slice.call(
       group.querySelectorAll('path, use')
@@ -470,6 +475,14 @@
       hit.setAttribute('class', 'rd-hit');
       hit.addEventListener('click', onClick);
       group.appendChild(hit);
+      if (segs && segs[idx]) {
+        // Query-side span, matching the server-side min_length semantics.
+        segmentRegistry.push({
+          el: el,
+          hit: hit,
+          qlen: segs[idx][1] - segs[idx][0],
+        });
+      }
     });
   });
 
@@ -533,4 +546,55 @@
       });
     });
   });
+
+  // ---------------------------------------------------------------------
+  // 6. Embedded display options (line width, min match length)
+  // ---------------------------------------------------------------------
+  //
+  // When the report is embedded by the rusty-dot app it is rendered with
+  // min_length=0 and the default line width; the app then drives both
+  // options client-side via 'rd-display-opts' messages, so a cosmetic
+  // change never re-renders matplotlib.  Line width is one injected CSS
+  // rule (!important beats the per-path inline styles); min length toggles
+  // a hiding class on each segment path and its .rd-hit clone using the
+  // query-side spans registered above.  Standalone reports simply never
+  // receive these messages.
+
+  var displayStyle = document.createElement('style');
+  document.head.appendChild(displayStyle);
+  var currentMinLength = 0;
+
+  function applyDisplayOpts(opts) {
+    if (typeof opts.dot_size === 'number' && opts.dot_size > 0) {
+      displayStyle.textContent =
+        'g[id^="rd-matches-"] > path:not(.rd-hit) { stroke-width: ' +
+        opts.dot_size +
+        'px !important; }';
+    }
+    if (
+      typeof opts.min_length === 'number' &&
+      opts.min_length >= 0 &&
+      opts.min_length !== currentMinLength
+    ) {
+      currentMinLength = opts.min_length;
+      segmentRegistry.forEach(function (seg) {
+        var hide = seg.qlen < currentMinLength;
+        seg.el.classList.toggle('rd-len-hidden', hide);
+        seg.hit.classList.toggle('rd-len-hidden', hide);
+      });
+    }
+  }
+
+  window.addEventListener('message', function (ev) {
+    var msg = ev && ev.data;
+    if (!msg || msg.type !== 'rd-display-opts') return;
+    applyDisplayOpts(msg);
+  });
+
+  // Tell the embedding app the report is wired (the iframe element is
+  // replaced on every re-render, so the app re-sends the current options
+  // in response to this ping).
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({ type: 'rd-report-ready' }, '*');
+  }
 })();

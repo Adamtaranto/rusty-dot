@@ -152,3 +152,8 @@ g[id^='rd-matches-'] * { pointer-events: stroke; cursor: pointer; }
 .rd-annot {
   cursor: pointer;
 }
+
+/* Segments hidden by the embedded min-match-length filter (behaviour 6). */
+.rd-len-hidden {
+  display: none;
+}

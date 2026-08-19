@@ -8,6 +8,20 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Performance (app rendering)
+
+- Browser app: line width and min match length now update **instantly**
+  inside the embedded interactive report (an injected CSS rule and
+  per-segment hiding, driven over postMessage) instead of re-rendering
+  the whole matplotlib figure in Pyodide — previously a multi-second
+  wait per tweak on real assemblies. The static (non-interactive) plot
+  and SVG/PDF downloads still honour both options server-side.
+- Browser app: computed contig orders are cached per ordering mode for
+  the current result, so re-selecting "maximise colinearity" after
+  trying another mode no longer recomputes the gravity sort; the
+  plotter construction (which copies the full record list) is also
+  memoised per result.
+
 ### Added (GFF annotations)
 
 - GFF3 parsing upgrades: `parse_attributes()` with percent-decoding,

@@ -876,15 +876,56 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             identity_palette=input.identity_palette() or 'viridis',
         )
 
+    @reactive.calc
+    def render_config() -> PlotConfig:
+        """Structural plot options — the ones that genuinely need a re-render.
+
+        Display-only options (line width, min match length) are applied
+        client-side inside the embedded report via ``rd_display_opts``
+        messages, so they are deliberately absent here: the report HTML is
+        rendered with ``min_length=0`` and the default line width, and the
+        client owns both from then on.  The static plot and the SVG/PDF
+        downloads keep using the full :func:`config` (server-side
+        semantics unchanged there).
+        """
+        return PlotConfig(
+            contig_order=input.contig_order(),
+            auto_reverse=input.auto_reverse(),
+            hide_internal_axes=input.hide_internal_axes(),
+            color_by_identity=bool(input.color_by_identity()),
+            identity_palette=input.identity_palette() or 'viridis',
+        )
+
+    @reactive.effect
+    async def _send_display_opts():
+        # Forward the debounced display options to the embedded report
+        # (bridge.js relays them into the iframe), where they are applied
+        # instantly — no matplotlib re-render in Pyodide.
+        await session.send_custom_message(
+            'rd_display_opts',
+            {
+                'dot_size': float(dot_size_settled()),
+                'min_length': int(min_length_settled()),
+            },
+        )
+
     # --- W2: interactive plot ------------------------------------------------
     # Focused (query, target) contig pair for the drill-down view, or None
     # for the full overview grid.
     focus = reactive.value(None)
+    # Per-result memos, keyed by the alignment object's identity: computed
+    # contig orders per ordering mode (gravity is seconds-long on real
+    # assemblies) and the DotPlotter/PafAlignment pair (whose construction
+    # copies the full record list).  Both are invalidated with the result.
+    order_cache: dict = {}
+    figure_ctx_cache: dict = {}
 
     @reactive.effect
     def _reset_focus_on_new_result():
         result()
         focus.set(None)
+        order_cache.clear()
+        figure_ctx_cache.clear()
 
     @reactive.calc
     def ordering_config() -> tuple[str, bool]:
@@ -909,22 +950,36 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         req(res)
         contig_order, auto_reverse = ordering_config()
         kind, obj, meta = res
-        if kind == 'kmer':
-            records = obj.get_records_for_pair(QUERY_GROUP, TARGET_GROUP)
-            q_in = list(meta['query'].names)
-            t_in = list(meta['target'].names)
-            lengths = {n: len(s) for n, s in meta['target'].records}
-            lengths.update({n: len(s) for n, s in meta['query'].records})
+        # Memoise per ordering mode: re-selecting e.g. 'maximise colinearity'
+        # after trying another mode must not recompute the gravity sort.
+        # auto_reverse stays outside the key — it only selects whether the
+        # cached reversed set is applied.
+        cache_key = (id(obj), contig_order)
+        cached = order_cache.get(cache_key)
+        if cached is None:
+            if kind == 'kmer':
+                records = obj.get_records_for_pair(QUERY_GROUP, TARGET_GROUP)
+                q_in = list(meta['query'].names)
+                t_in = list(meta['target'].names)
+                lengths = {n: len(s) for n, s in meta['target'].records}
+                lengths.update({n: len(s) for n, s in meta['query'].records})
+            else:
+                records = obj.records
+                q_in = list(obj.query_names)
+                t_in = list(obj.target_names)
+                lengths = {n: obj.get_sequence_length(n) for n in (*q_in, *t_in)}
+            cached = resolve_orders(contig_order, records, q_in, t_in, lengths)
+            order_cache[cache_key] = cached
         else:
-            records = obj.records
-            q_in = list(obj.query_names)
-            t_in = list(obj.target_names)
-            lengths = {n: obj.get_sequence_length(n) for n in (*q_in, *t_in)}
-        q_order, t_order, reversed_q = resolve_orders(
-            contig_order, records, q_in, t_in, lengths
-        )
+            logger.info('contig-order cache hit for mode %r', contig_order)
+        q_order, t_order, reversed_q = cached
         reverse = reversed_q if auto_reverse else set()
-        return {'query_names': q_order, 'target_names': t_order, 'reverse': reverse}
+        # Return copies so downstream mutation cannot poison the memo.
+        return {
+            'query_names': list(q_order),
+            'target_names': list(t_order),
+            'reverse': set(reverse),
+        }
 
     def make_figure(res, cfg: PlotConfig, lay, pair=None, output_path=None):
         from rusty_dot import DotPlotter
@@ -956,12 +1011,21 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             kwargs['annotation_query'] = ann_q
             kwargs['annotation_target'] = ann_t
             kwargs['annotation_tracks'] = bool(_read_dynamic('gff_tracks', True))
+        # Memoise the plotter per result: for the k-mer path, building the
+        # PafAlignment copies the full record list — pointless to repeat on
+        # every re-render of the same result.
+        plotter = figure_ctx_cache.get(id(obj))
+        if plotter is None:
+            if kind == 'kmer':
+                # Internal 'group:name' identifiers keep name resolution
+                # unambiguous; the cached cross-group records are handed to
+                # the plotter directly so nothing is recomputed.
+                paf = PafAlignment(obj.get_records_for_pair(QUERY_GROUP, TARGET_GROUP))
+                plotter = DotPlotter(obj, paf_alignment=paf)
+            else:
+                plotter = DotPlotter(obj)
+            figure_ctx_cache[id(obj)] = plotter
         if kind == 'kmer':
-            # Internal 'group:name' identifiers keep name resolution
-            # unambiguous; the cached cross-group records are handed to the
-            # plotter directly so nothing is recomputed.
-            paf = PafAlignment(obj.get_records_for_pair(QUERY_GROUP, TARGET_GROUP))
-            plotter = DotPlotter(obj, paf_alignment=paf)
             kwargs['query_names'] = [
                 obj.make_internal_name(QUERY_GROUP, n) for n in q_names
             ]
@@ -969,7 +1033,6 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 obj.make_internal_name(TARGET_GROUP, n) for n in t_names
             ]
         else:
-            plotter = DotPlotter(obj)
             kwargs['query_names'] = list(q_names)
             kwargs['target_names'] = list(t_names)
         if output_path is not None:
@@ -977,14 +1040,21 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         return plotter.plot(**kwargs)
 
     def _report_html(pair=None) -> str:
-        """Render the interactive HTML report and return it as a string."""
+        """Render the interactive HTML report and return it as a string.
+
+        Uses :func:`render_config` (structural options only): line width
+        and min match length are applied client-side in the embedded
+        report, so changing them never re-runs this seconds-long render.
+        """
         import matplotlib.pyplot as plt
 
         res = result()
         req(res)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'report.html'
-            fig = make_figure(res, config(), layout(), pair=pair, output_path=path)
+            fig = make_figure(
+                res, render_config(), layout(), pair=pair, output_path=path
+            )
             html = path.read_text(encoding='utf-8')
         plt.close(fig)
         return strip_report_header(inject_panel_bridge(html))
