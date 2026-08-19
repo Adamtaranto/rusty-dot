@@ -856,6 +856,12 @@ impl SequenceIndex {
     ///     repeat; each entry produces one result list.
     /// merge : bool, optional
     ///     Whether to merge co-linear k-mer runs. Default is True.
+    /// min_block_len : int, optional
+    ///     Drop matches whose longest span (query or target) is shorter than
+    ///     this many bases, before crossing back into Python.  Repeat-rich
+    ///     genome pairs can produce millions of short blocks; filtering here
+    ///     avoids materialising them as Python objects. Default is 0 (keep
+    ///     all).
     ///
     /// Returns
     /// -------
@@ -869,12 +875,13 @@ impl SequenceIndex {
     /// ------
     /// KeyError
     ///     If any sequence name is not found.
-    #[pyo3(signature = (pairs, merge=true))]
+    #[pyo3(signature = (pairs, merge=true, min_block_len=0))]
     pub fn compare_pairs_stranded(
         &self,
         py: Python<'_>,
         pairs: Vec<(String, String)>,
         merge: bool,
+        min_block_len: usize,
     ) -> PyResult<Vec<Vec<StrandedMatch>>> {
         for (q, t) in &pairs {
             for name in [q, t] {
@@ -896,6 +903,11 @@ impl SequenceIndex {
             .map(|coords| {
                 coords
                     .into_iter()
+                    .filter(|c| {
+                        min_block_len == 0
+                            || (c.query_end - c.query_start).max(c.target_end - c.target_start)
+                                >= min_block_len
+                    })
                     .map(|c| {
                         (
                             c.query_start,

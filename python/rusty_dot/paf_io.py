@@ -1611,7 +1611,11 @@ class CrossIndex:
             )
         q_names = list(self._groups[query_group])
         t_names = list(self._groups[target_group])
-        records = self._stranded_records(query_group, target_group, q_names, t_names)
+        # Reuse the records cached by compute_matches instead of recomputing
+        # the whole Q x T match grid: ordering and orientation are then
+        # derived from exactly the matches that get plotted (including any
+        # merge/min_block_len settings used at compute time).
+        records = self._records_by_pair[pair]
         sorted_q, sorted_t, reversed_q = compute_gravity_contigs(
             records, q_names, t_names, sort_targets=reorder_target
         )
@@ -1662,6 +1666,7 @@ class CrossIndex:
         q_names: list[str],
         t_names: list[str],
         merge: bool = True,
+        min_block_len: int = 0,
     ) -> list[PafRecord]:
         """Build both-strand PAF records for a group pair from the k-mer engine.
 
@@ -1678,6 +1683,9 @@ class CrossIndex:
             Un-prefixed sequence names within each group.
         merge : bool, optional
             Whether to merge co-linear k-mer runs.  Default is ``True``.
+        min_block_len : int, optional
+            Drop matches whose longest span is shorter than this many bases
+            (filtered natively before record construction).  Default is ``0``.
 
         Returns
         -------
@@ -1704,16 +1712,21 @@ class CrossIndex:
                 for internal in pair
             }
             for (qi, ti), (q, t), matches in zip(
-                pairs, name_pairs, batch(pairs, merge)
+                pairs, name_pairs, batch(pairs, merge, min_block_len)
             ):
                 records.extend(
-                    self._records_from_matches(
-                        q, t, lengths[qi], lengths[ti], matches
-                    )
+                    self._records_from_matches(q, t, lengths[qi], lengths[ti], matches)
                 )
         else:  # pragma: no cover - older compiled extension without the batch API
             for (qi, ti), (q, t) in zip(pairs, name_pairs):
-                records.extend(self._stranded_pair_records(qi, ti, q, t, merge))
+                pair_records = self._stranded_pair_records(qi, ti, q, t, merge)
+                if min_block_len:
+                    pair_records = [
+                        r
+                        for r in pair_records
+                        if r.alignment_block_len >= min_block_len
+                    ]
+                records.extend(pair_records)
         return records
 
     @staticmethod
@@ -1897,6 +1910,7 @@ class CrossIndex:
         query_group: str | None = None,
         target_group: str | None = None,
         merge: bool = True,
+        min_block_len: int = 0,
     ) -> None:
         """Compute k-mer matches between groups and cache the results.
 
@@ -1929,6 +1943,12 @@ class CrossIndex:
         merge : bool, optional
             Whether to merge consecutive co-linear k-mer runs into single
             alignment blocks.  Default is ``True``.
+        min_block_len : int, optional
+            Drop matches whose longest span (query or target) is shorter
+            than this many bases, before they are materialised as records.
+            Repeat-rich genome pairs can otherwise produce millions of
+            short blocks that dominate memory and downstream processing.
+            Default is ``0`` (keep all).
 
         Raises
         ------
@@ -1960,7 +1980,9 @@ class CrossIndex:
                 tg,
                 len(t_seqs),
             )
-            pair_records = self._stranded_records(qg, tg, q_seqs, t_seqs, merge)
+            pair_records = self._stranded_records(
+                qg, tg, q_seqs, t_seqs, merge, min_block_len
+            )
             self._records_by_pair[(qg, tg)] = pair_records
             _log.info(
                 'CrossIndex.compute_matches: stored %d record(s) for pair (%r, %r)',

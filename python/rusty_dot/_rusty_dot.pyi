@@ -401,6 +401,7 @@ class SequenceIndex:
         self,
         pairs: list[tuple[str, str]],
         merge: bool = True,
+        min_block_len: int = 0,
     ) -> list[list[tuple[int, int, int, int, str]]]:
         """Find shared k-mer matches for many (query, target) pairs at once.
 
@@ -419,6 +420,12 @@ class SequenceIndex:
             Whether to merge co-linear k-mer runs.  Forward runs are merged
             by diagonal; reverse runs are merged by anti-diagonal.
             Default is ``True``.
+        min_block_len : int, optional
+            Drop matches whose longest span (query or target) is shorter
+            than this many bases, before crossing back into Python.
+            Repeat-rich genome pairs can produce millions of short blocks;
+            filtering natively avoids materialising them as Python objects.
+            Default is ``0`` (keep all).
 
         Returns
         -------

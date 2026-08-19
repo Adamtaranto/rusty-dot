@@ -366,3 +366,55 @@ def test_load_fasta_no_warning_for_new_names(tmp_path):
         warnings.simplefilter('always')
         idx.load_fasta(str(fasta))
     assert len(w) == 0, f'unexpected warnings: {[str(x.message) for x in w]}'
+
+
+def test_compare_pairs_stranded_matches_per_pair_calls(simple_index):
+    """The batched API returns exactly the per-pair results, in input order."""
+    simple_index.add_sequence('seq3', 'GGGGCCCCGGGGCCCC')
+    pairs = [
+        ('seq1', 'seq2'),
+        ('seq2', 'seq1'),
+        ('seq1', 'seq3'),
+        ('seq1', 'seq1'),
+        ('seq1', 'seq2'),  # repeated pair is allowed
+    ]
+    batched = simple_index.compare_pairs_stranded(pairs)
+    assert len(batched) == len(pairs)
+    for (q, t), result in zip(pairs, batched):
+        assert result == simple_index.compare_sequences_stranded(q, t)
+
+
+def test_compare_pairs_stranded_unmerged(simple_index):
+    """merge=False propagates to every pair in the batch.
+
+    Unmerged match order is not deterministic between calls (it follows
+    internal hash-map iteration), so compare as multisets.
+    """
+    batched = simple_index.compare_pairs_stranded([('seq1', 'seq2')], merge=False)
+    per_pair = simple_index.compare_sequences_stranded('seq1', 'seq2', False)
+    assert sorted(batched[0]) == sorted(per_pair)
+
+
+def test_compare_pairs_stranded_empty(simple_index):
+    """An empty pair list returns an empty result list."""
+    assert simple_index.compare_pairs_stranded([]) == []
+
+
+def test_compare_pairs_stranded_missing_name(simple_index):
+    """Any unknown sequence name raises KeyError before computing."""
+    with pytest.raises(KeyError, match='nope'):
+        simple_index.compare_pairs_stranded([('seq1', 'nope')])
+
+
+def test_compare_pairs_stranded_min_block_len(simple_index):
+    """min_block_len drops short blocks natively, keeping longer ones."""
+    unfiltered = simple_index.compare_pairs_stranded([('seq1', 'seq2')])[0]
+    longest = max(max(qe - qs, te - ts) for qs, qe, ts, te, _ in unfiltered)
+    filtered = simple_index.compare_pairs_stranded([('seq1', 'seq2')], True, longest)[0]
+    assert filtered  # the longest block always survives its own threshold
+    assert all(max(qe - qs, te - ts) >= longest for qs, qe, ts, te, _ in filtered)
+    assert len(filtered) < len(unfiltered)
+    # A threshold beyond every block filters everything out.
+    assert simple_index.compare_pairs_stranded(
+        [('seq1', 'seq2')], True, longest + 1
+    ) == [[]]
