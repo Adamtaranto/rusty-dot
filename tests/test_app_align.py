@@ -111,6 +111,20 @@ def test_lastz_args_bad_step():
         build_tool_args('lastz', {'step': 0})
 
 
+def test_lastz_default_step_is_assembly_scale():
+    # Omitting step falls back to 20 (large-genome seeding), not the tool's
+    # step=1 default that is unusably slow on whole assemblies in wasm.
+    args = build_tool_args('lastz', {})
+    assert '--step=20' in args
+
+
+def test_nucmer_default_params_are_assembly_scale():
+    # Omitting -l/-c falls back to whole-genome settings (100/200) rather
+    # than mummer's small-region defaults (20/65).
+    args = build_tool_args('nucmer', {})
+    assert args[:4] == ['-l', '100', '-c', '200']
+
+
 def test_nucmer_args_defaults():
     args = build_tool_args('nucmer', {'l': 20, 'c': 65, 'maxmatch': False})
     assert args == ['-l', '20', '-c', '65', TARGET_FILENAME, QUERY_FILENAME]

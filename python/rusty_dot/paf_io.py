@@ -1136,6 +1136,9 @@ class CrossIndex:
         self._internal_group: dict[str, str] = {}
         # (query_group, target_group) -> list[PafRecord] from compute_matches
         self._records_by_pair: dict[tuple[str, str], list[PafRecord]] = {}
+        # Merge flag used when each pair's records were computed, so cached
+        # records are only served for calls requesting the same form.
+        self._records_merge: dict[tuple[str, str], bool] = {}
         # group_label -> set of reverse-oriented contigs (from the last
         # collinearity reorder that used that group as the query axis)
         self._reversed: dict[str, set[str]] = {}
@@ -1984,6 +1987,7 @@ class CrossIndex:
                 qg, tg, q_seqs, t_seqs, merge, min_block_len
             )
             self._records_by_pair[(qg, tg)] = pair_records
+            self._records_merge[(qg, tg)] = merge
             _log.info(
                 'CrossIndex.compute_matches: stored %d record(s) for pair (%r, %r)',
                 len(pair_records),
@@ -2023,6 +2027,15 @@ class CrossIndex:
 
         paf_lines: list[str] = []
         for query_group, target_group in group_pairs:
+            # Serve from the compute_matches cache when it was computed in
+            # the same form (also keeps any min_block_len filtering
+            # consistent with what was plotted); fall back to on-demand
+            # computation otherwise.
+            pair = (query_group, target_group)
+            cached = self._records_by_pair.get(pair)
+            if cached is not None and self._records_merge.get(pair) == merge:
+                paf_lines.extend(rec.to_line() for rec in cached)
+                continue
             q_seqs = self._groups.get(query_group, [])
             t_seqs = self._groups.get(target_group, [])
             _log.info(

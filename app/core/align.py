@@ -197,7 +197,10 @@ def build_tool_args(tool: str, params: dict[str, Any]) -> list[str]:
         return [*args, TARGET_FILENAME, QUERY_FILENAME]
     if tool == 'lastz':
         raw_step = params.get('step')
-        step = 1 if raw_step is None else int(raw_step)
+        # step=20 is LASTZ's own recommendation for large-genome alignment;
+        # the step=1 tool default is built for short regions and is far too
+        # slow on whole assemblies in wasm.
+        step = 20 if raw_step is None else int(raw_step)
         if step < 1:
             raise ValueError(f'LASTZ step must be >= 1, got {step}')
         args = [
@@ -216,8 +219,11 @@ def build_tool_args(tool: str, params: dict[str, Any]) -> list[str]:
     if tool == 'nucmer':
         raw_l = params.get('l')
         raw_c = params.get('c')
-        min_match = 20 if raw_l is None else int(raw_l)
-        min_cluster = 65 if raw_c is None else int(raw_c)
+        # mummer's own -l 20 -c 65 defaults suit small regions; -l 100
+        # -c 200 is the conventional whole-genome comparison setting and
+        # dramatically faster on assembly-scale inputs.
+        min_match = 100 if raw_l is None else int(raw_l)
+        min_cluster = 200 if raw_c is None else int(raw_c)
         if min_match < 1 or min_cluster < 1:
             raise ValueError(
                 f'nucmer -l/-c must be >= 1, got l={min_match}, c={min_cluster}'

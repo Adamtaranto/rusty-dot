@@ -335,3 +335,40 @@ def test_validate_query_names_preview_truncates():
     assert len(warnings) == 1
     assert '10 assembly contig(s)' in warnings[0]
     assert '…' in warnings[0]
+
+
+def test_kmer_index_min_block_len_in_cache_key():
+    cache = SessionCache()
+    q, t = _two_assemblies()
+    unfiltered = cache.kmer_index(11, q, t)
+    filtered = cache.kmer_index(11, q, t, min_block_len=1000)
+    assert filtered is not unfiltered  # distinct cache entries
+    # An absurd threshold removes every record.
+    assert not filtered.get_paf(group_pairs=[(QUERY_GROUP, TARGET_GROUP)], merge=True)
+
+
+def test_kmer_cache_evicts_least_recently_used():
+    cache = SessionCache()
+    q, t = _two_assemblies()
+    first = cache.kmer_index(11, q, t)
+    for k in (12, 13, 14):  # fill past KMER_MAX=3, evicting k=11
+        cache.kmer_index(k, q, t)
+    assert len(cache._kmer) == SessionCache.KMER_MAX
+    rebuilt = cache.kmer_index(11, q, t)
+    assert rebuilt is not first  # k=11 was evicted and rebuilt
+
+
+def test_paf_cache_evicts_and_refreshes_on_hit():
+    from rusty_dot.paf_io import PafAlignment, PafRecord
+
+    cache = SessionCache()
+    line = 'q\t100\t0\t50\t+\tt\t100\t0\t50\t50\t50\t255'
+    aln = PafAlignment.from_records([PafRecord.from_line(line)])
+    for i in range(SessionCache.PAF_MAX):
+        cache.put_paf('minimap2', {'i': i}, aln, 'dq', 'dt')
+    # Touch the oldest entry, then overflow: the second-oldest is evicted.
+    assert cache.get_paf('minimap2', {'i': 0}, 'dq', 'dt') is not None
+    cache.put_paf('minimap2', {'i': 99}, aln, 'dq', 'dt')
+    assert cache.get_paf('minimap2', {'i': 0}, 'dq', 'dt') is not None
+    assert cache.get_paf('minimap2', {'i': 1}, 'dq', 'dt') is None
+    assert len(cache._paf) == SessionCache.PAF_MAX

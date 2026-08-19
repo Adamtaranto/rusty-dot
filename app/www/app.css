@@ -128,3 +128,28 @@
 .rd-hidden {
   display: none;
 }
+
+/* --- aligner run log ------------------------------------------------- */
+.rd-log-accordion {
+  margin: 0.75rem 0;
+}
+.rd-log {
+  font-family: var(--bs-font-monospace, monospace);
+  font-size: 0.78rem;
+  background: #f2f6fa;
+  border: 1px solid #d5dee8;
+  border-radius: 4px;
+  padding: 0.5rem 0.7rem;
+  max-height: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (prefers-color-scheme: dark) {
+  .rd-log {
+    background: #1c2430;
+    border-color: #33404f;
+    color: #cdd6e0;
+  }
+}

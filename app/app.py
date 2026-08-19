@@ -261,6 +261,15 @@ app_ui = ui.page_sidebar(
                 "input.method === 'kmer'",
                 ui.input_slider('k', 'k-mer size', min=8, max=64, value=21, step=1),
                 ui.input_checkbox('merge', 'Merge adjacent matches', True),
+                # Compute-time filter: repeat-rich assembly pairs can produce
+                # millions of short match blocks that exhaust browser memory;
+                # dropping them natively keeps real genomes workable.
+                ui.input_numeric(
+                    'kmer_min_block',
+                    'Min match block (bp, 0 = keep all)',
+                    50,
+                    min=0,
+                ),
             ),
             # --- W1: biowasm aligner options ---
             ui.panel_conditional(
@@ -271,6 +280,10 @@ app_ui = ui.page_sidebar(
                     choices={p: p for p in MINIMAP2_PRESETS},
                     selected='asm20',
                 ),
+                ui.help_text(
+                    'asm5 ≲1% sequence divergence, asm10 ≲5%, asm20 ≲10% '
+                    '(safe default across strains/isolates).'
+                ),
                 ui.input_numeric(
                     'mm2_k', 'k-mer size (-k, 0 = preset default)', 0, min=0, max=28
                 ),
@@ -280,16 +293,24 @@ app_ui = ui.page_sidebar(
             ),
             ui.panel_conditional(
                 "input.method === 'lastz'",
-                ui.input_numeric('lastz_step', 'Seed step (--step)', 1, min=1),
+                # Whole-assembly defaults: LASTZ's step=1 seeding is built for
+                # short regions and is extremely slow on tens of megabases;
+                # step=20 with exact seeds matches its own recommendation for
+                # large-genome alignment and keeps wasm runtimes in minutes.
+                ui.input_numeric('lastz_step', 'Seed step (--step)', 20, min=1),
                 ui.input_checkbox('lastz_gapped', 'Gapped extension', True),
                 ui.input_checkbox(
-                    'lastz_notransition', 'Exact seeds only (--notransition)', False
+                    'lastz_notransition', 'Exact seeds only (--notransition)', True
                 ),
             ),
             ui.panel_conditional(
                 "input.method === 'nucmer'",
-                ui.input_numeric('nucmer_l', 'Min match length (-l)', 20, min=1),
-                ui.input_numeric('nucmer_c', 'Min cluster length (-c)', 65, min=1),
+                # mummer's -l 20 -c 65 defaults are tuned for small regions;
+                # for assembly-scale dotplots they mostly add noise clusters
+                # and minutes of runtime.  -l 100 -c 200 is the conventional
+                # whole-genome comparison setting.
+                ui.input_numeric('nucmer_l', 'Min match length (-l)', 100, min=1),
+                ui.input_numeric('nucmer_c', 'Min cluster length (-c)', 200, min=1),
                 ui.input_checkbox(
                     'nucmer_maxmatch', 'Use all matches (--maxmatch)', False
                 ),
@@ -340,6 +361,7 @@ app_ui = ui.page_sidebar(
     ui.output_ui('status'),
     # --- W2: interactive plot ---
     ui.output_ui('plot_area'),
+    ui.output_ui('aligner_log_ui'),
     ui.head_content(
         ui.include_css(APP_DIR / 'www' / 'app.css'),
         ui.include_js(APP_DIR / 'www' / 'bridge.js'),
@@ -430,7 +452,13 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                         f'{len(query.records)}×{len(target.records)} contigs)…'
                     ),
                 )
-                index = cache.kmer_index(input.k(), query, target, merge=input.merge())
+                index = cache.kmer_index(
+                    input.k(),
+                    query,
+                    target,
+                    merge=input.merge(),
+                    min_block_len=int(input.kmer_min_block() or 0),
+                )
                 progress.set(3, message='Rendering dotplot…')
                 result.set(('kmer', index, {'query': query, 'target': target}))
                 progress.set(4, message='Done')
@@ -448,6 +476,42 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     _NOTIF_ID = 'rd_aligner_progress'
     # In-flight request: {'request_id', 'method', 'params', 'query', 'target'}
     aligner_pending = reactive.value(None)
+    # Rolling log of completed tool runs: [{'tool', 'cmd', 'stderr', 'error'}]
+    aligner_log = reactive.value([])
+    _ALIGNER_LOG_MAX = 10
+    # Dataset digests already shipped to aligners.js this session.  FASTA
+    # payloads are sent once per upload and referenced by digest afterwards,
+    # so re-runs and tool switches never re-copy whole genomes across the
+    # Pyodide/JS boundary.
+    sent_datasets: set[str] = set()
+
+    def _log_run(tool: str, cmd: str, stderr: str, error: str | None) -> None:
+        entries = list(aligner_log())
+        entries.append({'tool': tool, 'cmd': cmd, 'stderr': stderr, 'error': error})
+        aligner_log.set(entries[-_ALIGNER_LOG_MAX:])
+
+    async def _cancel_pending(reason: str) -> None:
+        """Cancel the in-flight aligner run (JS drops/terminates it)."""
+        info = aligner_pending()
+        if info is None:
+            return
+        aligner_pending.set(None)
+        ui.notification_remove(_NOTIF_ID)
+        await session.send_custom_message(
+            'rd_cancel_aligner', {'request_id': info['request_id']}
+        )
+        ui.notification_show(
+            f'{METHOD_LABELS[info["method"]]} run cancelled ({reason}).',
+            type='message',
+            duration=5,
+        )
+
+    @reactive.effect
+    @reactive.event(input.method)
+    async def _cancel_on_method_change():
+        info = aligner_pending()
+        if info is not None and info['method'] != input.method():
+            await _cancel_pending('method changed')
 
     def _tool_params(method: str) -> dict:
         if method == 'minimap2':
@@ -458,27 +522,35 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             }
         if method == 'lastz':
             return {
-                'step': int(input.lastz_step() or 1),
+                'step': int(input.lastz_step() or 20),
                 'gapped': bool(input.lastz_gapped()),
                 'notransition': bool(input.lastz_notransition()),
             }
         return {
-            'l': int(input.nucmer_l() or 20),
-            'c': int(input.nucmer_c() or 65),
+            'l': int(input.nucmer_l() or 100),
+            'c': int(input.nucmer_c() or 200),
             'maxmatch': bool(input.nucmer_maxmatch()),
         }
+
+    async def _send_dataset(data: FastaInput) -> None:
+        """Ship a parsed assembly to aligners.js once, keyed by digest."""
+        if data.digest in sent_datasets:
+            return
+        await session.send_custom_message(
+            'rd_mount_fasta',
+            {'dataset_id': data.digest, 'text': fasta_text(data.records)},
+        )
+        sent_datasets.add(data.digest)
 
     @reactive.effect
     @reactive.event(input.run)
     async def _run_biowasm():
         req(ready())
-        # Every Run click supersedes any in-flight aligner request: a late
-        # 'aligner_result' for an invalidated request_id must not clobber
-        # whatever the user asked for afterwards (including k-mer/PAF runs,
-        # which the sibling _run effect handles on this same event).
+        # Every Run click supersedes any in-flight aligner request: cancel
+        # it JS-side too so the superseded wasm computation actually stops
+        # instead of burning CPU ahead of the run the user wants.
         if aligner_pending() is not None:
-            aligner_pending.set(None)
-            ui.notification_remove(_NOTIF_ID)
+            await _cancel_pending('superseded by a new run')
         if input.input_mode() != 'fasta':
             return
         method = input.method()
@@ -488,8 +560,6 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             query, target = _parse_inputs()
             params = _tool_params(method)
             args = build_tool_args(method, params)
-            query_text = fasta_text(query.records)
-            target_text = fasta_text(target.records)
         except ValueError as exc:
             ui.notification_show(str(exc), type='error', duration=8)
             return
@@ -498,7 +568,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             logger.info('%s alignment cache hit', method)
             result.set(('paf', cached, {'query': query, 'target': target}))
             return
-        if len(query_text) + len(target_text) > _BIOWASM_SIZE_WARN:
+        if query.total_length + target.total_length > _BIOWASM_SIZE_WARN:
             ui.notification_show(
                 'Combined input exceeds ~200 MB — browser aligners share a '
                 '2 GB memory cap and may fail on inputs this large.',
@@ -521,13 +591,21 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             id=_NOTIF_ID,
             duration=None,
         )
+        try:
+            await _send_dataset(query)
+            await _send_dataset(target)
+        except ValueError as exc:
+            aligner_pending.set(None)
+            ui.notification_remove(_NOTIF_ID)
+            ui.notification_show(str(exc), type='error', duration=8)
+            return
         await session.send_custom_message(
             'rd_run_aligner',
             {
                 'tool': method,
                 'args': args,
-                'query_fasta': query_text,
-                'target_fasta': target_text,
+                'query_id': query.digest,
+                'target_id': target.digest,
                 'request_id': request_id,
             },
         )
@@ -537,11 +615,19 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     def _on_aligner_result():
         res = input.aligner_result()
         info = aligner_pending()
-        if not res or not info or res.get('request_id') != info['request_id']:
+        if not res or res.get('cancelled'):
+            return  # cancelled runs were already reported when cancelled
+        if not info or res.get('request_id') != info['request_id']:
             return  # stale or unsolicited result
         aligner_pending.set(None)
         ui.notification_remove(_NOTIF_ID)
         method = info['method']
+        _log_run(
+            method,
+            res.get('cmd') or '',
+            res.get('stderr') or '',
+            res.get('error') or None,
+        )
         if res.get('error'):
             ui.notification_show(
                 f'{METHOD_LABELS[method]} failed: {res["error"]}',
@@ -587,6 +673,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 f'Downloading {METHOD_LABELS[info["method"]]} from the '
                 'biowasm CDN (first use only)…'
             ),
+            'mounting-data': 'Mounting assemblies into the tool sandbox…',
             'aligning': f'Running {METHOD_LABELS[info["method"]]}…',
             'reading-output': 'Reading alignment output…',
         }
@@ -633,6 +720,18 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         focus.set(None)
 
     @reactive.calc
+    def ordering_config() -> tuple[str, bool]:
+        """Return only the config fields that affect contig ordering.
+
+        ``layout()`` depends on this instead of ``config()`` so display-only
+        edits (line width, min length, palettes, styling) never re-run the
+        gravity ordering — on real assemblies that reorder is the expensive
+        step.  Reads the raw inputs directly: going through ``config()``
+        would re-invalidate ``layout()`` on every config recompute.
+        """
+        return input.contig_order(), input.auto_reverse()
+
+    @reactive.calc
     def layout():
         """Explicit plotted axis orders for the current result + config.
 
@@ -641,7 +740,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         """
         res = result()
         req(res)
-        cfg = config()
+        contig_order, auto_reverse = ordering_config()
         kind, obj, meta = res
         if kind == 'kmer':
             records = obj.get_records_for_pair(QUERY_GROUP, TARGET_GROUP)
@@ -655,9 +754,9 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             t_in = list(obj.target_names)
             lengths = {n: obj.get_sequence_length(n) for n in (*q_in, *t_in)}
         q_order, t_order, reversed_q = resolve_orders(
-            cfg.contig_order, records, q_in, t_in, lengths
+            contig_order, records, q_in, t_in, lengths
         )
-        reverse = reversed_q if cfg.auto_reverse else set()
+        reverse = reversed_q if auto_reverse else set()
         return {'query_names': q_order, 'target_names': t_order, 'reverse': reverse}
 
     def make_figure(res, cfg: PlotConfig, lay, pair=None, output_path=None):
@@ -728,8 +827,33 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         return _report_html(pair)
 
     @render.ui
+    def aligner_log_ui():
+        entries = aligner_log()
+        if not entries:
+            return None
+        blocks = []
+        for e in entries:
+            text = f'$ {e["cmd"]}\n{e["stderr"] or "(no tool output)"}'
+            if e.get('error'):
+                text += f'\nERROR: {e["error"]}'
+            blocks.append(ui.tags.pre(text, class_='rd-log'))
+        return ui.accordion(
+            ui.accordion_panel(
+                f'Aligner log ({len(entries)} run(s))', *blocks, value='log'
+            ),
+            open=False,
+            class_='rd-log-accordion',
+        )
+
+    @render.ui
     def report_frame():
-        html = focus_html() if focus() is not None else overview_html()
+        # Rendering the report re-runs layout (contig ordering) and the
+        # matplotlib figure — seconds-long on real assemblies, so show what
+        # is happening rather than freezing silently.
+        with ui.Progress(min=0, max=2) as progress:
+            progress.set(1, message='Computing layout & rendering report…')
+            html = focus_html() if focus() is not None else overview_html()
+            progress.set(2, message='Done')
         return ui.tags.iframe(
             srcdoc=html,
             class_='rd-report-frame',
@@ -888,7 +1012,11 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         # --- W2: interactive plot --- (static fallback; honours drill-down)
         res = result()
         req(res)
-        return make_figure(res, config(), layout(), pair=focus())
+        with ui.Progress(min=0, max=2) as progress:
+            progress.set(1, message='Computing layout & rendering plot…')
+            fig = make_figure(res, config(), layout(), pair=focus())
+            progress.set(2, message='Done')
+        return fig
 
     def _figure_bytes(fmt: str) -> bytes:
         # --- W2: interactive plot --- (exports the currently shown view)

@@ -9,6 +9,7 @@ with identical inputs is instant.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -49,12 +50,30 @@ class SessionCache:
     digest)`` so per-contig k-mer indices are reused across runs; imported
     or tool-generated ``PafAlignment`` objects are cached per ``(method,
     params, digests)``.
+
+    Both caches are bounded LRUs: a ``CrossIndex`` holds full sequence
+    copies plus the match cache, so on real assemblies a single entry can
+    reach hundreds of megabytes — unbounded growth would exhaust the wasm
+    heap long before the user noticed.
     """
+
+    #: Maximum retained k-mer indices (each can hold two full assemblies).
+    KMER_MAX = 3
+    #: Maximum retained alignment results (coordinate records only).
+    PAF_MAX = 8
 
     def __init__(self) -> None:
         """Initialise empty caches."""
-        self._kmer: dict[tuple[Any, ...], CrossIndex] = {}
-        self._paf: dict[tuple[Any, ...], PafAlignment] = {}
+        self._kmer: OrderedDict[tuple[Any, ...], CrossIndex] = OrderedDict()
+        self._paf: OrderedDict[tuple[Any, ...], PafAlignment] = OrderedDict()
+
+    @staticmethod
+    def _touch(store: OrderedDict, key: tuple[Any, ...], maxsize: int) -> None:
+        """Mark *key* most-recently-used and evict the oldest beyond *maxsize*."""
+        store.move_to_end(key)
+        while len(store) > maxsize:
+            evicted, _ = store.popitem(last=False)
+            logger.info('Evicted cache entry %s', evicted)
 
     def kmer_index(
         self,
@@ -62,6 +81,7 @@ class SessionCache:
         query: FastaInput,
         target: FastaInput,
         merge: bool = True,
+        min_block_len: int = 0,
     ) -> CrossIndex:
         """Return a ``CrossIndex`` with matches computed, building on miss.
 
@@ -75,6 +95,11 @@ class SessionCache:
             Parsed target assembly (columns / x-axis).
         merge : bool, optional
             Merge adjacent k-mer hits into runs.  Default is ``True``.
+        min_block_len : int, optional
+            Drop match blocks shorter than this many bases at compute time
+            (filtered natively, before records are materialised).  Repeat-rich
+            assembly pairs can otherwise produce millions of records that
+            exhaust the wasm heap.  Default is ``0`` (keep all).
 
         Returns
         -------
@@ -84,10 +109,11 @@ class SessionCache:
         """
         from rusty_dot import CrossIndex
 
-        key = (k, merge, query.digest, target.digest)
+        key = (k, merge, min_block_len, query.digest, target.digest)
         cached = self._kmer.get(key)
         if cached is not None:
             logger.info('k-mer index cache hit for %s', key)
+            self._touch(self._kmer, key, self.KMER_MAX)
             return cached
         logger.info(
             'Building k-mer index (k=%d) for %d query / %d target contigs',
@@ -101,9 +127,13 @@ class SessionCache:
         for name, seq in target.records:
             index.add_sequence(name, seq, group=TARGET_GROUP)
         index.compute_matches(
-            query_group=QUERY_GROUP, target_group=TARGET_GROUP, merge=merge
+            query_group=QUERY_GROUP,
+            target_group=TARGET_GROUP,
+            merge=merge,
+            min_block_len=min_block_len,
         )
         self._kmer[key] = index
+        self._touch(self._kmer, key, self.KMER_MAX)
         return index
 
     def get_paf(
@@ -125,7 +155,11 @@ class SessionCache:
         rusty_dot.paf_io.PafAlignment or None
             The cached alignment, or ``None`` on miss.
         """
-        return self._paf.get((method, _params_key(params), *digests))
+        key = (method, _params_key(params), *digests)
+        cached = self._paf.get(key)
+        if cached is not None:
+            self._touch(self._paf, key, self.PAF_MAX)
+        return cached
 
     def put_paf(
         self,
@@ -147,5 +181,7 @@ class SessionCache:
         *digests : str
             Content digests of every input file involved.
         """
-        self._paf[(method, _params_key(params), *digests)] = alignment
+        key = (method, _params_key(params), *digests)
+        self._paf[key] = alignment
+        self._touch(self._paf, key, self.PAF_MAX)
         logger.info('Cached %s alignment (%d record(s))', method, len(alignment))
