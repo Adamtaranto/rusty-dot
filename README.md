@@ -2,8 +2,8 @@
 
 # rusty-dot
 
-Fast dot plot comparisons of DNA sequences using an FM-Index.
-Written in Rust with PyO3 python bindings.
+Fast dot plot comparisons of DNA sequences using a canonical ntHash k-mer
+index. Written in Rust with PyO3 python bindings.
 
 ## Browser app
 
@@ -13,9 +13,12 @@ Try rusty-dot without installing anything:
 **<https://adamtaranto.github.io/rusty-dot/app/>**.
 The app runs entirely in your browser (WebAssembly + Pyodide) — uploaded
 assemblies never leave your machine. Align with the k-mer engine, minimap2,
-LASTZ, or nucmer (or import a PAF file), reconfigure the dotplot without
-recomputing, and download SVG/PDF plots, PAF alignments, and a
-reordered/reoriented query FASTA. See
+LASTZ, or nucmer (or import a PAF file, or align an assembly to itself),
+overlay GFF3 annotations with per-type toggles and colours, reconfigure the
+dotplot without recomputing, cancel long aligner runs mid-flight, and
+download SVG/PDF plots, PAF alignments, and a reordered/reoriented query
+FASTA. The k-mer method accepts up to ~80 Mb of combined input in-browser;
+larger genomes should use minimap2 or a local install. See
 [docs/webapp.md](docs/webapp.md) for capabilities and limits, and
 [app/README.md](app/README.md) to run or build it locally.
 
@@ -25,9 +28,13 @@ reordered/reoriented query FASTA. See
 - Build a rolling-hash [ntHash](https://github.com/bcgsc/ntHash) k-mer index per
   sequence in a single O(n) pass, in parallel across sequences (via
   [rayon](https://docs.rs/rayon))
-- Hash-based shared k-mer lookup, byte-verified for exact matching
+- Compact canonical-hash index (both strands in one sorted CSR table,
+  ~12–16 bytes/bp) intersected with a two-pointer walk and byte-verified for
+  exact matching
 - **Both-strand k-mer matching**: forward (`+`) and reverse-complement (`-`)
-hits detected via `compare_sequences_stranded`
+hits detected via `compare_sequences_stranded`, with a batched
+`compare_pairs_stranded(pairs, merge, min_block_len)` for whole Q×T grids
+(one native call; short blocks can be filtered before they reach Python)
 - Merge sequential k-mer runs into contiguous match blocks for both orientations:
   - Forward-strand co-linear diagonal merging (`py_merge_kmer_runs`)
   - RC anti-diagonal merging — standard inverted repeats (`py_merge_rev_runs`)
@@ -52,9 +59,15 @@ hits detected via `compare_sequences_stranded`
 - Export the collinearity layout to FASTA (`CrossIndex.write_fasta()`): contigs
   written in the reordered order with reverse-oriented contigs reverse-complemented
 - **`PafAlignment.filter_by_min_length()`** — discard short alignment records from a loaded PAF file
+- **Identity colouring** for PAF-backed plots —
+  `plot(color_by_identity=True, identity_palette=…, identity_colorbar=True)`
+  shades match segments by percent identity with an optional colour key
+- **GFF3 annotation overlays** — `GffAnnotation.from_file/from_text/from_bytes`
+  (gzip auto-detected), per-type colours, diagonal shading behind alignments,
+  and lane-packed side tracks with strand arrows on focused single-pair plots
 - **Interactive HTML dotplot reports** (`DotPlotter.to_html()`, or an `.html`
   output path): single self-contained file with click-to-focus sub-panels,
-  scroll zoom, and a click-a-match detail bar
+  scroll zoom, a click-a-match detail bar, and clickable annotation features
 - Opt-in **Nature-journal plot style** via the `nature_style()` context manager
   in `rusty_dot.style`
 - `plot(hide_internal_axes=True)` for continuous grid plots without internal
@@ -68,7 +81,7 @@ hits detected via `compare_sequences_stranded`
 Requirements:
 
 - Rust: See [rust-lang.org](https://rust-lang.org/tools/install/)
-- Python >=3.9 <3.14
+- Python >=3.9 <3.15
 
 ```bash
 # Clone this project repo
@@ -90,10 +103,15 @@ rusty-dot is built for large sequences and many-contig genomes:
 - **Parallel index construction.** Building the per-sequence k-mer index for the
   records of a FASTA file, and computing all-vs-all pairwise comparisons, run
   across all available CPU cores (rayon) with the Python GIL released.
-- **Rolling-hash matching.** Each sequence is scanned once with ntHash to build
-  forward and reverse-complement hash → position maps; matching intersects these
-  maps and byte-verifies representatives, so there is no suffix-array
-  construction on the comparison path.
+- **Rolling-hash matching on a compact canonical index.** Each sequence is
+  scanned once with ntHash (forward and reverse-complement hashes rolled
+  together) into a single canonical-hash table: every k-mer window is keyed by
+  `min(forward, revcomp)` hash with a strand flag packed into its position,
+  sorted into three flat CSR arrays. That covers **both strands in
+  ~12–16 bytes per base pair** (the previous two-hash-map layout cost
+  ~100 B/bp). Matching intersects two indexes with a cache-friendly
+  two-pointer walk and byte-verifies representatives — no hash probing and no
+  suffix-array construction on the comparison path.
 - **Vector-first, high-resolution plotting.** Dotplot matches are built as NumPy
   segment arrays and drawn with one `LineCollection` per panel/strand. By default
   (`rasterized='auto'`) the match layer is **true vector** — infinitely zoomable in
@@ -171,11 +189,17 @@ cross = CrossIndex(k=15)
 cross.load_fasta("genome_a.fasta", group="a")   # query sequences (rows)
 cross.load_fasta("genome_b.fasta", group="b")   # target sequences (columns)
 
+# Compute and cache the cross-group matches.  This is the primary
+# computation step and is required before any reordering; pass
+# min_block_len= to drop short match blocks at compute time.
+cross.compute_matches()
+
 # --- Sort contigs for maximum collinearity ---
-# Option 1: via CrossIndex (delegates to SequenceIndex.optimal_contig_order).
-# Each query contig is assigned to its best-matching target chromosome and
-# ordered by its gravity centre there; reverse-oriented contigs are detected
-# and exposed via cross.reversed_contigs("a").
+# Option 1: via CrossIndex (the d-genies gravity algorithm; its result
+# matches SequenceIndex.optimal_contig_order by construction).  Each query
+# contig is assigned to its best-matching target chromosome and ordered by
+# its gravity centre there; reverse-oriented contigs are detected and
+# exposed via cross.reversed_contigs("a").
 q_sorted, t_sorted = cross.reorder_contigs()
 reversed_a = cross.reversed_contigs("a")  # names to render flipped
 
@@ -192,11 +216,15 @@ q_sorted, t_sorted = aln.reorder_contigs(
 # Unmatched contigs are placed at the end, sorted by descending length.
 
 # --- Plot with relative scaling ---
+# For a CrossIndex, select each axis by group; contig_order='colinearity'
+# applies the gravity ordering at plot time, and reverse-oriented query
+# contigs are auto-detected (pass reverse_contigs= to override).
 
 plotter = DotPlotter(cross)
 plotter.plot(
-    query_names=q_sorted,
-    target_names=t_sorted,
+    query_group="a",
+    target_group="b",
+    contig_order="colinearity",
     output_path="cross_dotplot.png",
     scale_sequences=True,   # subplot size proportional to sequence length
     title="Genome A vs Genome B",
@@ -207,8 +235,9 @@ plotter.plot(
 
 # Save as SVG vector image for publication-quality output
 plotter.plot(
-    query_names=q_sorted,
-    target_names=t_sorted,
+    query_group="a",
+    target_group="b",
+    contig_order="colinearity",
     output_path="cross_dotplot.svg",
     scale_sequences=True,
     title="Genome A vs Genome B",
@@ -216,8 +245,9 @@ plotter.plot(
 
 # Suppress short alignments (e.g. < 500 bp) from the plot
 plotter.plot(
-    query_names=q_sorted,
-    target_names=t_sorted,
+    query_group="a",
+    target_group="b",
+    contig_order="colinearity",
     output_path="cross_dotplot_filtered.png",
     scale_sequences=True,
     min_length=500,
@@ -227,6 +257,8 @@ plotter.plot(
 # --- Persist the collinearity layout as FASTA ---
 # Reorder + reorient assembly B against a FIXED assembly A, then write both.
 # Reverse-oriented B contigs are reverse-complemented on write; A is untouched.
+# (compute_matches must have been called for the (query, target) pair first.)
+cross.compute_matches(query_group="b", target_group="a")
 cross.reorder_for_colinearity("b", "a", reorder_target=False)
 cross.write_fasta("assembly_a.sorted.fasta", "a")  # forward reference, unchanged
 cross.write_fasta("assembly_b.sorted.fasta", "b")  # reordered + reoriented

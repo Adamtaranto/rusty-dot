@@ -5,14 +5,14 @@
 ## Overview
 
 rusty-dot provides a high-performance toolkit for pairwise DNA sequence comparison and visualisation.
-At its core, it builds a rolling-hash [ntHash](https://github.com/bcgsc/ntHash) k-mer index for each sequence — in a single O(n) pass, in parallel across sequences — and intersects those indexes to efficiently find shared subsequences between any two sequences in the collection.
+At its core, it builds a compact canonical-hash [ntHash](https://github.com/bcgsc/ntHash) k-mer index for each sequence — both strands in one sorted table, built in a single O(n) pass and in parallel across sequences — and intersects two indexes with a cache-friendly two-pointer walk to efficiently find shared subsequences between any two sequences in the collection.
 
 ### Key Features
 
 - **Fast, parallel k-mer index construction** via Rust + PyO3 bindings
 - **Read FASTA / gzipped FASTA files** via [needletail](https://docs.rs/needletail)
 - **Rolling-hash k-mer index** per sequence ([ntHash](https://github.com/bcgsc/ntHash)); records of a file are indexed in parallel across CPU cores ([rayon](https://docs.rs/rayon))
-- **Hash-based shared k-mer lookup**, byte-verified for exact matching
+- **Compact canonical index** — both strands share one sorted CSR table (~12–16 bytes/bp); shared k-mers are found by a two-pointer walk and byte-verified for exact matching
 - **Both-strand k-mer matching**: forward (`+`) and reverse-complement (`-`) hits via `compare_sequences_stranded`
 - **Complete RC hit coverage**: two patterns merged independently — anti-diagonal (standard inverted repeat) and co-diagonal (both arms same direction)
 - **Unified merge API** (`py_merge_runs`) handles all orientation cases with a single call
@@ -21,8 +21,9 @@ At its core, it builds a rolling-hash [ntHash](https://github.com/bcgsc/ntHash) 
 - **All-vs-all dotplot visualization** with matplotlib: forward hits in blue, RC hits in red; edge-only axis labels in grid plots; subpanels scaled by sequence length by default (`scale_sequences=True`)
 - **SVG vector output** via the `format` parameter (`format='svg'`) or by using a `.svg` file extension — suitable for publication-quality figures
 - **Minimum alignment length filter** (`min_length`) on `DotPlotter.plot()` / `plot_single()` — suppresses short or spurious alignment hits before rendering
-- **Identity-based alignment colouring** — when alignments are loaded from a PAF file, pass `color_by_identity=True` to colour each segment by `residue_matches / alignment_block_len` using any Matplotlib colormap (`identity_palette`); `DotPlotter.plot_identity_colorbar()` renders the scale as a standalone figure
-- **`CrossIndex`** multi-group cross-index: N arbitrary sequence groups, configurable group pairs for alignment, per-group contig ordering (insertion order, length, or collinearity), `run_merge` to update cached PAF records, compatible with `DotPlotter`
+- **Identity-based alignment colouring** — when alignments are loaded from a PAF file, pass `color_by_identity=True` to colour each segment by `residue_matches / alignment_block_len` using any Matplotlib colormap (`identity_palette`); add `identity_colorbar=True` for an inline colour key, or use `DotPlotter.plot_identity_colorbar()` for a standalone scale figure
+- **GFF3 annotation overlays** — `GffAnnotation` (from a file, text, or raw bytes; gzip auto-detected) shades features behind self-vs-self panels and draws lane-packed side tracks with strand arrows on focused single-pair plots; features are clickable in HTML reports
+- **`CrossIndex`** multi-group cross-index: N arbitrary sequence groups, configurable group pairs for alignment, per-group contig ordering (insertion order, length, or collinearity), compatible with `DotPlotter`. `compute_matches()` (with optional `merge` and `min_block_len`) is the primary computation step and must be called before `reorder_contigs()` / `reorder_for_colinearity()`
 - **`PafAlignment.filter_by_min_length()`** — discard short alignment records from a loaded PAF file; filters on query aligned length
 - **Interactive HTML dotplot reports** (`DotPlotter.to_html()`, or an `.html` output path) — single self-contained file with click-to-focus sub-panels, scroll zoom, and a click-a-match detail bar
 - **Nature-journal plot style** — opt-in via the `nature_style()` context manager in `rusty_dot.style`

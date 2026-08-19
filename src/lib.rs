@@ -2,11 +2,11 @@
 //!
 //! This library provides:
 //! - FASTA/gzipped FASTA parsing via needletail
-//! - FM-index construction via rust-bio
+//! - Canonical-hash ntHash k-mer index construction
 //! - K-mer set building and lookup
 //! - Sequential k-mer run merging
 //! - PAF format output
-//! - FM-index serialization/deserialization via serde
+//! - Index serialization/deserialization via serde (sequence bytes; indexes rebuilt on load)
 //! - Python bindings via PyO3
 
 use pyo3::prelude::*;

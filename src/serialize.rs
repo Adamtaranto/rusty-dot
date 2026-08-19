@@ -1,8 +1,8 @@
-//! FM-index serialization and deserialization using serde + postcard.
+//! Index serialization and deserialization using serde + postcard.
 //!
-//! Rather than serializing the FM-index data structures directly (which may
+//! Rather than serializing the k-mer index data structures directly (which may
 //! not implement serde traits), we store only the original sequence text
-//! and k-mer sets, then rebuild the FM-index in memory on load.
+//! then rebuild the k-mer index in memory on load.
 // pyo3 pyfunction return types trigger a false-positive useless_conversion lint.
 #![allow(clippy::useless_conversion)]
 
@@ -17,7 +17,7 @@ use std::path::Path;
 
 /// Serializable representation of a single indexed sequence.
 ///
-/// Stores only the original sequence text so that the FM-index can be
+/// Stores only the original sequence text so that the k-mer index can be
 /// reconstructed deterministically on load without needing to persist the
 /// internal BWT/Occ structures.
 #[derive(Serialize, Deserialize)]
@@ -91,7 +91,7 @@ pub fn load_index(path: &str) -> Result<IndexCollection, RustyDotError> {
 ///
 /// # Errors
 ///
-/// Returns `RustyDotError` if FM-index construction fails.
+/// Returns `RustyDotError` if index construction fails.
 pub fn rebuild_fm_from_bytes(seq_bytes: &[u8]) -> Result<FmIdx, RustyDotError> {
     let seq_str = String::from_utf8_lossy(seq_bytes);
     let text = sequence_to_index_text(&seq_str);
