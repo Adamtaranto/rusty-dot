@@ -804,9 +804,11 @@ class DotPlotter:
         else:
             reverse_set = set()
 
-        # Warn about annotation sequences missing from the index.
+        # Warn about annotation sequences missing from the index (compare by
+        # display name — annotation files use raw contig names, while a
+        # CrossIndex stores group-prefixed internal names).
         if annotation is not None:
-            index_seqs = set(all_names)
+            index_seqs = {self._strip_group_prefix(n) for n in all_names}
             for ann_seq in annotation.sequence_names():
                 if ann_seq not in index_seqs:
                     _log.warning(
