@@ -5,11 +5,15 @@ no installation required. The app is fully client-side: your FASTA files are
 parsed, aligned, and plotted **entirely in your browser** (via WebAssembly and
 [Pyodide](https://pyodide.org)) and **never leave your machine**.
 
-<p>
-  <a href="../app/" target="_blank"><strong>Open the app full-screen &rarr;</strong></a>
+<p style="margin: 1.2rem 0;">
+  <a href="../app/" target="_blank" rel="noopener" class="md-button md-button--primary">
+    Launch the app in a new window &rarr;
+  </a>
 </p>
 
-<iframe src="../app/" width="100%" height="800" style="border: 1px solid #ccc; border-radius: 6px;"></iframe>
+The app opens in its own window — it needs the full viewport for the
+interactive dotplot, and running it standalone keeps its memory separate
+from the docs site.
 
 ## Capabilities
 
@@ -18,7 +22,8 @@ parsed, aligned, and plotted **entirely in your browser** (via WebAssembly and
 | Input | Upload query and target assemblies as FASTA or gzipped FASTA (`.fa`, `.fasta`, `.fna`, or any of these gzipped), or import a pre-computed PAF file |
 | Alignment — offline | **k-mer matching** with rusty-dot's rolling-hash engine (the Rust crate compiled to a wasm wheel, running in Pyodide); **PAF import** (pure Python). Both work fully offline once the app has loaded. |
 | Alignment — via biowasm | **minimap2 2.22**, **LASTZ 1.04.52**, and **nucmer (MUMmer4)** run in-browser via the [biowasm](https://biowasm.com) CDN. These fetch the tool binaries from biowasm.com at runtime, so they need a network connection. |
-| Plot reconfiguration (no recompute) | Sort contigs by size or maximise colinearity, auto-flip reverse-oriented contigs, hide internal axes, minimum alignment length filter, Nature-journal styling |
+| Plot reconfiguration (no recompute) | Sort contigs by size or maximise colinearity, auto-flip reverse-oriented contigs, hide internal axes, minimum alignment length filter, identity colouring |
+| Annotations | Upload GFF3 tracks for either assembly; per-type toggles and colours, diagonal shading, side tracks in the focused pair view, clickable features |
 | Downloads | Plot as SVG or PDF, alignments as PAF, and the reordered/reoriented query assembly as FASTA |
 
 ## Limits and notes
