@@ -329,9 +329,24 @@ html.shiny-busy .rd-busy-pill {
 
 /* --- memory readout --------------------------------------------------- */
 
-.rd-mem {
-  font-size: 0.75rem;
-  color: var(--rd-faint);
+/* Fixed note at the bottom-left of the page (the busy pill owns the
+   bottom-right corner).  Hidden while the readout text is empty — e.g.
+   native runs, or before the Pyodide heap is queryable. */
+.rd-mem-fixed {
+  position: fixed;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 1500;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
   font-family: var(--rd-font-mono);
-  margin-top: 0.4rem;
+  color: var(--rd-faint);
+  background: var(--rd-surface);
+  border: 1px solid var(--rd-border);
+  pointer-events: none;
+}
+
+.rd-mem-fixed:has(.shiny-text-output:empty) {
+  display: none;
 }

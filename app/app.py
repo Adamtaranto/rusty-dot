@@ -376,12 +376,14 @@ app_ui = ui.page_sidebar(
         ui.hr(),
         ui.h5('Downloads'),
         ui.output_ui('downloads'),
-        ui.div(ui.output_text('app_memory'), class_='rd-mem'),
         width=320,
     ),
     # Pure-CSS busy pill: html.shiny-busy (set by Shiny while any
     # computation runs) makes it visible, with spinner + pulse animations.
     ui.div('Processing…', class_='rd-busy-pill'),
+    # Fixed memory note (bottom-left; hidden while the readout is empty,
+    # e.g. on native runs where the wasm heap does not exist).
+    ui.div(ui.output_text('app_memory'), class_='rd-mem-fixed'),
     ui.div(ui.output_text('result_kind'), class_='rd-hidden'),
     ui.output_ui('status'),
     # --- W2: interactive plot ---
@@ -1190,8 +1192,12 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             )
         return None
 
+    @output(suspend_when_hidden=False)
     @render.text
     def app_memory():
+        # suspend_when_hidden=False: the fixed note is CSS-hidden while its
+        # text is empty, and Shiny would otherwise never render into a
+        # hidden output — leaving it permanently empty (and hidden).
         # Refresh every 5 s.  The wasm linear memory only ever grows, so
         # this reports the high-water mark of the Python runtime's heap —
         # the resource the ~2 GB browser cap actually constrains.  Native
