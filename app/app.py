@@ -381,7 +381,7 @@ app_ui = ui.page_sidebar(
     # Pure-CSS busy pill: html.shiny-busy (set by Shiny while any
     # computation runs) makes it visible, with spinner + pulse animations.
     ui.div('Processing…', class_='rd-busy-pill'),
-    # Fixed memory note (bottom-left; hidden while the readout is empty,
+    # Fixed memory note (bottom-right; hidden while the readout is empty,
     # e.g. on native runs where the wasm heap does not exist).
     ui.div(ui.output_text('app_memory'), class_='rd-mem-fixed'),
     ui.div(ui.output_text('result_kind'), class_='rd-hidden'),

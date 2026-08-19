@@ -204,7 +204,8 @@
   gap: 0.45rem;
   position: fixed;
   right: 1rem;
-  bottom: 1rem;
+  /* Sits above the fixed memory note in the bottom-right corner. */
+  bottom: 3.2rem;
   z-index: 2000;
   padding: 0.35rem 0.8rem;
   border-radius: 999px;
@@ -329,12 +330,12 @@ html.shiny-busy .rd-busy-pill {
 
 /* --- memory readout --------------------------------------------------- */
 
-/* Fixed note at the bottom-left of the page (the busy pill owns the
-   bottom-right corner).  Hidden while the readout text is empty — e.g.
-   native runs, or before the Pyodide heap is queryable. */
+/* Fixed note at the bottom-right of the page (the busy pill stacks just
+   above it while computing).  Hidden while the readout text is empty —
+   e.g. native runs, or before the Pyodide heap is queryable. */
 .rd-mem-fixed {
   position: fixed;
-  left: 1rem;
+  right: 1rem;
   bottom: 1rem;
   z-index: 1500;
   padding: 0.25rem 0.7rem;
