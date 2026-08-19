@@ -101,6 +101,11 @@ and this project adheres to
   the annotation-track layout sizes its figure proportionally to the two
   sequence lengths, and trackless single-pair plots enforce exact
   bp-per-inch parity on both axes.
+- Browser app: double-clicking a sub-plot to open the standalone
+  single-pair view no longer zooms into the panel first and then swaps
+  views — the single-click focus zoom now waits briefly and is cancelled
+  by a double-click. Standalone HTML reports (no drill-down) keep
+  instant clicks.
 - Browser app: the embedded interactive report no longer shows its own
   navigation-hint header (the app-level hint bar already covers it);
   standalone HTML report exports keep their header.

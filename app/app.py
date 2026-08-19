@@ -110,6 +110,10 @@ _PANEL_DBLCLICK_JS = """
 <script>
 (function () {
   'use strict';
+  // Tell report.js that double-click drills down here, so it defers the
+  // single-click focus zoom briefly and a double-click cancels it —
+  // without this, double-clicking a panel zooms in and then swaps views.
+  window.RD_DBLCLICK_DRILLDOWN = true;
   document.addEventListener('dblclick', function (ev) {
     var el = ev.target;
     var g = el && el.closest ? el.closest('g[id^="rd-panel-"]') : null;
