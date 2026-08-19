@@ -1,42 +1,145 @@
-/* rusty-dot browser app styling. */
+/* rusty-dot browser app styling.
+ *
+ * Theming: every colour goes through the custom-property layer below, so
+ * light and dark mode stay in lockstep — dark mode overrides only the
+ * variables. Motion uses the shared --rd-transition timing; larger state
+ * changes (busy, recalculating) get their own eased transitions.
+ */
+
+:root {
+  /* Palette — teal accent to match the docs site. */
+  --rd-accent: #14847e;
+  --rd-accent-soft: rgba(20, 132, 126, 0.12);
+  --rd-fg: #22303c;
+  --rd-muted: #4a5a6a;
+  --rd-faint: #6c757d;
+  --rd-surface: #f2f6fa;
+  --rd-surface-strong: #eef4fb;
+  --rd-on-surface-strong: #1f3a5f;
+  --rd-border: rgba(128, 128, 128, 0.25);
+  --rd-border-soft: #d5dee8;
+  --rd-error-bg: #fdecea;
+  --rd-error-fg: #7a1c13;
+  --rd-frame-bg: #ffffff;
+
+  /* Shape & motion. */
+  --rd-radius: 8px;
+  --rd-radius-sm: 5px;
+  --rd-transition: 160ms ease;
+  --rd-font-mono: var(--bs-font-monospace, monospace);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --rd-accent: #2fb7b0;
+    --rd-accent-soft: rgba(47, 183, 176, 0.16);
+    --rd-fg: #d5dee7;
+    --rd-muted: #aabdd0;
+    --rd-faint: #8fa1b3;
+    --rd-surface: #1c2733;
+    --rd-surface-strong: #1d2b3d;
+    --rd-on-surface-strong: #cfe1f5;
+    --rd-border: rgba(160, 175, 190, 0.28);
+    --rd-border-soft: #33404f;
+    --rd-error-bg: #3d1d1d;
+    --rd-error-fg: #f5cfcf;
+    /* The embedded report document is always light-themed; a light
+       backdrop stops it flashing against a dark app while loading. */
+    --rd-frame-bg: #f5f5f5;
+  }
+}
+
+/* --- branding --------------------------------------------------------- */
+
+/* Page header: wordmark treatment for the app title with an accent rule. */
+.navbar-brand,
+.bslib-page-title {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.bslib-page-title::after,
+.navbar-brand::after {
+  content: '';
+  display: block;
+  height: 3px;
+  width: 3.5rem;
+  margin-top: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--rd-accent),
+    var(--rd-accent-soft)
+  );
+}
+
+/* --- base blocks ------------------------------------------------------ */
 
 .rd-status {
   padding: 0.75rem 1rem;
   margin-bottom: 0.75rem;
-  border-radius: 6px;
-  background: #eef4fb;
-  color: #1f3a5f;
+  border-radius: var(--rd-radius);
+  background: var(--rd-surface-strong);
+  color: var(--rd-on-surface-strong);
   font-size: 0.95rem;
   line-height: 1.45;
+  transition: background-color var(--rd-transition), color var(--rd-transition);
 }
 
 .rd-status-error {
-  background: #fdecea;
-  color: #7a1c13;
-}
-
-.sidebar h5 {
-  margin-top: 0.5rem;
-  margin-bottom: 0.5rem;
-  font-weight: 600;
+  background: var(--rd-error-bg);
+  color: var(--rd-error-fg);
 }
 
 .sidebar .btn {
   width: 100%;
   margin-bottom: 0.35rem;
+  transition:
+    background-color var(--rd-transition),
+    border-color var(--rd-transition),
+    box-shadow var(--rd-transition),
+    transform var(--rd-transition);
 }
 
-/* --- W2: interactive plot / UX polish ------------------------------- */
+.sidebar .btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.sidebar .btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.sidebar .btn-primary {
+  background: var(--rd-accent);
+  border-color: var(--rd-accent);
+}
 
 /* Sidebar sections: subtle separation and tighter headings. */
 .sidebar h5 {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
   padding-bottom: 0.25rem;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  border-bottom: 1px solid var(--rd-border);
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   opacity: 0.85;
 }
+
+.sidebar .form-control,
+.sidebar .form-select {
+  transition: border-color var(--rd-transition), box-shadow var(--rd-transition);
+}
+
+.sidebar .form-control:focus,
+.sidebar .form-select:focus {
+  border-color: var(--rd-accent);
+  box-shadow: 0 0 0 0.15rem var(--rd-accent-soft);
+}
+
+/* --- plot area -------------------------------------------------------- */
 
 .rd-plot-area {
   display: flex;
@@ -58,28 +161,30 @@
 
 .rd-focus-label {
   font-weight: 600;
-  font-family: var(--bs-font-monospace, monospace);
+  font-family: var(--rd-font-mono);
   font-size: 0.9rem;
+  color: var(--rd-fg);
 }
 
 /* Compact 'how to navigate' hint above the interactive report. */
 .rd-nav-hint {
   font-size: 0.78rem;
   line-height: 1.4;
-  color: #4a5a6a;
-  background: #f2f6fa;
-  border: 1px solid rgba(128, 128, 128, 0.2);
-  border-radius: 6px;
+  color: var(--rd-muted);
+  background: var(--rd-surface);
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
   padding: 0.3rem 0.6rem;
   flex: 1 1 22rem;
+  transition: background-color var(--rd-transition), color var(--rd-transition);
 }
 
 .rd-report-frame {
   width: 100%;
   height: 76vh;
-  border: 1px solid rgba(128, 128, 128, 0.25);
-  border-radius: 6px;
-  background: #ffffff;
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+  background: var(--rd-frame-bg);
 }
 
 /* Loading states: dim outputs while Shiny recomputes them. */
@@ -89,25 +194,59 @@
   transition: opacity 250ms ease 250ms;
 }
 
-@media (prefers-color-scheme: dark) {
-  .rd-status {
-    background: #1d2b3d;
-    color: #cfe1f5;
-  }
-  .rd-status-error {
-    background: #3d1d1d;
-    color: #f5cfcf;
-  }
-  .rd-nav-hint {
-    background: #1c2733;
-    color: #aabdd0;
-  }
-  /* The report document itself is light-themed; keep a light backdrop so
-     it does not flash against a dark app background while loading. */
-  .rd-report-frame {
-    background: #f5f5f5;
+/* --- busy indicator --------------------------------------------------- */
+
+/* Pure-CSS processing pill: Shiny toggles the html.shiny-busy class while
+   any computation (aligners, index build, report render) is in flight. */
+.rd-busy-pill {
+  display: none;
+  align-items: center;
+  gap: 0.45rem;
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 2000;
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  background: var(--rd-surface-strong);
+  color: var(--rd-on-surface-strong);
+  border: 1px solid var(--rd-border);
+  font-size: 0.8rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  animation: rd-pulse 1.6s ease-in-out infinite;
+}
+
+html.shiny-busy .rd-busy-pill {
+  display: flex;
+}
+
+.rd-busy-pill::before {
+  content: '';
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  border: 2px solid var(--rd-accent);
+  border-top-color: transparent;
+  animation: rd-spin 0.8s linear infinite;
+}
+
+@keyframes rd-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
+
+@keyframes rd-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+
+/* --- downloads -------------------------------------------------------- */
 
 /* Disabled download placeholders (no result generated yet). */
 .rd-dl-disabled {
@@ -115,12 +254,12 @@
   margin-bottom: 0.35rem;
   opacity: 0.5;
   cursor: not-allowed;
-  border: 1px solid #ccc;
+  border: 1px solid var(--rd-border-soft);
 }
 
 .rd-dl-note {
   font-size: 0.8rem;
-  color: #6c757d;
+  color: var(--rd-faint);
   margin-bottom: 0.5rem;
 }
 
@@ -129,65 +268,70 @@
   display: none;
 }
 
-/* --- aligner run log ------------------------------------------------- */
+/* --- aligner run log -------------------------------------------------- */
+
 .rd-log-accordion {
   margin: 0.75rem 0;
 }
+
 .rd-log {
-  font-family: var(--bs-font-monospace, monospace);
+  font-family: var(--rd-font-mono);
   font-size: 0.78rem;
-  background: #f2f6fa;
-  border: 1px solid #d5dee8;
-  border-radius: 4px;
+  background: var(--rd-surface);
+  border: 1px solid var(--rd-border-soft);
+  border-radius: var(--rd-radius-sm);
   padding: 0.5rem 0.7rem;
   max-height: 16rem;
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
+  color: var(--rd-fg);
 }
 
-@media (prefers-color-scheme: dark) {
-  .rd-log {
-    background: #1c2430;
-    border-color: #33404f;
-    color: #cdd6e0;
-  }
-}
+/* --- GFF annotation controls ------------------------------------------ */
 
-/* --- GFF annotation controls ----------------------------------------- */
 .rd-gff-section {
   margin: 0.4rem 0 0.6rem;
 }
+
 .rd-gff-section h6 {
   margin: 0.3rem 0;
   font-size: 0.8rem;
-  color: #4a5a6a;
+  color: var(--rd-muted);
 }
+
 .rd-gff-type-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
 }
+
 .rd-gff-type-row .form-group,
 .rd-gff-type-row .checkbox {
   margin-bottom: 0.15rem;
 }
+
 .rd-color-input {
   width: 2rem;
   height: 1.4rem;
   padding: 0;
-  border: 1px solid #ccc;
+  border: 1px solid var(--rd-border-soft);
   border-radius: 3px;
   background: none;
   cursor: pointer;
+  transition: box-shadow var(--rd-transition);
 }
 
-@media (prefers-color-scheme: dark) {
-  .rd-gff-section h6 {
-    color: #9fb0c0;
-  }
-  .rd-color-input {
-    border-color: #33404f;
-  }
+.rd-color-input:hover {
+  box-shadow: 0 0 0 0.15rem var(--rd-accent-soft);
+}
+
+/* --- memory readout --------------------------------------------------- */
+
+.rd-mem {
+  font-size: 0.75rem;
+  color: var(--rd-faint);
+  font-family: var(--rd-font-mono);
+  margin-top: 0.4rem;
 }

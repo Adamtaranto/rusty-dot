@@ -92,6 +92,23 @@ and this project adheres to
   minutes) — exceeding the 2 GB browser heap previously crashed the whole
   app irrecoverably mid-run.
 
+### Changed (app restyle)
+
+- Browser app: restyled around a CSS custom-property theme layer (teal
+  accent matching the docs site) with light/dark parity and smooth
+  transitions on buttons and inputs, plus a wordmark treatment for the
+  header.
+- Browser app: an animated "Processing…" pill appears whenever the app is
+  computing (pure CSS on Shiny's busy state — covers aligner runs, index
+  builds and report rendering).
+- Browser app: live wasm-heap memory readout in the sidebar footer
+  (refreshes every 5 s; Pyodide only) so users can see how close they are
+  to the ~2 GB browser cap.
+- Browser app: the Nature-journal styling option was removed from the app
+  (the library's `nature_style()` context manager is unchanged).
+- Docs: the Web App page now opens the app in its own window via a
+  launch button instead of embedding it in an 800 px iframe.
+
 ### Fixed
 
 - Interactive reports: clicking the plot in a single-panel report (the

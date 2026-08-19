@@ -39,8 +39,6 @@ class PlotConfig:
     hide_internal_axes : bool
         Remove internal ticks/spines so the grid reads as one continuous
         plot.
-    nature : bool
-        Apply the Nature-journal rcParams style while rendering.
     dot_size : float
         Line width for match segments.
     min_length : int
@@ -58,7 +56,6 @@ class PlotConfig:
     contig_order: str = 'input'
     auto_reverse: bool = False
     hide_internal_axes: bool = False
-    nature: bool = False
     dot_size: float = 0.5
     min_length: int = 0
     title: str | None = field(default=None)

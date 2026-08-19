@@ -7,7 +7,6 @@ run natively (``shiny run app/app.py``) it uses the installed rusty-dot.
 
 from __future__ import annotations
 
-import contextlib
 import importlib.util
 import io
 import logging
@@ -343,7 +342,6 @@ app_ui = ui.page_sidebar(
         ui.input_select('contig_order', 'Contig order', choices=ORDER_CHOICES),
         ui.input_checkbox('auto_reverse', 'Auto-flip reversed contigs', False),
         ui.input_checkbox('hide_internal_axes', 'Hide internal axes', False),
-        ui.input_checkbox('nature', 'Nature journal style', False),
         # Identity colouring only makes sense for tool/PAF alignments (k-mer
         # matches are always 100% identity); output.result_kind is a hidden
         # text output that tracks the current result.
@@ -378,8 +376,12 @@ app_ui = ui.page_sidebar(
         ui.hr(),
         ui.h5('Downloads'),
         ui.output_ui('downloads'),
+        ui.div(ui.output_text('app_memory'), class_='rd-mem'),
         width=320,
     ),
+    # Pure-CSS busy pill: html.shiny-busy (set by Shiny while any
+    # computation runs) makes it visible, with spinner + pulse animations.
+    ui.div('Processing…', class_='rd-busy-pill'),
     ui.div(ui.output_text('result_kind'), class_='rd-hidden'),
     ui.output_ui('status'),
     # --- W2: interactive plot ---
@@ -868,7 +870,6 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             contig_order=input.contig_order(),
             auto_reverse=input.auto_reverse(),
             hide_internal_axes=input.hide_internal_axes(),
-            nature=input.nature(),
             dot_size=dot_size_settled(),
             min_length=min_length_settled(),
             color_by_identity=bool(input.color_by_identity()),
@@ -928,7 +929,6 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     def make_figure(res, cfg: PlotConfig, lay, pair=None, output_path=None):
         from rusty_dot import DotPlotter
         from rusty_dot.paf_io import PafAlignment
-        from rusty_dot.style import nature_style
 
         kind, obj, _meta = res
         q_names = [pair[0]] if pair is not None else lay['query_names']
@@ -972,11 +972,9 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             plotter = DotPlotter(obj)
             kwargs['query_names'] = list(q_names)
             kwargs['target_names'] = list(t_names)
-        style = nature_style() if cfg.nature else contextlib.nullcontext()
-        with style:
-            if output_path is not None:
-                return plotter.to_html(output_path, **kwargs)
-            return plotter.plot(**kwargs)
+        if output_path is not None:
+            return plotter.to_html(output_path, **kwargs)
+        return plotter.plot(**kwargs)
 
     def _report_html(pair=None) -> str:
         """Render the interactive HTML report and return it as a string."""
@@ -1121,6 +1119,23 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 class_='rd-status',
             )
         return None
+
+    @render.text
+    def app_memory():
+        # Refresh every 5 s.  The wasm linear memory only ever grows, so
+        # this reports the high-water mark of the Python runtime's heap —
+        # the resource the ~2 GB browser cap actually constrains.  Native
+        # runs (and non-Pyodide environments) show nothing.
+        reactive.invalidate_later(5)
+        if sys.platform != 'emscripten':
+            return ''
+        try:
+            import pyodide_js  # noqa: PLC0415 - pyodide-only module
+
+            used = int(pyodide_js._module.HEAPU8.length)
+        except Exception:  # noqa: BLE001 - internals unavailable -> hide
+            return ''
+        return f'App memory: {used / 1048576:.0f} MB of ~2048 MB wasm heap'
 
     @output(suspend_when_hidden=False)
     @render.text
