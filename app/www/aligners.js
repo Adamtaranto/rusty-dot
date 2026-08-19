@@ -1,15 +1,27 @@
 // biowasm aligner bridge for the rusty-dot browser app.
 //
-// Listens for the Shiny custom message 'rd_run_aligner' with payload
-//   {tool, args, query_fasta, target_fasta, request_id}
-// loads Aioli lazily from the biowasm CDN on first use, mounts the two
-// FASTA strings, runs the tool in its WebWorker, and returns the text
-// output via
+// Message protocol (Shiny custom messages from Python):
+//   'rd_mount_fasta'  {dataset_id, text}
+//       Store a plain-FASTA payload under a stable id (the upload's content
+//       digest).  Python sends each dataset once per session, so re-runs and
+//       tool switches never re-copy multi-megabyte genomes across the
+//       Pyodide/JS boundary again.
+//   'rd_run_aligner'  {tool, args, query_id, target_id, request_id}
+//       Run a tool against two previously mounted datasets.
+//   'rd_cancel_aligner' {request_id}
+//       Cancel the in-flight/queued run with that id: queued runs are
+//       dropped before executing, and a best-effort attempt is made to
+//       terminate the tool's WebWorker so the wasm computation actually
+//       stops (falling back to ignore-the-result if the worker handle is
+//       not reachable through Aioli's public surface).
+//
+// Results return via
 //   Shiny.setInputValue('aligner_result',
-//                       {request_id, tool, output, error},
-//                       {priority: 'event'})
-// On any failure (CDN unreachable, tool error, empty output) `output` is
-// null and `error` carries a human-readable message.
+//       {request_id, tool, output, error, cancelled, stderr, cmd},
+//       {priority: 'event'})
+// On failure `output` is null and `error` carries a human-readable message.
+// `stderr` (the tool's log) and `cmd` (the exact command line) are always
+// included so the app can show a run log.
 //
 // Aioli runs in its own WebWorker, so it never contends with the Pyodide
 // runtime that executes the Shiny app itself.
@@ -42,20 +54,30 @@
   var aioliScriptPromise = null; // loads aioli.js once
   var cliPromises = {}; // tool key -> Promise<Aioli instance>
   var runQueue = Promise.resolve(); // serialises runs (shared out.delta etc.)
+  var datasets = {}; // dataset_id -> FASTA text (session-lived)
+  // Which datasets are mounted on each tool's CLI instance; torn down with it.
+  var mountedOn = {}; // tool key -> 'queryId|targetId'
+  var cancelledIds = {}; // request_id -> true (queued runs drop themselves)
+  var cancelResolvers = {}; // request_id -> resolve fn unblocking the queue
+  var currentRun = null; // {requestId, tool} while a tool is executing
 
   // A hung init/exec (bad CDN asset, wedged WebWorker) must reject rather
-  // than block the run queue forever.
-  var RUN_TIMEOUT_MS = 180000;
+  // than block the run queue forever.  Real assemblies can keep LASTZ and
+  // nucmer busy for many minutes in wasm, so runs get per-tool budgets.
+  var INIT_TIMEOUT_MS = 180000;
+  var RUN_TIMEOUT_MS = {
+    minimap2: 300000,
+    lastz: 600000,
+    nucmer: 600000,
+  };
 
-  function withTimeout(promise, what) {
+  function withTimeout(promise, what, ms) {
     return Promise.race([
       promise,
       new Promise(function (resolve, reject) {
         setTimeout(function () {
-          reject(
-            new Error(what + ' timed out after ' + RUN_TIMEOUT_MS / 1000 + 's')
-          );
-        }, RUN_TIMEOUT_MS);
+          reject(new Error(what + ' timed out after ' + ms / 1000 + 's'));
+        }, ms);
       }),
     ]);
   }
@@ -87,6 +109,7 @@
 
   function getCli(tool) {
     if (!cliPromises[tool]) {
+      mountedOn[tool] = null; // fresh instance, nothing mounted yet
       cliPromises[tool] = withTimeout(
         loadAioliScript().then(function () {
           // printInterleaved:false keeps stdout separate from stderr —
@@ -97,7 +120,8 @@
             printInterleaved: false,
           });
         }),
-        'Initialising ' + tool + ' from biowasm'
+        'Initialising ' + tool + ' from biowasm',
+        INIT_TIMEOUT_MS
       ).catch(function (err) {
           cliPromises[tool] = null; // allow retry on the next run
           throw new Error(
@@ -106,6 +130,42 @@
         });
     }
     return cliPromises[tool];
+  }
+
+  // Best-effort worker termination.  Aioli does not officially expose its
+  // WebWorker; probe the common handles and fall back to just abandoning
+  // the instance (its result is ignored and the next run re-initialises).
+  function teardownTool(tool) {
+    var pending = cliPromises[tool];
+    cliPromises[tool] = null;
+    mountedOn[tool] = null;
+    if (!pending) return;
+    pending.then(
+      function (cli) {
+        try {
+          var worker =
+            (cli && cli.worker) ||
+            (cli && cli._worker) ||
+            (cli && cli.config && cli.config.worker);
+          if (worker && typeof worker.terminate === 'function') {
+            worker.terminate();
+            return;
+          }
+        } catch (err) {
+          // fall through to the console note below
+        }
+        // eslint-disable-next-line no-console
+        console.warn(
+          'rusty-dot: could not reach the ' +
+            tool +
+            ' worker to terminate it; its result will be ignored but the ' +
+            'computation may continue until it finishes or times out.'
+        );
+      },
+      function () {
+        // init already failed; nothing to terminate
+      }
+    );
   }
 
   function errText(err) {
@@ -117,6 +177,14 @@
   async function runAligner(msg) {
     var spec = TOOLS[msg.tool];
     if (!spec) throw new Error('Unknown aligner tool: ' + msg.tool);
+    var queryText = datasets[msg.query_id];
+    var targetText = datasets[msg.target_id];
+    if (typeof queryText !== 'string' || typeof targetText !== 'string') {
+      throw new Error(
+        'Assembly data not found in the browser session — please press ' +
+          'Run again.'
+      );
+    }
     if (!window.Aioli) sendProgress(msg.request_id, msg.tool, 'loading-aioli');
     if (!cliPromises[msg.tool]) {
       sendProgress(msg.request_id, msg.tool, 'initialising-tool');
@@ -132,19 +200,35 @@
         // Not present (first run) — fine.
       }
     }
-    await CLI.mount([
-      { name: QUERY_FILENAME, data: msg.query_fasta },
-      { name: TARGET_FILENAME, data: msg.target_fasta },
-    ]);
+    var mountKey = msg.query_id + '|' + msg.target_id;
+    if (mountedOn[msg.tool] !== mountKey) {
+      sendProgress(msg.request_id, msg.tool, 'mounting-data');
+      await CLI.mount([
+        { name: QUERY_FILENAME, data: queryText },
+        { name: TARGET_FILENAME, data: targetText },
+      ]);
+      mountedOn[msg.tool] = mountKey;
+    }
     var cmd = [spec.program].concat(msg.args || []).join(' ');
     sendProgress(msg.request_id, msg.tool, 'aligning');
-    var res = await withTimeout(CLI.exec(cmd), msg.tool + ' run');
+    var res;
+    currentRun = { requestId: msg.request_id, tool: msg.tool };
+    try {
+      res = await withTimeout(
+        CLI.exec(cmd),
+        msg.tool + ' run',
+        RUN_TIMEOUT_MS[msg.tool] || 300000
+      );
+    } finally {
+      currentRun = null;
+    }
     sendProgress(msg.request_id, msg.tool, 'reading-output');
     var stdout = res && typeof res === 'object' ? res.stdout : res;
     var stderr = res && typeof res === 'object' ? res.stderr : '';
     if (spec.outputFile) {
+      var fileText;
       try {
-        return await CLI.fs.readFile(spec.outputFile, { encoding: 'utf8' });
+        fileText = await CLI.fs.readFile(spec.outputFile, { encoding: 'utf8' });
       } catch (err) {
         throw new Error(
           msg.tool +
@@ -155,8 +239,13 @@
             ')'
         );
       }
+      return { output: fileText, stderr: String(stderr || ''), cmd: cmd };
     }
-    return typeof stdout === 'string' ? stdout : String(stdout);
+    return {
+      output: typeof stdout === 'string' ? stdout : String(stdout),
+      stderr: String(stderr || ''),
+      cmd: cmd,
+    };
   }
 
   function sendResult(payload) {
@@ -164,8 +253,8 @@
   }
 
   // Stage updates for the in-flight run ('loading-aioli',
-  // 'initialising-tool', 'aligning', 'reading-output').  Pre-warm runs have
-  // no request id and stay silent.
+  // 'initialising-tool', 'mounting-data', 'aligning', 'reading-output').
+  // Pre-warm runs have no request id and stay silent.
   function sendProgress(requestId, tool, stage) {
     if (!requestId || !window.Shiny || !window.Shiny.setInputValue) return;
     window.Shiny.setInputValue(
@@ -175,28 +264,85 @@
     );
   }
 
+  function handleMount(msg) {
+    if (msg && msg.dataset_id && typeof msg.text === 'string') {
+      datasets[msg.dataset_id] = msg.text;
+    }
+  }
+
+  function handleCancel(msg) {
+    if (!msg || !msg.request_id) return;
+    cancelledIds[msg.request_id] = true;
+    if (currentRun && currentRun.requestId === msg.request_id) {
+      // The tool is executing right now: kill its worker so the CPU work
+      // actually stops (best-effort; see teardownTool).
+      teardownTool(currentRun.tool);
+      currentRun = null;
+    }
+    // Unblock the queue immediately — a terminated worker's exec promise
+    // never settles, and the next run must not wait behind it.
+    var release = cancelResolvers[msg.request_id];
+    if (release) release({ cancelled: true });
+  }
+
   function handleMessage(msg) {
     // Serialise runs: concurrent nucmer runs would race on out.delta, and
     // biowasm downloads are friendlier one at a time.
     runQueue = runQueue
       .then(function () {
-        return runAligner(msg);
+        if (cancelledIds[msg.request_id]) {
+          // Cancelled while queued: drop before doing any work, so a
+          // superseded run cannot burn CPU behind the one the user wants.
+          delete cancelledIds[msg.request_id];
+          return { cancelled: true };
+        }
+        var cancelPromise = new Promise(function (resolve) {
+          cancelResolvers[msg.request_id] = resolve;
+        });
+        var runPromise = runAligner(msg);
+        // The losing promise of the race may reject later (e.g. the
+        // timeout of a terminated run); swallow it so it never surfaces
+        // as an unhandled rejection.
+        runPromise.catch(function () {});
+        return Promise.race([runPromise, cancelPromise]).finally(function () {
+          delete cancelResolvers[msg.request_id];
+        });
       })
       .then(
-        function (output) {
+        function (res) {
+          if (res && res.cancelled) {
+            sendResult({
+              request_id: msg.request_id,
+              tool: msg.tool,
+              output: null,
+              error: null,
+              cancelled: true,
+              stderr: '',
+              cmd: '',
+            });
+            return;
+          }
           sendResult({
             request_id: msg.request_id,
             tool: msg.tool,
-            output: output,
+            output: res.output,
             error: null,
+            cancelled: false,
+            stderr: res.stderr,
+            cmd: res.cmd,
           });
         },
         function (err) {
+          var wasCancelled = !!cancelledIds[msg.request_id];
+          delete cancelledIds[msg.request_id];
           sendResult({
             request_id: msg.request_id,
             tool: msg.tool,
             output: null,
-            error: errText(err),
+            error: wasCancelled ? null : errText(err),
+            cancelled: wasCancelled,
+            stderr: '',
+            cmd: '',
           });
         }
       );
@@ -206,7 +352,9 @@
     // Inside the shinylive iframe `Shiny` is the in-frame global; it may
     // not exist yet when this script runs, so poll briefly.
     if (window.Shiny && window.Shiny.addCustomMessageHandler) {
+      window.Shiny.addCustomMessageHandler('rd_mount_fasta', handleMount);
       window.Shiny.addCustomMessageHandler('rd_run_aligner', handleMessage);
+      window.Shiny.addCustomMessageHandler('rd_cancel_aligner', handleCancel);
     } else {
       setTimeout(register, 100);
     }

@@ -24,6 +24,33 @@ and this project adheres to
 - Browser app: `parse_fasta_bytes` rewritten as a single-pass byte-level
   parser — ~7.5× faster on a 37 Mb assembly (754 ms → 101 ms) with peak
   allocations reduced from ~4× to ~1.5× the file size.
+- Browser app: display-only plot edits (line width, min length, palettes)
+  no longer re-run the contig-ordering computation; assemblies are shipped
+  to the biowasm aligners once per upload and referenced by digest instead
+  of re-copied across the Pyodide/JS boundary on every run; session caches
+  are bounded LRUs; and the k-mer method gains a compute-time "min match
+  block" filter (default 50 bp) that keeps repeat-rich genome pairs from
+  producing millions of match records.
+- Browser app: assembly-scale aligner defaults — LASTZ now defaults to
+  `--step=20 --notransition` and nucmer to `-l 100 -c 200` (the previous
+  small-region defaults were impractically slow on whole assemblies);
+  minimap2 preset help documents the asm5/asm10/asm20 divergence bands.
+
+### Added (app UX)
+
+- Browser app: switching alignment method (or re-running) while a biowasm
+  aligner is working now cancels the in-flight run — the tool's WebWorker
+  is terminated so the computation actually stops — and run timeouts are
+  per-tool (5 min minimap2, 10 min LASTZ/nucmer).
+- Browser app: collapsible "Aligner log" panel showing each tool run's
+  exact command line and stderr output.
+- Browser app: progress messages while rusty-dot itself is working
+  (parsing, index build, contig ordering, report rendering), plus a
+  "mounting assemblies" stage for the biowasm tools.
+- Browser app: the k-mer method now refuses inputs beyond ~16 Mb combined
+  with guidance to use minimap2 — the k-mer index needs ~100 bytes per
+  base pair, and exceeding the 2 GB browser heap previously crashed the
+  whole app irrecoverably mid-run.
 
 ### Fixed
 
