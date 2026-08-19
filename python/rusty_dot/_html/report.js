@@ -441,4 +441,65 @@
       group.appendChild(hit);
     });
   });
+
+  // ---------------------------------------------------------------------
+  // 5. Annotation feature click -> detail bar
+  // ---------------------------------------------------------------------
+
+  function showAnnotationDetail(panelGid, idx, el) {
+    var panel = payload.panels[panelGid];
+    if (!panel || !panel.annotations) return;
+    var feat = panel.annotations[idx];
+    if (!feat) return;
+
+    var label = feat.name || feat.id || feat.type;
+    var html =
+      '<b>' + escapeHtml(String(label)) + '</b>' +
+      ' &middot; ' + escapeHtml(feat.type) +
+      ' &middot; ' + escapeHtml(feat.seqname) + ':' +
+      feat.start.toLocaleString() + '–' + feat.end.toLocaleString() +
+      ' &middot; strand ' + escapeHtml(feat.strand) +
+      ' &middot; ' + (feat.end - feat.start).toLocaleString() + ' bp';
+    if (feat.parent) {
+      html += ' &middot; parent ' + escapeHtml(feat.parent);
+    }
+    if (feat.source && feat.source !== '.') {
+      html += ' &middot; source ' + escapeHtml(feat.source);
+    }
+    detailCoords.innerHTML = html;
+    detailSeq.textContent = '';
+    detailSeq.hidden = true;
+    detail.hidden = false;
+
+    if (selectedMatch) selectedMatch.classList.remove('rd-selected-match');
+    selectedMatch = el;
+    el.classList.add('rd-selected-match');
+  }
+
+  /* Wire up every diagonal-annotation group: the n-th drawable child of
+   * 'rd-annot-<row>-<col>' corresponds to panels[gid].annotations[n]
+   * (serialisation contract — patch draw order equals SVG child order). */
+  var annotGroups = Array.prototype.slice.call(
+    svg.querySelectorAll('g[id^="rd-annot-"]')
+  );
+  annotGroups.forEach(function (group) {
+    var m = group.id.match(/^rd-annot-(\d+)-(\d+)$/);
+    if (!m) return;
+    var panelGid = 'rd-panel-' + m[1] + '-' + m[2];
+
+    var children = Array.prototype.slice.call(
+      group.querySelectorAll('path, use')
+    );
+    children.forEach(function (el, idx) {
+      el.classList.add('rd-annot');
+      el.addEventListener('click', function (evt) {
+        if (consumeDragClick()) {
+          evt.stopPropagation();
+          return;
+        }
+        evt.stopPropagation();
+        showAnnotationDetail(panelGid, idx, el);
+      });
+    });
+  });
 })();

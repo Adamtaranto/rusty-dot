@@ -21,11 +21,12 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 
+from rusty_dot._annotation_draw import annotation_legend_handles, draw_track
 from rusty_dot._rusty_dot import SequenceIndex
 from rusty_dot.paf_io import CrossIndex, PafAlignment
 
 if TYPE_CHECKING:
-    from rusty_dot.annotation import GffAnnotation
+    from rusty_dot.annotation import GffAnnotation, GffFeature
     from rusty_dot.paf_io import CrossIndex
 
 _log = logging.getLogger(__name__)
@@ -562,6 +563,11 @@ class DotPlotter:
         color_by_identity: bool = False,
         identity_palette: str = 'viridis',
         annotation: Optional['GffAnnotation'] = None,
+        annotation_query: Optional['GffAnnotation'] = None,
+        annotation_target: Optional['GffAnnotation'] = None,
+        annotation_tracks: bool = False,
+        annotation_track_size: float = 0.6,
+        annotation_legend: bool = True,
         chain_gap: int = 0,
         rasterized: Union[bool, str] = 'auto',
         rasterization_threshold: int = 50_000,
@@ -661,9 +667,30 @@ class DotPlotter:
             ``'viridis'``.
         annotation : GffAnnotation, optional
             Feature annotations to overlay on self-vs-self diagonal panels.
-            Each feature is drawn as a coloured square at its genomic
-            position.  Sequence names in *annotation* that are absent from
-            the index emit a warning.  Default is ``None``.
+            Each feature is drawn as a transparent coloured square at its
+            genomic position, behind the alignment segments (mirrored on the
+            query axis for reverse-displayed contigs).  Sequence names in
+            *annotation* that are absent from the index emit a warning.
+            Also used as the fallback source for side tracks when
+            *annotation_query* / *annotation_target* are not given.
+            Default is ``None``.
+        annotation_query : GffAnnotation, optional
+            Features for the query (y) axis side track.  Default ``None``.
+        annotation_target : GffAnnotation, optional
+            Features for the target (x) axis side track.  Default ``None``.
+        annotation_tracks : bool, optional
+            Draw side annotation tracks (left of the y axis and below the x
+            axis) with lane-packed feature shapes, strand arrows for
+            gene/mRNA/exon/CDS/ORF features and connector lines joining
+            multi-part groups.  Honoured only for **single-pair** (1×1)
+            plots — the focused drill-down view — where the tracks have
+            room to read; multi-panel grids draw diagonal squares only.
+            Default is ``False``.
+        annotation_track_size : float, optional
+            Side-track thickness in inches.  Default is ``0.6``.
+        annotation_legend : bool, optional
+            Add a feature-type colour legend to the figure whenever
+            annotation features are drawn.  Default is ``True``.
         chain_gap : int, optional
             When greater than ``0``, co-linear match blocks on the same diagonal
             separated by up to *chain_gap* bp are chained into single lines
@@ -792,6 +819,19 @@ class DotPlotter:
         nrows = len(query_names)
         ncols = len(target_names)
 
+        # Side tracks draw from the per-axis annotations, falling back to
+        # the shared *annotation*.  They are honoured only for single-pair
+        # plots (the focused drill-down view) — in an N×M grid a per-row/
+        # column track would be unreadable, so grids get diagonal squares.
+        track_ann_q = annotation_query if annotation_query is not None else annotation
+        track_ann_t = annotation_target if annotation_target is not None else annotation
+        tracks_on = (
+            annotation_tracks
+            and nrows == 1
+            and ncols == 1
+            and (track_ann_q is not None or track_ann_t is not None)
+        )
+
         flush_kw: dict[str, float] = (
             {'wspace': 0.0, 'hspace': 0.0} if hide_internal_axes else {}
         )
@@ -809,7 +849,30 @@ class DotPlotter:
                 'current': None,
             }
 
-        if scale_sequences:
+        y_track_ax = None
+        x_track_ax = None
+        if tracks_on:
+            # Single-pair layout with side annotation tracks: a 2×2 gridspec
+            # (mirroring plot_single) — y-track left of the main panel,
+            # x-track below it, empty corner.
+            fig_w = fig_h = figsize_per_panel
+            ts = annotation_track_size
+            fig = plt.figure(figsize=(fig_w + ts, fig_h + ts))
+            gs = fig.add_gridspec(
+                2,
+                2,
+                width_ratios=[ts, fig_w],
+                height_ratios=[fig_h, ts],
+                hspace=0.03,
+                wspace=0.03,
+            )
+            main_ax = fig.add_subplot(gs[0, 1])
+            if track_ann_q is not None:
+                y_track_ax = fig.add_subplot(gs[0, 0], sharey=main_ax)
+            if track_ann_t is not None:
+                x_track_ax = fig.add_subplot(gs[1, 1], sharex=main_ax)
+            axes = [[main_ax]]
+        elif scale_sequences:
             q_lens = [self.index.get_sequence_length(n) for n in query_names]
             t_lens = [self.index.get_sequence_length(n) for n in target_names]
             max_len = max(max(q_lens), max(t_lens), 1)
@@ -897,14 +960,104 @@ class DotPlotter:
                     if col_idx < ncols - 1:
                         ax.spines['right'].set_visible(False)
 
-                # Annotation squares on self-vs-self (diagonal) panels.
+                # Annotation squares on self-vs-self (diagonal) panels,
+                # drawn behind the alignments and mirrored with the axis.
                 if annotation is not None and q_name == t_name:
-                    self._draw_annotation_squares(ax, q_name, annotation)
+                    reverse = self._strip_group_prefix(q_name) in reverse_set
+                    annot_gid = (
+                        f'rd-annot-{row_idx}-{col_idx}'
+                        if self._html_capture is not None
+                        else None
+                    )
+                    drawn = self._draw_annotation_squares(
+                        ax, q_name, annotation, reverse=reverse, gid=annot_gid
+                    )
+                    if self._html_capture is not None and drawn:
+                        panel = self._html_capture['panels'][
+                            f'rd-panel-{row_idx}-{col_idx}'
+                        ]
+                        # One entry per patch, in draw order — the report JS
+                        # maps SVG children back by index.
+                        panel['annotations'] = [
+                            {
+                                'type': f.feature_type,
+                                'seqname': f.seqname,
+                                'start': int(f.start),
+                                'end': int(f.end),
+                                'strand': f.strand,
+                                'id': f.feature_id,
+                                'parent': f.parent,
+                                'name': f.name,
+                                'source': f.source,
+                            }
+                            for f in drawn
+                        ]
+
+        # Side annotation tracks (single-pair layout only).
+        drew_track_features = False
+        if tracks_on:
+            main_ax = axes[0][0]
+            q_name = query_names[0]
+            t_name = target_names[0]
+            if y_track_ax is not None:
+                lanes = draw_track(
+                    y_track_ax,
+                    track_ann_q,
+                    self._strip_group_prefix(q_name),
+                    self.index.get_sequence_length(q_name),
+                    orientation='y',
+                    reverse=self._strip_group_prefix(q_name) in reverse_set,
+                )
+                drew_track_features = drew_track_features or lanes > 0
+                # The y track owns the left edge: move the panel's tick
+                # labels out of its way.
+                main_ax.tick_params(axis='y', labelleft=False)
+            if x_track_ax is not None:
+                lanes = draw_track(
+                    x_track_ax,
+                    track_ann_t,
+                    self._strip_group_prefix(t_name),
+                    self.index.get_sequence_length(t_name),
+                    orientation='x',
+                    reverse=False,  # the target (x) axis always runs forward
+                )
+                drew_track_features = drew_track_features or lanes > 0
+                main_ax.tick_params(axis='x', labelbottom=False)
+
+        # Feature-type colour legend whenever annotation features are shown.
+        annotations_shown = [
+            ann
+            for ann in (annotation, annotation_query, annotation_target)
+            if ann is not None
+        ]
+        if (
+            annotation_legend
+            and annotations_shown
+            and (annotation is not None or drew_track_features)
+        ):
+            handles: dict[str, mpatches.Patch] = {}
+            for ann in annotations_shown:
+                for handle in annotation_legend_handles(ann):
+                    handles.setdefault(handle.get_label(), handle)
+            fig.legend(
+                handles=list(handles.values()),
+                loc='upper left',
+                bbox_to_anchor=(1.005, 0.95),
+                bbox_transform=fig.transFigure,
+                fontsize=8,
+                frameon=False,
+                title='Features',
+                title_fontsize=9,
+            )
 
         if title:
             fig.suptitle(title, fontsize=14, y=1.01)
 
-        if hide_internal_axes:
+        if tracks_on:
+            # The 2x2 track gridspec is not tight_layout-compatible (shared
+            # axes + fixed ratios); its explicit h/wspace already lay it out.
+            fig.subplots_adjust(left=0.14, right=0.96, bottom=0.12, top=0.9)
+        elif hide_internal_axes:
             # tight_layout() would reinsert inter-panel gaps; keep the panels
             # flush and just leave margins for the outer labels and titles.
             fig.subplots_adjust(
@@ -1392,40 +1545,70 @@ class DotPlotter:
         ax: plt.Axes,
         seq_name: str,
         annotation: 'GffAnnotation',
-    ) -> None:
+        reverse: bool = False,
+        gid: Optional[str] = None,
+    ) -> list['GffFeature']:
         """Overlay annotation feature squares on a self-vs-self panel.
 
         Each feature ``[start, end)`` is drawn as a filled square at position
-        ``(start, start)`` to ``(end, end)`` in the dotplot coordinate system.
+        ``(start, start)`` to ``(end, end)`` in the dotplot coordinate system,
+        **behind** the alignment segments (``zorder=0.5`` — line collections
+        default to zorder 2) so features never obscure matches.
 
         Parameters
         ----------
         ax : matplotlib.axes.Axes
             The axes of the self-vs-self panel.
         seq_name : str
-            Sequence name whose features should be drawn.
+            Sequence name whose features should be drawn (group prefixes are
+            stripped before the annotation lookup).
         annotation : GffAnnotation
             The annotation object providing features and colours.
+        reverse : bool, optional
+            Mirror feature coordinates on the query (y) axis when the contig
+            is displayed reverse-complemented, matching the alignment
+            mirroring.  Default ``False``.
+        gid : str, optional
+            SVG group id assigned to the patch collection (used by the HTML
+            report to make features clickable).  Default ``None``.
+
+        Returns
+        -------
+        list[GffFeature]
+            The drawn features, in patch order (empty when none) — the HTML
+            serializer relies on this order matching the SVG children.
         """
-        features = annotation.get_features_for_sequence(seq_name)
+        display_name = self._strip_group_prefix(seq_name)
+        features = annotation.get_features_for_sequence(display_name)
+        seq_len = self.index.get_sequence_length(seq_name)
         # Batch all feature squares into a single PatchCollection rather than
         # adding one artist per feature.
         rects = []
         facecolors = []
         for feat in features:
             width = feat.end - feat.start
-            rects.append(mpatches.Rectangle((feat.start, feat.start), width, width))
+            x = feat.start
+            # Only the query (y) axis mirrors for reverse-displayed contigs;
+            # the target (x) axis always runs forward.
+            y = (seq_len - feat.end) if reverse else feat.start
+            rects.append(mpatches.Rectangle((x, y), width, width))
             facecolors.append(annotation.get_color(feat.feature_type))
         if rects:
-            ax.add_collection(
-                PatchCollection(
-                    rects,
-                    facecolors=facecolors,
-                    edgecolors='none',
-                    alpha=0.35,
-                    match_original=False,
-                )
+            collection = PatchCollection(
+                rects,
+                facecolors=facecolors,
+                edgecolors='none',
+                alpha=0.35,
+                match_original=False,
+                zorder=0.5,
             )
+            if gid is not None:
+                collection.set_gid(gid)
+                # Keep each feature as its own SVG child so the report can
+                # map clicks back by index.
+                collection.set_rasterized(False)
+            ax.add_collection(collection)
+        return features
 
     def plot_annotation_legend(
         self,
@@ -1640,12 +1823,8 @@ class DotPlotter:
                         'plotted.',
                         ann_seq,
                     )
-            x_feats = annotation.get_features_for_sequence(target_name)
-            y_feats = annotation.get_features_for_sequence(query_name)
             has_tracks = True
         else:
-            x_feats = []
-            y_feats = []
             has_tracks = False
 
         if has_tracks:
@@ -1691,8 +1870,6 @@ class DotPlotter:
         )
 
         if has_tracks:
-            t_len = self.index.get_sequence_length(target_name)
-
             # Hide main-axis tick labels that duplicate the track labels.
             plt.setp(main_ax.get_xticklabels(), visible=False)
             plt.setp(main_ax.get_yticklabels(), visible=False)
@@ -1701,37 +1878,25 @@ class DotPlotter:
             display_t = self._strip_group_prefix(target_name)
             display_q = self._strip_group_prefix(query_name)
 
-            # ---- x-annotation track (below x-axis: target features) ----
-            x_track_ax.set_xlim(0, t_len)
-            x_track_ax.set_ylim(0, 1)
-            x_track_ax.set_yticks([])
-            x_track_ax.tick_params(axis='x', labelsize=6)
+            # Shared lane-packed track rendering (strand arrows, rounded
+            # rectangles, multi-part connectors) — identical to plot()'s
+            # focused single-pair view.
+            draw_track(
+                x_track_ax,
+                annotation,  # type: ignore[arg-type]
+                display_t,
+                self.index.get_sequence_length(target_name),
+                orientation='x',
+            )
             x_track_ax.set_xlabel(display_t, fontsize=8)
-            for feat in x_feats:
-                rect = mpatches.Rectangle(
-                    (feat.start, 0.1),
-                    feat.end - feat.start,
-                    0.8,
-                    facecolor=annotation.get_color(feat.feature_type),  # type: ignore[union-attr]
-                    edgecolor='none',
-                )
-                x_track_ax.add_patch(rect)
-
-            # ---- y-annotation track (left of y-axis: query features) ----
-            # The main axes y-axis is inverted, so sharey keeps inversion.
-            y_track_ax.set_xlim(1, 0)  # reversed so features face main plot
-            y_track_ax.set_xticks([])
-            y_track_ax.tick_params(axis='y', labelsize=6)
+            draw_track(
+                y_track_ax,
+                annotation,  # type: ignore[arg-type]
+                display_q,
+                self.index.get_sequence_length(query_name),
+                orientation='y',
+            )
             y_track_ax.set_ylabel(display_q, fontsize=8)
-            for feat in y_feats:
-                rect = mpatches.Rectangle(
-                    (0.1, feat.start),
-                    0.8,
-                    feat.end - feat.start,
-                    facecolor=annotation.get_color(feat.feature_type),  # type: ignore[union-attr]
-                    edgecolor='none',
-                )
-                y_track_ax.add_patch(rect)
 
         # Title: use display names (strip group prefix for CrossIndex).
         if title is None:
