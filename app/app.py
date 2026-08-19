@@ -407,13 +407,14 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             progress.set(1, message='Parsing target assembly…')
         return query, _parse_upload(input.target_fasta, 'target')
 
-    # The k-mer index stores per-base-pair hash entries (~100 bytes/bp
-    # measured natively, both strands) — under Pyodide's 2 GB heap that
-    # caps indexable sequence around 16 Mb combined.  Exceeding it does
-    # not fail gracefully: the wasm allocator aborts and takes the whole
-    # Python runtime down, so refuse up front with a way forward.
-    _KMER_HARD_LIMIT = 16 * 1024 * 1024
-    _KMER_WARN_LIMIT = 8 * 1024 * 1024
+    # The canonical CSR k-mer index costs ~13-16 bytes/bp (both strands);
+    # a real 74 Mb pair completes in the browser (verified), so the guard
+    # sits at ~80 Mb combined under Pyodide's 2 GB heap.  Exceeding the
+    # heap does not fail gracefully — the wasm allocator aborts and takes
+    # the whole Python runtime down — so refuse up front with a way
+    # forward, and warn earlier that big k-mer runs take minutes.
+    _KMER_HARD_LIMIT = 80 * 1024 * 1024
+    _KMER_WARN_LIMIT = 40 * 1024 * 1024
 
     def _check_kmer_memory(query: FastaInput, target: FastaInput) -> None:
         if sys.platform != 'emscripten':
@@ -423,13 +424,13 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             raise ValueError(
                 f'Combined assemblies are {total / 1e6:.0f} Mb — the k-mer '
                 'index needs more memory than the browser allows above '
-                '~16 Mb and would crash the app. Use minimap2 (or LASTZ / '
+                '~80 Mb and would crash the app. Use minimap2 (or LASTZ / '
                 'nucmer) for assemblies this size.'
             )
         if total > _KMER_WARN_LIMIT:
             ui.notification_show(
-                'Large input for the k-mer method — if the app runs out of '
-                'memory, switch to minimap2.',
+                'Large input for the k-mer method — expect a few minutes of '
+                'processing; minimap2 is much faster at this scale.',
                 type='warning',
                 duration=10,
             )

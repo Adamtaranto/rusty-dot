@@ -55,18 +55,34 @@ pub fn merge_fwd_runs<S: BuildHasher>(
     query_kmer_positions: &HashMap<String, Vec<usize>, S>,
     k: usize,
 ) -> Vec<CoordPair> {
-    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    merge_fwd_pairs(cross_join(kmer_coords, query_kmer_positions), k)
+}
 
-    for (kmer, target_positions) in kmer_coords {
-        if let Some(query_positions) = query_kmer_positions.get(kmer) {
-            for &qp in query_positions {
+/// Cross-join two k-mer position maps into raw `(query_pos, target_pos)` hit
+/// pairs.  Shared helper for the map-keyed merge entry points; the pair-based
+/// cores below are the preferred path for callers that already have pairs
+/// (avoids materialising per-k-mer String maps at all).
+fn cross_join<S: BuildHasher>(
+    target_coords: &HashMap<String, Vec<usize>, S>,
+    query_positions: &HashMap<String, Vec<usize>, S>,
+) -> Vec<(usize, usize)> {
+    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    for (kmer, target_positions) in target_coords {
+        if let Some(query_pos) = query_positions.get(kmer) {
+            for &qp in query_pos {
                 for &tp in target_positions {
                     pairs.push((qp, tp));
                 }
             }
         }
     }
+    pairs
+}
 
+/// Merge raw `(query_pos, target_pos)` hit pairs into contiguous forward
+/// diagonal runs.  Core of [`merge_fwd_runs`]; identical output for the same
+/// set of pairs.
+pub fn merge_fwd_pairs(mut pairs: Vec<(usize, usize)>, k: usize) -> Vec<CoordPair> {
     if pairs.is_empty() {
         return Vec::new();
     }
@@ -137,18 +153,13 @@ pub fn merge_rev_runs<S: BuildHasher>(
     query_kmer_positions: &HashMap<String, Vec<usize>, S>,
     k: usize,
 ) -> Vec<CoordPair> {
-    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    merge_rev_pairs(cross_join(target_rev_coords, query_kmer_positions), k)
+}
 
-    for (kmer, target_positions) in target_rev_coords {
-        if let Some(query_positions) = query_kmer_positions.get(kmer) {
-            for &qp in query_positions {
-                for &tp in target_positions {
-                    pairs.push((qp, tp));
-                }
-            }
-        }
-    }
-
+/// Merge raw `(query_pos, rc_target_pos)` hit pairs into contiguous
+/// anti-diagonal runs.  Core of [`merge_rev_runs`]; identical output for the
+/// same set of pairs.
+pub fn merge_rev_pairs(mut pairs: Vec<(usize, usize)>, k: usize) -> Vec<CoordPair> {
     if pairs.is_empty() {
         return Vec::new();
     }
@@ -234,18 +245,13 @@ pub fn merge_rev_fwd_runs<S: BuildHasher>(
     query_kmer_positions: &HashMap<String, Vec<usize>, S>,
     k: usize,
 ) -> Vec<CoordPair> {
-    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    merge_rev_fwd_pairs(cross_join(target_rev_coords, query_kmer_positions), k)
+}
 
-    for (kmer, target_positions) in target_rev_coords {
-        if let Some(query_positions) = query_kmer_positions.get(kmer) {
-            for &qp in query_positions {
-                for &tp in target_positions {
-                    pairs.push((qp, tp));
-                }
-            }
-        }
-    }
-
+/// Merge raw `(query_pos, rc_target_pos)` hit pairs that are co-linear on a
+/// forward diagonal.  Core of [`merge_rev_fwd_runs`]; identical output for
+/// the same set of pairs.
+pub fn merge_rev_fwd_pairs(mut pairs: Vec<(usize, usize)>, k: usize) -> Vec<CoordPair> {
     if pairs.is_empty() {
         return Vec::new();
     }

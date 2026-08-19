@@ -7,10 +7,8 @@
 
 use crate::error::RustyDotError;
 use crate::kmer::build_kmer_set;
-use crate::kmer_hash::{shared_fwd_coords, shared_rev_coords, KmerIndex};
-use crate::merge::{
-    merge_fwd_runs, merge_kmer_runs, merge_rev_fwd_runs, merge_rev_runs, CoordPair,
-};
+use crate::kmer_hash::{shared_fwd_pairs, shared_stranded_pairs, KmerIndex};
+use crate::merge::{merge_fwd_pairs, merge_rev_fwd_pairs, merge_rev_pairs, CoordPair};
 use crate::paf::coords_to_paf;
 use crate::serialize::{load_index, save_index, IndexCollection, SerializableSequence};
 use crate::strand::STRAND_REV;
@@ -237,7 +235,7 @@ fn compute_pair_fwd(
 ) -> Vec<CoordPair> {
     let query = &sequences[query_name];
     let target = &sequences[target_name];
-    let (query_coords, target_coords) = shared_fwd_coords(
+    let hits = shared_fwd_pairs(
         &query.seq_bytes,
         &query.index,
         &target.seq_bytes,
@@ -245,30 +243,24 @@ fn compute_pair_fwd(
         k,
     );
 
-    if query_coords.is_empty() {
+    if hits.is_empty() {
         return Vec::new();
     }
 
     if merge {
-        merge_kmer_runs(&target_coords, &query_coords, k)
+        merge_fwd_pairs(hits, k)
     } else {
         use crate::strand::STRAND_FWD;
-        let mut unmerged: Vec<CoordPair> = Vec::new();
-        for (kmer, q_positions) in &query_coords {
-            if let Some(t_positions) = target_coords.get(kmer) {
-                for &qp in q_positions {
-                    for &tp in t_positions {
-                        unmerged.push(CoordPair {
-                            query_start: qp,
-                            query_end: qp + k,
-                            target_start: tp,
-                            target_end: tp + k,
-                            strand: STRAND_FWD,
-                        });
-                    }
-                }
-            }
-        }
+        let mut unmerged: Vec<CoordPair> = hits
+            .into_iter()
+            .map(|(qp, tp)| CoordPair {
+                query_start: qp,
+                query_end: qp + k,
+                target_start: tp,
+                target_end: tp + k,
+                strand: STRAND_FWD,
+            })
+            .collect();
         unmerged.sort_unstable_by_key(|c| (c.query_start, c.target_start));
         unmerged
     }
@@ -290,52 +282,39 @@ fn compute_pair_stranded(
 
     let mut all_pairs: Vec<CoordPair> = Vec::new();
 
-    // + strand hits
-    let (query_fwd, target_fwd) = shared_fwd_coords(
+    // Both strands from a single walk over the two indexes.  The pair-based
+    // path skips the per-k-mer String maps entirely — on repeat-rich
+    // assembly pairs those maps dominated the peak memory of a comparison.
+    let (fwd_hits, rev_hits) = shared_stranded_pairs(
         &query.seq_bytes,
         &query.index,
         &target.seq_bytes,
         &target.index,
         k,
     );
-    if !query_fwd.is_empty() {
+    if !fwd_hits.is_empty() {
         if merge {
-            all_pairs.extend(merge_fwd_runs(&target_fwd, &query_fwd, k));
+            all_pairs.extend(merge_fwd_pairs(fwd_hits, k));
         } else {
             use crate::strand::STRAND_FWD;
-            for (kmer, q_pos) in &query_fwd {
-                if let Some(t_pos) = target_fwd.get(kmer) {
-                    for &qp in q_pos {
-                        for &tp in t_pos {
-                            all_pairs.push(CoordPair {
-                                query_start: qp,
-                                query_end: qp + k,
-                                target_start: tp,
-                                target_end: tp + k,
-                                strand: STRAND_FWD,
-                            });
-                        }
-                    }
-                }
-            }
+            all_pairs.extend(fwd_hits.into_iter().map(|(qp, tp)| CoordPair {
+                query_start: qp,
+                query_end: qp + k,
+                target_start: tp,
+                target_end: tp + k,
+                strand: STRAND_FWD,
+            }));
         }
     }
 
     // - strand hits
-    let (target_rev, query_rev) = shared_rev_coords(
-        &query.seq_bytes,
-        &query.index,
-        &target.seq_bytes,
-        &target.index,
-        k,
-    );
-    if !query_rev.is_empty() {
+    if !rev_hits.is_empty() {
         if merge {
             // Apply both anti-diagonal and co-diagonal merging for RC hits,
             // deduplicating identical blocks that arise when a single RC pair
             // has no neighbours on either diagonal.
-            let anti = merge_rev_runs(&target_rev, &query_rev, k);
-            let co = merge_rev_fwd_runs(&target_rev, &query_rev, k);
+            let anti = merge_rev_pairs(rev_hits.clone(), k);
+            let co = merge_rev_fwd_pairs(rev_hits, k);
             let mut seen = std::collections::HashSet::new();
             for block in anti.into_iter().chain(co.into_iter()) {
                 let key = (
@@ -349,21 +328,13 @@ fn compute_pair_stranded(
                 }
             }
         } else {
-            for (kmer, q_pos) in &query_rev {
-                if let Some(t_pos) = target_rev.get(kmer) {
-                    for &qp in q_pos {
-                        for &tp in t_pos {
-                            all_pairs.push(CoordPair {
-                                query_start: qp,
-                                query_end: qp + k,
-                                target_start: tp,
-                                target_end: tp + k,
-                                strand: STRAND_REV,
-                            });
-                        }
-                    }
-                }
-            }
+            all_pairs.extend(rev_hits.into_iter().map(|(qp, tp)| CoordPair {
+                query_start: qp,
+                query_end: qp + k,
+                target_start: tp,
+                target_end: tp + k,
+                strand: STRAND_REV,
+            }));
         }
     }
 
