@@ -153,3 +153,41 @@
     color: #cdd6e0;
   }
 }
+
+/* --- GFF annotation controls ----------------------------------------- */
+.rd-gff-section {
+  margin: 0.4rem 0 0.6rem;
+}
+.rd-gff-section h6 {
+  margin: 0.3rem 0;
+  font-size: 0.8rem;
+  color: #4a5a6a;
+}
+.rd-gff-type-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.rd-gff-type-row .form-group,
+.rd-gff-type-row .checkbox {
+  margin-bottom: 0.15rem;
+}
+.rd-color-input {
+  width: 2rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+
+@media (prefers-color-scheme: dark) {
+  .rd-gff-section h6 {
+    color: #9fb0c0;
+  }
+  .rd-color-input {
+    border-color: #33404f;
+  }
+}

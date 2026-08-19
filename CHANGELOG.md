@@ -29,6 +29,13 @@ and this project adheres to
   the detail bar shows the feature's name, type, coordinates, strand,
   parent and source.
 - README section and dotplot-tutorial examples for annotation overlays.
+- Browser app: GFF3 annotation uploads for the query and/or target
+  assembly (`.gff`/`.gff3`/`.gz`) with per-feature-type visibility
+  toggles and colour pickers (native colour inputs via a small Shiny
+  binding). Features shade self-vs-self panels behind the alignments
+  (including cross-group self-alignments), the focused drill-down view
+  adds side annotation tracks, and features are clickable in the
+  interactive report.
 
 ### Performance
 

@@ -28,6 +28,11 @@ from core.align import (
     paf_alignment_from_text,
     paf_text_from_alignment,
 )
+from core.annotation_state import (
+    ANNOTATION_ROLES,
+    apply_annotation_config,
+    type_slug_map,
+)
 from core.cache import QUERY_GROUP, TARGET_GROUP, SessionCache
 from core.export import reordered_fasta_text
 from core.fasta import FastaInput, parse_fasta_bytes
@@ -353,6 +358,20 @@ app_ui = ui.page_sidebar(
         ui.input_numeric('min_length', 'Min match length (bp)', 0, min=0),
         ui.input_numeric('dot_size', 'Line width', 0.5, min=0.1, max=5, step=0.1),
         ui.hr(),
+        # --- GFF annotations -------------------------------------------------
+        ui.h5('Annotations (GFF3)'),
+        ui.input_file(
+            'query_gff',
+            'Query annotations (.gff / .gff3 / .gz)',
+            accept=['.gff', '.gff3', '.gz'],
+        ),
+        ui.input_file(
+            'target_gff',
+            'Target annotations (.gff / .gff3 / .gz)',
+            accept=['.gff', '.gff3', '.gz'],
+        ),
+        ui.output_ui('gff_controls'),
+        ui.hr(),
         ui.h5('Downloads'),
         ui.output_ui('downloads'),
         width=320,
@@ -365,6 +384,8 @@ app_ui = ui.page_sidebar(
     ui.head_content(
         ui.include_css(APP_DIR / 'www' / 'app.css'),
         ui.include_js(APP_DIR / 'www' / 'bridge.js'),
+        # Custom Shiny binding for native <input type="color"> pickers.
+        ui.include_js(APP_DIR / 'www' / 'color-input.js', method='inline'),
     ),
     # W1: biowasm aligner bridge (Aioli loaded lazily from the CDN on use).
     ui.head_content(ui.include_js(APP_DIR / 'www' / 'aligners.js', method='inline')),
@@ -725,6 +746,118 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     def min_length_settled() -> int:
         return int(input.min_length() or 0)
 
+    # --- GFF annotations -----------------------------------------------------
+    # Parsed uploads (upload-derived state, deliberately outside PlotConfig).
+    gff_raw = {role: reactive.value(None) for role in ANNOTATION_ROLES}
+
+    def _parse_gff_upload(file_input, role: str) -> None:
+        from rusty_dot.annotation import GffAnnotation
+
+        files = file_input()
+        if not files:
+            gff_raw[role].set(None)
+            return
+        try:
+            ann = GffAnnotation.from_bytes(Path(files[0]['datapath']).read_bytes())
+        except ValueError as exc:
+            gff_raw[role].set(None)
+            ui.notification_show(
+                f'Could not parse {role} GFF: {exc}', type='error', duration=10
+            )
+            return
+        if len(ann) == 0:
+            gff_raw[role].set(None)
+            ui.notification_show(
+                f'No features found in the {role} GFF file.',
+                type='warning',
+                duration=8,
+            )
+            return
+        gff_raw[role].set(ann)
+        ui.notification_show(
+            f'{role.capitalize()} annotations: {len(ann)} feature(s), '
+            f'{len(ann.feature_types())} type(s).',
+            type='message',
+            duration=5,
+        )
+
+    @reactive.effect
+    @reactive.event(input.query_gff)
+    def _on_query_gff():
+        req(ready())
+        _parse_gff_upload(input.query_gff, 'query')
+
+    @reactive.effect
+    @reactive.event(input.target_gff)
+    def _on_target_gff():
+        req(ready())
+        _parse_gff_upload(input.target_gff, 'target')
+
+    def _read_dynamic(input_id: str, default):
+        """Read a dynamically rendered input, tolerating its absence."""
+        try:
+            return input[input_id]()
+        except Exception:  # noqa: BLE001 - silent until the control renders
+            return default
+
+    @render.ui
+    def gff_controls():
+        sections = []
+        for role in ANNOTATION_ROLES:
+            ann = gff_raw[role]()
+            if ann is None:
+                continue
+            rows = []
+            for ft, slug in type_slug_map(ann.feature_types()).items():
+                rows.append(
+                    ui.div(
+                        ui.input_checkbox(f'gtyp_{role}_{slug}', ft, True),
+                        ui.HTML(
+                            f'<input type="color" class="rd-color-input" '
+                            f'id="gcol_{role}_{slug}" '
+                            f'value="{ann.get_color(ft)}">'
+                        ),
+                        class_='rd-gff-type-row',
+                    )
+                )
+            sections.append(
+                ui.div(
+                    ui.h6(f'{role.capitalize()} feature types'),
+                    *rows,
+                    class_='rd-gff-section',
+                )
+            )
+        if not sections:
+            return None
+        return ui.div(
+            ui.input_checkbox('gff_diagonal', 'Shade features on diagonal', True),
+            ui.input_checkbox('gff_tracks', 'Side tracks in focused pair view', True),
+            *sections,
+        )
+
+    @reactive.calc
+    def annotations():
+        """Return (query_ann, target_ann) with the user's type/colour choices."""
+        result = {}
+        for role in ANNOTATION_ROLES:
+            ann = gff_raw[role]()
+            if ann is None:
+                result[role] = None
+                continue
+            slugs = type_slug_map(ann.feature_types())
+            enabled = {
+                ft: bool(_read_dynamic(f'gtyp_{role}_{slug}', True))
+                for ft, slug in slugs.items()
+            }
+            colors = {
+                ft: str(_read_dynamic(f'gcol_{role}_{slug}', '') or '')
+                for ft, slug in slugs.items()
+            }
+            result[role] = apply_annotation_config(ann, enabled, colors)
+        return result['query'], result['target']
+
+    # --- end GFF annotations -------------------------------------------------
+
     @reactive.calc
     def config() -> PlotConfig:
         return PlotConfig(
@@ -808,6 +941,17 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         kwargs['reverse_contigs'] = set(lay['reverse'])
         if pair is not None and cfg.title is None:
             kwargs['title'] = f'{pair[0]} vs {pair[1]}'
+        # GFF annotations: diagonal shading on self panels plus side tracks
+        # in the focused (1x1) drill-down view.  Reading annotations() here
+        # keeps every figure consumer reactive to toggle/colour changes
+        # without touching layout()'s dependencies.
+        ann_q, ann_t = annotations()
+        if ann_q is not None or ann_t is not None:
+            if bool(_read_dynamic('gff_diagonal', True)):
+                kwargs['annotation'] = ann_q if ann_q is not None else ann_t
+            kwargs['annotation_query'] = ann_q
+            kwargs['annotation_target'] = ann_t
+            kwargs['annotation_tracks'] = bool(_read_dynamic('gff_tracks', True))
         if kind == 'kmer':
             # Internal 'group:name' identifiers keep name resolution
             # unambiguous; the cached cross-group records are handed to the

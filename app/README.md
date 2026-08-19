@@ -47,6 +47,13 @@ pinned `nightly-2025-02-17` Rust toolchain); see the `wasm-build` job in
 - **Identity colouring**: for methods that report identity (minimap2,
   LASTZ, nucmer, PAF import) alignments can be coloured by % identity
   instead of forward/reverse strand.
+- **GFF annotations**: upload GFF3 files (`.gff`/`.gff3`/`.gz`) for the
+  query and/or target assembly. Detected feature types get per-type
+  visibility toggles and colour pickers; features shade self-vs-self
+  panels behind the alignments, and the focused (drill-down) pair view
+  adds side annotation tracks with strand arrows and multi-part CDS
+  connectors. Clicking a feature in the interactive report shows its
+  name, type, coordinates, strand and parent.
 
 ## Alignment methods
 

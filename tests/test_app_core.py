@@ -372,3 +372,63 @@ def test_paf_cache_evicts_and_refreshes_on_hit():
     assert cache.get_paf('minimap2', {'i': 0}, 'dq', 'dt') is not None
     assert cache.get_paf('minimap2', {'i': 1}, 'dq', 'dt') is None
     assert len(cache._paf) == SessionCache.PAF_MAX
+
+
+# ------------------------------------------------- annotation controls
+
+
+def test_slugify_and_type_slug_map():
+    from core.annotation_state import slugify, type_slug_map
+
+    assert slugify('five_prime_UTR') == 'five_prime_utr'
+    assert slugify('repeat region!') == 'repeat_region'
+    assert slugify('***') == 'type'
+    # Colliding slugs get deterministic numeric suffixes.
+    mapping = type_slug_map(['Gene', 'gene', 'ge ne'])
+    assert mapping['Gene'] == 'gene'
+    assert mapping['gene'] == 'gene_2'
+    assert mapping['ge ne'] == 'ge_ne'
+    assert len(set(mapping.values())) == 3
+
+
+def test_apply_annotation_config_filters_and_recolours():
+    from core.annotation_state import apply_annotation_config
+
+    from rusty_dot.annotation import GffAnnotation
+
+    ann = GffAnnotation.from_text(
+        'c1\tt\tgene\t1\t100\t.\t+\t.\tID=g\nc1\tt\tCDS\t1\t50\t.\t+\t0\tID=c\n'
+    )
+    out = apply_annotation_config(ann, {'CDS': False}, {'gene': '#112233', 'CDS': ''})
+    assert out.feature_types() == ['gene']
+    assert out.get_color('gene') == '#112233'
+    # The original is untouched.
+    assert ann.feature_types() == ['CDS', 'gene']
+    # Everything off -> nothing to draw.
+    assert apply_annotation_config(ann, {'CDS': False, 'gene': False}, {}) is None
+
+
+def test_make_figure_call_path_accepts_annotations():
+    """plot() accepts the exact annotation kwargs the app forwards."""
+    from core.state import PlotConfig
+
+    from rusty_dot import DotPlotter
+    from rusty_dot.annotation import GffAnnotation
+
+    cache = SessionCache()
+    q, t = _two_assemblies()
+    idx = cache.kmer_index(11, q, t)
+    ann = GffAnnotation.from_text('q1\tt\tgene\t1\t100\t.\t+\t.\tID=g')
+    cfg = PlotConfig()
+    kwargs = cfg.plot_kwargs()
+    kwargs.update(
+        contig_order=None,
+        annotation=ann,
+        annotation_query=ann,
+        annotation_target=None,
+        annotation_tracks=True,
+    )
+    fig = DotPlotter(idx).plot(
+        query_group=QUERY_GROUP, target_group=TARGET_GROUP, **kwargs
+    )
+    assert fig.axes
