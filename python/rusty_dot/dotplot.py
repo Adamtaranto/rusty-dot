@@ -970,8 +970,7 @@ class DotPlotter:
                 # match (two *different* assemblies sharing a contig name
                 # will almost never share its exact length too).
                 is_self_panel = q_name == t_name or (
-                    self._strip_group_prefix(q_name)
-                    == self._strip_group_prefix(t_name)
+                    self._strip_group_prefix(q_name) == self._strip_group_prefix(t_name)
                     and self.index.get_sequence_length(q_name)
                     == self.index.get_sequence_length(t_name)
                 )
