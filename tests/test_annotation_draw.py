@@ -340,3 +340,48 @@ def test_diagonal_squares_on_cross_index_self_alignment():
     squares = [c for ax in fig.axes for c in ax.collections if c.get_zorder() == 0.5]
     assert squares, 'self panel across group prefixes must draw squares'
     plt.close(fig)
+
+
+def test_focused_tracks_labels_on_main_axes_with_units():
+    """With side tracks, contig-name labels sit on the padded main axes."""
+    pl = _plotter()
+    ann = GffAnnotation.from_text(GFF)
+    fig = pl.plot(
+        query_names=['c2'],
+        target_names=['c1'],
+        annotation_query=ann,
+        annotation_target=ann,
+        annotation_tracks=True,
+    )
+    assert len(fig.axes) == 3  # unchanged: main + y-track + x-track
+    main_ax, y_track_ax, x_track_ax = fig.axes
+    assert main_ax.get_xlabel().startswith('c1 (')
+    assert main_ax.get_ylabel().startswith('c2 (')
+    # Labels pad past the fixed-width track band (0.4 in = 28.8 pt).
+    assert main_ax.xaxis.labelpad > 0.4 * 72
+    assert main_ax.yaxis.labelpad > 0.4 * 72
+    # The tracks' outer edges carry the tick labels; the main axes' near
+    # edges stay clear of the band.
+    fig.canvas.draw()
+    assert any(t.get_text() for t in x_track_ax.get_xticklabels())
+    assert any(t.get_text() for t in y_track_ax.get_yticklabels())
+    assert not any(
+        t.get_visible() and t.get_text()
+        for t in main_ax.get_xticklabels()
+        if not t.get_visible()
+    )
+    plt.close(fig)
+
+
+def test_plot_single_tracks_labels_on_main_axes():
+    """plot_single moves the contig names off the track axes."""
+    pl = _plotter()
+    ann = GffAnnotation.from_text(GFF)
+    fig = pl.plot_single('c2', 'c1', annotation=ann)
+    main_ax = fig.axes[0]
+    assert main_ax.get_xlabel().startswith('c1 (')
+    assert main_ax.get_ylabel().startswith('c2 (')
+    track_axes = fig.axes[1:3]
+    assert all(ax.get_xlabel() == '' for ax in track_axes)
+    assert all(ax.get_ylabel() == '' for ax in track_axes)
+    plt.close(fig)
