@@ -101,6 +101,28 @@ def _method_choices() -> dict[str, str]:
     }
 
 
+def _lbl(text: str, tip: str):
+    """Input label with a hoverable info icon explaining the setting.
+
+    Parameters
+    ----------
+    text : str
+        The visible label text.
+    tip : str
+        One-line explanation shown in a tooltip on the icon.
+
+    Returns
+    -------
+    htmltools.Tag
+        Label span suitable as any input's ``label`` argument.
+    """
+    return ui.span(
+        text,
+        ' ',
+        ui.tooltip(ui.tags.span('ⓘ', class_='rd-info'), tip, placement='right'),
+    )
+
+
 # --- W2: interactive plot ---------------------------------------------------
 # Script injected into the generated HTML report before embedding: posts a
 # message to the parent app window when a dotplot panel is double-clicked.
@@ -255,7 +277,15 @@ app_ui = ui.page_sidebar(
                 'Query assembly (FASTA / .gz)',
                 accept=['.fa', '.fasta', '.fna', '.gz'],
             ),
-            ui.input_checkbox('self_align', 'Align assembly to itself', False),
+            ui.input_checkbox(
+                'self_align',
+                _lbl(
+                    'Align assembly to itself',
+                    'Compare one assembly against itself to reveal repeats '
+                    'and segmental duplications — no second upload needed.',
+                ),
+                False,
+            ),
             ui.panel_conditional(
                 '!input.self_align',
                 ui.input_file(
@@ -264,17 +294,50 @@ app_ui = ui.page_sidebar(
                     accept=['.fa', '.fasta', '.fna', '.gz'],
                 ),
             ),
-            ui.input_select('method', 'Alignment method', choices=_method_choices()),
+            ui.input_select(
+                'method',
+                _lbl(
+                    'Alignment method',
+                    'k-mer: fast exact matching, fully offline; minimap2 / '
+                    'nucmer: full aligners compiled to WebAssembly (fetched '
+                    'from the biowasm CDN at runtime).',
+                ),
+                choices=_method_choices(),
+            ),
             ui.panel_conditional(
                 "input.method === 'kmer'",
-                ui.input_slider('k', 'k-mer size', min=8, max=64, value=21, step=1),
-                ui.input_checkbox('merge', 'Merge adjacent matches', True),
+                ui.input_slider(
+                    'k',
+                    _lbl(
+                        'k-mer size',
+                        'Exact-match seed length; larger k gives fewer, more '
+                        'specific matches.',
+                    ),
+                    min=8,
+                    max=64,
+                    value=21,
+                    step=1,
+                ),
+                ui.input_checkbox(
+                    'merge',
+                    _lbl(
+                        'Merge adjacent matches',
+                        'Join runs of adjacent k-mer hits into longer '
+                        'diagonal segments.',
+                    ),
+                    True,
+                ),
                 # Compute-time filter: repeat-rich assembly pairs can produce
                 # millions of short match blocks that exhaust browser memory;
                 # dropping them natively keeps real genomes workable.
                 ui.input_numeric(
                     'kmer_min_block',
-                    'Min match block (bp, 0 = keep all)',
+                    _lbl(
+                        'Min match block (bp, 0 = keep all)',
+                        'Drop merged match blocks shorter than this before '
+                        'they reach the plot; keeps repeat-rich genome pairs '
+                        'from producing millions of records.',
+                    ),
                     50,
                     min=0,
                 ),
@@ -284,28 +347,66 @@ app_ui = ui.page_sidebar(
                 "input.method === 'minimap2'",
                 ui.input_select(
                     'mm2_preset',
-                    'Preset (-x)',
+                    _lbl(
+                        'Preset (-x)',
+                        'Divergence preset: asm5 ≲1% sequence divergence, '
+                        'asm10 ≲5%, asm20 ≲10% (safe default across '
+                        'strains/isolates).',
+                    ),
                     choices={p: p for p in MINIMAP2_PRESETS},
                     selected='asm20',
                 ),
-                ui.help_text(
-                    'asm5 ≲1% sequence divergence, asm10 ≲5%, asm20 ≲10% '
-                    '(safe default across strains/isolates).'
+                ui.input_numeric(
+                    'mm2_k',
+                    _lbl(
+                        'k-mer size (-k, 0 = preset default)',
+                        'Minimizer k-mer length; smaller values increase '
+                        'sensitivity for diverged repeats. The asm presets '
+                        'default to k=19.',
+                    ),
+                    0,
+                    min=0,
+                    max=28,
                 ),
                 ui.input_numeric(
-                    'mm2_k', 'k-mer size (-k, 0 = preset default)', 0, min=0, max=28
+                    'mm2_w',
+                    _lbl(
+                        'Minimizer window (-w, 0 = preset default)',
+                        'Minimizer window size; smaller windows increase '
+                        'seed density. The asm presets default to w=19.',
+                    ),
+                    0,
+                    min=0,
                 ),
                 ui.input_numeric(
-                    'mm2_w', 'Minimizer window (-w, 0 = preset default)', 0, min=0
+                    'mm2_m',
+                    _lbl(
+                        'Min chaining score (-m, 0 = default)',
+                        'Discard chains scoring below this; raise (e.g. 200) '
+                        'to filter weak or noisy repeat matches.',
+                    ),
+                    0,
+                    min=0,
                 ),
-                ui.input_numeric(
-                    'mm2_m', 'Min chaining score (-m, 0 = default)', 0, min=0
+                ui.input_checkbox(
+                    'mm2_p',
+                    _lbl(
+                        'Retain all chains (-P)',
+                        'Keep every chain instead of dropping secondary '
+                        'matches, so each repeat copy maps — larger output.',
+                    ),
+                    False,
                 ),
-                ui.input_checkbox('mm2_p', 'Retain all chains (-P)', False),
                 ui.panel_conditional(
                     'input.self_align',
                     ui.input_checkbox(
-                        'mm2_d', 'Skip self-diagonal matches (-D)', False
+                        'mm2_d',
+                        _lbl(
+                            'Skip self-diagonal matches (-D)',
+                            'Drop the trivial full-length match of each '
+                            'contig against itself on the main diagonal.',
+                        ),
+                        False,
                     ),
                 ),
             ),
@@ -315,14 +416,43 @@ app_ui = ui.page_sidebar(
                 # for assembly-scale dotplots they mostly add noise clusters
                 # and minutes of runtime.  -l 100 -c 200 is the conventional
                 # whole-genome comparison setting.
-                ui.input_numeric('nucmer_l', 'Min match length (-l)', 100, min=1),
-                ui.input_numeric('nucmer_c', 'Min cluster length (-c)', 200, min=1),
+                ui.input_numeric(
+                    'nucmer_l',
+                    _lbl(
+                        'Min match length (-l)',
+                        'Minimum exact-match anchor length; larger values '
+                        'run faster with fewer spurious matches.',
+                    ),
+                    100,
+                    min=1,
+                ),
+                ui.input_numeric(
+                    'nucmer_c',
+                    _lbl(
+                        'Min cluster length (-c)',
+                        'Minimum combined anchor length for a cluster to be '
+                        'reported as an alignment.',
+                    ),
+                    200,
+                    min=1,
+                ),
                 ui.input_checkbox(
-                    'nucmer_maxmatch', 'Use all matches (--maxmatch)', False
+                    'nucmer_maxmatch',
+                    _lbl(
+                        'Use all matches (--maxmatch)',
+                        'Use every anchor match regardless of uniqueness — '
+                        'required to see all copies of repetitive regions.',
+                    ),
+                    False,
                 ),
                 ui.input_checkbox(
                     'nucmer_nosimplify',
-                    'Keep repeat-induced alignments (--nosimplify)',
+                    _lbl(
+                        'Keep repeat-induced alignments (--nosimplify)',
+                        'Keep shadowed clusters instead of simplifying them '
+                        'away — needed to find inexact repeats in '
+                        'self-alignments.',
+                    ),
                     False,
                 ),
             ),
@@ -341,27 +471,91 @@ app_ui = ui.page_sidebar(
         ui.hr(),
         ui.h5('Plot options'),
         # --- W2: interactive plot ---
-        ui.input_checkbox('interactive', 'Interactive plot (zoom & drill-down)', True),
-        ui.input_select('contig_order', 'Contig order', choices=ORDER_CHOICES),
-        ui.input_checkbox('auto_reverse', 'Auto-flip reversed contigs', False),
-        ui.input_checkbox('hide_internal_axes', 'Hide internal axes', False),
+        ui.input_checkbox(
+            'interactive',
+            _lbl(
+                'Interactive plot (zoom & drill-down)',
+                'Render a zoomable HTML report with clickable matches '
+                'instead of a static image.',
+            ),
+            True,
+        ),
+        ui.input_select(
+            'contig_order',
+            _lbl(
+                'Contig order',
+                'How contigs are arranged along the axes: upload order, '
+                'longest first, or reordered to maximise colinearity with '
+                'the other assembly.',
+            ),
+            choices=ORDER_CHOICES,
+        ),
+        ui.input_checkbox(
+            'auto_reverse',
+            _lbl(
+                'Auto-flip reversed contigs',
+                'Display contigs that align mostly in reverse on their '
+                'reverse strand so synteny reads as a forward diagonal.',
+            ),
+            False,
+        ),
+        ui.input_checkbox(
+            'hide_internal_axes',
+            _lbl(
+                'Hide internal axes',
+                'Remove the internal panel borders and ticks so the '
+                'all-vs-all grid reads as one continuous plot.',
+            ),
+            False,
+        ),
         # Identity colouring only makes sense for tool/PAF alignments (k-mer
         # matches are always 100% identity); output.result_kind is a hidden
         # text output that tracks the current result.
         ui.panel_conditional(
             "output.result_kind === 'paf'",
-            ui.input_checkbox('color_by_identity', 'Colour by % identity', False),
+            ui.input_checkbox(
+                'color_by_identity',
+                _lbl(
+                    'Colour by % identity',
+                    'Colour each match by its percent identity instead of '
+                    'forward/reverse strand (aligner and PAF results only).',
+                ),
+                False,
+            ),
             ui.panel_conditional(
                 'input.color_by_identity',
                 ui.input_select(
                     'identity_palette',
-                    'Identity palette',
+                    _lbl(
+                        'Identity palette',
+                        'Colour map used for the identity scale.',
+                    ),
                     choices=['viridis', 'plasma', 'cividis', 'coolwarm'],
                 ),
             ),
         ),
-        ui.input_numeric('min_length', 'Min match length (bp)', 0, min=0),
-        ui.input_numeric('dot_size', 'Line width', 0.5, min=0.1, max=5, step=0.1),
+        ui.input_numeric(
+            'min_length',
+            _lbl(
+                'Min match length (bp)',
+                'Hide matches shorter than this many base pairs — applied '
+                'instantly, without re-rendering.',
+            ),
+            0,
+            min=0,
+        ),
+        ui.input_numeric(
+            'dot_size',
+            _lbl(
+                'Line width',
+                'Stroke width of the match segments — applied instantly, '
+                'without re-rendering.',
+            ),
+            0.5,
+            min=0.1,
+            max=5,
+            step=0.1,
+        ),
         ui.hr(),
         # --- GFF annotations -------------------------------------------------
         ui.h5('Annotations (GFF3)'),

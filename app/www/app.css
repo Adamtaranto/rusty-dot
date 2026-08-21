@@ -128,6 +128,18 @@
   opacity: 0.85;
 }
 
+/* Info icon in input labels; the setting's explanation appears in a
+   tooltip on hover (see _lbl in app.py). */
+.rd-info {
+  color: var(--rd-faint);
+  font-size: 0.85em;
+  cursor: help;
+}
+
+.rd-info:hover {
+  color: var(--rd-accent);
+}
+
 .sidebar .form-control,
 .sidebar .form-select {
   transition: border-color var(--rd-transition), box-shadow var(--rd-transition);
