@@ -1748,3 +1748,42 @@ def test_grid_keeps_rotated_titles(dotplot_index):
     top_titles = [ax.get_title() for ax in fig.axes[:2]]
     assert top_titles == ['seq1', 'seq2']
     plt.close(fig)
+
+
+def test_grid_shared_units_and_angled_x_ticks():
+    """Grids share one bp unit across contigs and angle the x tick labels."""
+    from rusty_dot.paf_io import PafAlignment, PafRecord
+
+    records = [
+        PafRecord(
+            'q1',
+            3_000_000,
+            0,
+            2_000_000,
+            '+',
+            't1',
+            4_000_000,
+            0,
+            2_000_000,
+            1_500_000,
+            2_000_000,
+            255,
+        ),
+        PafRecord(
+            'q2', 40_000, 0, 30_000, '+', 't2', 50_000, 0, 30_000, 25_000, 30_000, 255
+        ),
+    ]
+    plotter = DotPlotter(PafAlignment(records))
+    fig = plotter.plot(query_names=['q1', 'q2'], target_names=['t1', 't2'])
+    fig.canvas.draw()
+    bottom_left, bottom_right = fig.axes[2], fig.axes[3]
+    # The short q2/t2 contigs use the grid-wide Mbp unit, not their own Kbp.
+    texts = [t.get_text() for t in bottom_right.get_xticklabels() if t.get_text()]
+    assert texts
+    assert all(float(t) < 1 for t in texts if t not in ('0',))
+    # x tick labels are angled to avoid overlap.
+    assert all(t.get_rotation() == 45 for t in bottom_left.get_xticklabels())
+    # The shared unit is announced once per axis at figure level.
+    fig_texts = [t.get_text() for t in fig.texts]
+    assert fig_texts.count('Position (Mbp)') == 2
+    plt.close(fig)

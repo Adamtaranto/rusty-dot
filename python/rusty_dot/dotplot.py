@@ -1139,6 +1139,28 @@ class DotPlotter:
             else:
                 main_ax.tick_params(axis='y', labelleft=True)
                 main_ax.set_ylabel(y_label, fontsize=8)
+        else:
+            # Multi-panel grids: raw-bp tick labels are long enough to
+            # overlap along the x axis.  Use one bp/Kbp/Mbp unit across all
+            # contigs (chosen from the longest, so positions stay
+            # comparable between panels) and angle the x tick labels; the
+            # shared unit is announced once per axis via a figure label.
+            max_len = max(
+                self.index.get_sequence_length(n) for n in (*query_names, *target_names)
+            )
+            for row in axes:
+                for ax in row:
+                    _apply_bp_units(ax.xaxis, max_len)
+                    _apply_bp_units(ax.yaxis, max_len)
+                    plt.setp(
+                        ax.get_xticklabels(),
+                        rotation=45,
+                        ha='right',
+                        rotation_mode='anchor',
+                    )
+            _divisor, grid_unit = _bp_unit(max_len)
+            fig.supxlabel(f'Position ({grid_unit})', fontsize=8)
+            fig.supylabel(f'Position ({grid_unit})', fontsize=8)
 
         # Feature-type colour legend whenever annotation features are shown.
         annotations_shown = [

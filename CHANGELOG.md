@@ -25,8 +25,10 @@ and this project adheres to
 - Focused single-pair (drill-down) views now label the axes with the
   contig names — left of the y axis, below the x axis, offset past the
   GFF side annotation tracks when present — and axis ticks read in
-  bp/Kbp/Mbp units instead of scientific notation. Overview grids are
-  unchanged.
+  bp/Kbp/Mbp units instead of scientific notation.
+- Multi-panel grids use one bp/Kbp/Mbp unit across every contig (chosen
+  from the longest, announced once per axis as "Position (Mbp)") and
+  angle the x tick labels 45° so long position labels no longer overlap.
 
 ### Changed (app UI batch)
 
