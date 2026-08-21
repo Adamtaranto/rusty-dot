@@ -4,7 +4,7 @@ Two method families exist:
 
 * **In-Pyodide** — k-mer matching via the rusty-dot Rust core, and PAF
   import (parsed directly from uploaded text).  Implemented here.
-* **biowasm tools** — minimap2 / LASTZ / nucmer run in an Aioli WebWorker
+* **biowasm tools** — minimap2 / nucmer run in an Aioli WebWorker
   on the JS side (``app/www/aligners.js``); their text output is handed
   back to Python and converted to ``PafRecord`` objects by parsers in this
   module.  Python builds the CLI argument list (:func:`build_tool_args`)
@@ -29,17 +29,14 @@ METHOD_LABELS: dict[str, str] = {
     'kmer': 'k-mer matching (rusty-dot)',
     'paf': 'Import PAF file',
     'minimap2': 'minimap2 (biowasm)',
-    'lastz': 'LASTZ (biowasm)',
     'nucmer': 'nucmer / MUMmer4 (biowasm)',
 }
 
 #: Methods implemented so far; the UI greys out the rest.
-AVAILABLE_METHODS: frozenset[str] = frozenset(
-    {'kmer', 'paf', 'minimap2', 'lastz', 'nucmer'}
-)
+AVAILABLE_METHODS: frozenset[str] = frozenset({'kmer', 'paf', 'minimap2', 'nucmer'})
 
 #: Methods that run in a biowasm (Aioli) WebWorker on the JS side.
-BIOWASM_TOOLS: frozenset[str] = frozenset({'minimap2', 'lastz', 'nucmer'})
+BIOWASM_TOOLS: frozenset[str] = frozenset({'minimap2', 'nucmer'})
 
 #: File names under which aligners.js mounts the two assemblies.
 TARGET_FILENAME = 'target.fa'
@@ -47,22 +44,6 @@ QUERY_FILENAME = 'query.fa'
 
 #: minimap2 presets exposed in the UI (assembly-to-assembly modes).
 MINIMAP2_PRESETS: tuple[str, ...] = ('asm5', 'asm10', 'asm20')
-
-#: Column order requested from LASTZ ``--format=general:`` output.  The
-#: parser (:func:`lastz_general_to_records`) indexes columns by this order,
-#: so the two must stay in sync.
-LASTZ_GENERAL_FIELDS: tuple[str, ...] = (
-    'name1',  # target name
-    'zstart1',  # target start (0-based)
-    'end1',  # target end (exclusive)
-    'length1',  # target length
-    'name2',  # query name
-    'strand2',  # query strand (+/-)
-    'zstart2+',  # query start on the forward strand (0-based)
-    'end2+',  # query end on the forward strand (exclusive)
-    'length2',  # query length
-    'nmatch',  # matched bases
-)
 
 
 def paf_alignment_from_text(text: str) -> PafAlignment:
@@ -165,17 +146,14 @@ def build_tool_args(tool: str, params: dict[str, Any]) -> list[str]:
 
         * ``minimap2`` — ``preset`` (one of :data:`MINIMAP2_PRESETS`),
           optional ``k`` and ``w`` (0 or ``None`` = use the preset default).
-        * ``lastz`` — ``step`` (seed step, >= 1), ``notransition`` (bool),
-          ``gapped`` (bool).
         * ``nucmer`` — ``l`` (min match length), ``c`` (min cluster
           length), ``maxmatch`` (bool).
 
     Returns
     -------
     list[str]
-        CLI arguments in tool order (options first, then positional
-        inputs; minimap2/nucmer take ``target query``, LASTZ takes
-        ``target[multiple] query``).
+        CLI arguments in tool order (options first, then the positional
+        ``target query`` inputs).
 
     Raises
     ------
@@ -195,27 +173,6 @@ def build_tool_args(tool: str, params: dict[str, Any]) -> list[str]:
                 args += [flag, str(int(value))]
         # minimap2 writes PAF to stdout by default: minimap2 [opts] target query
         return [*args, TARGET_FILENAME, QUERY_FILENAME]
-    if tool == 'lastz':
-        raw_step = params.get('step')
-        # step=20 is LASTZ's own recommendation for large-genome alignment;
-        # the step=1 tool default is built for short regions and is far too
-        # slow on whole assemblies in wasm.
-        step = 20 if raw_step is None else int(raw_step)
-        if step < 1:
-            raise ValueError(f'LASTZ step must be >= 1, got {step}')
-        args = [
-            # [multiple] treats the target file as a multi-sequence database.
-            f'{TARGET_FILENAME}[multiple]',
-            QUERY_FILENAME,
-            '--format=general:' + ','.join(LASTZ_GENERAL_FIELDS),
-        ]
-        if step != 1:
-            args.append(f'--step={step}')
-        if params.get('notransition'):
-            args.append('--notransition')
-        if not params.get('gapped', True):
-            args.append('--nogapped')
-        return args
     if tool == 'nucmer':
         raw_l = params.get('l')
         raw_c = params.get('c')
@@ -236,74 +193,6 @@ def build_tool_args(tool: str, params: dict[str, Any]) -> list[str]:
         # reads out.delta back after the run.
         return [*args, TARGET_FILENAME, QUERY_FILENAME]
     raise ValueError(f'Unknown biowasm tool: {tool!r}')
-
-
-def lastz_general_to_records(text: str) -> list[PafRecord]:
-    """Convert LASTZ ``--format=general:`` output to PAF records.
-
-    Expects the column order in :data:`LASTZ_GENERAL_FIELDS` (the format
-    requested by :func:`build_tool_args`).  LASTZ reports query
-    coordinates on the forward strand for the ``zstart2+``/``end2+``
-    columns, matching the PAF convention for ``-`` strand records.
-
-    Parameters
-    ----------
-    text : str
-        LASTZ general-format output (header lines start with ``#``).
-
-    Returns
-    -------
-    list[rusty_dot.paf_io.PafRecord]
-        One record per alignment line.
-
-    Raises
-    ------
-    ValueError
-        If a line has the wrong number of columns, non-numeric
-        coordinates, an invalid strand, or no alignments are found.
-    """
-    from rusty_dot.paf_io import PafRecord
-
-    n_cols = len(LASTZ_GENERAL_FIELDS)
-    records: list[PafRecord] = []
-    for lineno, line in enumerate(text.splitlines(), start=1):
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-        fields = line.split('\t')
-        if len(fields) != n_cols:
-            raise ValueError(
-                f'LASTZ output line {lineno} has {len(fields)} columns; '
-                f'expected {n_cols}: {line!r}'
-            )
-        try:
-            t_start, t_end, t_len = (int(fields[i]) for i in (1, 2, 3))
-            q_start, q_end, q_len = (int(fields[i]) for i in (6, 7, 8))
-            n_match = int(fields[9])
-        except ValueError as exc:
-            raise ValueError(f'Invalid LASTZ output at line {lineno}: {exc}') from exc
-        strand = fields[5]
-        if strand not in ('+', '-'):
-            raise ValueError(f'Invalid strand {strand!r} at LASTZ output line {lineno}')
-        records.append(
-            PafRecord(
-                query_name=fields[4],
-                query_len=q_len,
-                query_start=q_start,
-                query_end=q_end,
-                strand=strand,
-                target_name=fields[0],
-                target_len=t_len,
-                target_start=t_start,
-                target_end=t_end,
-                residue_matches=n_match,
-                alignment_block_len=max(t_end - t_start, q_end - q_start),
-                mapping_quality=255,
-            )
-        )
-    if not records:
-        raise ValueError('LASTZ produced no alignments')
-    return records
 
 
 def nucmer_delta_to_records(text: str) -> list[PafRecord]:
@@ -421,8 +310,8 @@ def alignment_from_tool_output(tool: str, text: str) -> PafAlignment:
     tool : str
         One of :data:`BIOWASM_TOOLS`.
     text : str
-        The tool's output: PAF text (minimap2), general-format text
-        (LASTZ), or delta-file content (nucmer).
+        The tool's output: PAF text (minimap2) or delta-file content
+        (nucmer).
 
     Returns
     -------
@@ -439,8 +328,6 @@ def alignment_from_tool_output(tool: str, text: str) -> PafAlignment:
 
     if tool == 'minimap2':
         return paf_alignment_from_text(text)
-    if tool == 'lastz':
-        return PafAlignment.from_records(lastz_general_to_records(text))
     if tool == 'nucmer':
         return PafAlignment.from_records(nucmer_delta_to_records(text))
     raise ValueError(f'Unknown biowasm tool: {tool!r}')

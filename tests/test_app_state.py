@@ -287,7 +287,8 @@ def test_method_choices_exclude_paf_input_mode():
 
     choices = app_module._method_choices()
     assert 'paf' not in choices
-    assert {'kmer', 'minimap2', 'lastz', 'nucmer'} <= set(choices)
+    assert {'kmer', 'minimap2', 'nucmer'} <= set(choices)
+    assert 'lastz' not in choices
 
 
 def test_plot_config_identity_kwargs():

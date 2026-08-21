@@ -300,18 +300,6 @@ app_ui = ui.page_sidebar(
                 ),
             ),
             ui.panel_conditional(
-                "input.method === 'lastz'",
-                # Whole-assembly defaults: LASTZ's step=1 seeding is built for
-                # short regions and is extremely slow on tens of megabases;
-                # step=20 with exact seeds matches its own recommendation for
-                # large-genome alignment and keeps wasm runtimes in minutes.
-                ui.input_numeric('lastz_step', 'Seed step (--step)', 20, min=1),
-                ui.input_checkbox('lastz_gapped', 'Gapped extension', True),
-                ui.input_checkbox(
-                    'lastz_notransition', 'Exact seeds only (--notransition)', True
-                ),
-            ),
-            ui.panel_conditional(
                 "input.method === 'nucmer'",
                 # mummer's -l 20 -c 65 defaults are tuned for small regions;
                 # for assembly-scale dotplots they mostly add noise clusters
@@ -453,8 +441,8 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             raise ValueError(
                 f'Combined assemblies are {total / 1e6:.0f} Mb — the k-mer '
                 'index needs more memory than the browser allows above '
-                '~80 Mb and would crash the app. Use minimap2 (or LASTZ / '
-                'nucmer) for assemblies this size.'
+                '~80 Mb and would crash the app. Use minimap2 (or nucmer) '
+                'for assemblies this size.'
             )
         if total > _KMER_WARN_LIMIT:
             ui.notification_show(
@@ -524,7 +512,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             ui.notification_show(str(exc), type='error', duration=8)
 
     # --- W1: biowasm aligners ---
-    # Runs minimap2 / LASTZ / nucmer in a browser WebWorker via biowasm
+    # Runs minimap2 / nucmer in a browser WebWorker via biowasm
     # (Aioli).  Python builds the CLI args and plain-FASTA payload, sends a
     # 'rd_run_aligner' custom message to www/aligners.js, and receives the
     # tool's text output back through the 'aligner_result' input.
@@ -577,12 +565,6 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 'preset': input.mm2_preset(),
                 'k': int(input.mm2_k() or 0),
                 'w': int(input.mm2_w() or 0),
-            }
-        if method == 'lastz':
-            return {
-                'step': int(input.lastz_step() or 20),
-                'gapped': bool(input.lastz_gapped()),
-                'notransition': bool(input.lastz_notransition()),
             }
         return {
             'l': int(input.nucmer_l() or 100),

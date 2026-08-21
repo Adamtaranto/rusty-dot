@@ -8,6 +8,12 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Removed
+
+- Browser app: LASTZ was removed as an alignment method (its wasm build was
+  impractically slow on assembly-scale inputs compared with minimap2 and
+  nucmer). Precomputed LASTZ alignments can still be imported as PAF.
+
 ### Performance (app rendering)
 
 - Browser app: line width and min match length now update **instantly**

@@ -45,7 +45,7 @@ pinned `nightly-2025-02-17` Rust toolchain); see the `wasm-build` job in
 - **Self-alignment**: tick "Align assembly to itself" to compare one
   assembly against itself without uploading it twice.
 - **Identity colouring**: for methods that report identity (minimap2,
-  LASTZ, nucmer, PAF import) alignments can be coloured by % identity
+  nucmer, PAF import) alignments can be coloured by % identity
   instead of forward/reverse strand.
 - **Instant display options**: line width and min match length are applied
   client-side inside the interactive report (CSS + postMessage) — changing
@@ -66,5 +66,5 @@ pinned `nightly-2025-02-17` Rust toolchain); see the `wasm-build` job in
 |---|---|---|
 | k-mer matching | rusty-dot wasm wheel (Pyodide) | ✅ |
 | PAF import | pure Python | ✅ |
-| minimap2 / LASTZ / nucmer | biowasm (Aioli WebWorker; fetched from the biowasm CDN at runtime) | ✅ |
+| minimap2 / nucmer | biowasm (Aioli WebWorker; fetched from the biowasm CDN at runtime) | ✅ |
 | BLAST | — | not possible: no production WASM build of BLAST+ exists |

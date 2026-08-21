@@ -13,7 +13,7 @@ Try rusty-dot without installing anything:
 **<https://adamtaranto.github.io/rusty-dot/app/>**.
 The app runs entirely in your browser (WebAssembly + Pyodide) — uploaded
 assemblies never leave your machine. Align with the k-mer engine, minimap2,
-LASTZ, or nucmer (or import a PAF file, or align an assembly to itself),
+or nucmer (or import a PAF file, or align an assembly to itself),
 overlay GFF3 annotations with per-type toggles and colours, reconfigure the
 dotplot without recomputing, cancel long aligner runs mid-flight, and
 download SVG/PDF plots, PAF alignments, and a reordered/reoriented query
