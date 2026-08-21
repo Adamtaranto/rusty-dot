@@ -178,7 +178,7 @@
   color: var(--rd-fg);
 }
 
-/* Compact 'how to navigate' hint above the interactive report. */
+/* Compact 'how to navigate' hint below the interactive report. */
 .rd-nav-hint {
   font-size: 0.78rem;
   line-height: 1.4;
@@ -187,8 +187,12 @@
   border: 1px solid var(--rd-border);
   border-radius: var(--rd-radius);
   padding: 0.3rem 0.6rem;
-  flex: 1 1 22rem;
   transition: background-color var(--rd-transition), color var(--rd-transition);
+}
+
+.rd-nav-hint b {
+  color: var(--rd-fg);
+  font-weight: 600;
 }
 
 .rd-report-frame {

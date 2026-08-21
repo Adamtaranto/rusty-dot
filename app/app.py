@@ -1306,6 +1306,40 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             title='Interactive dotplot report',
         )
 
+    def _nav_hint(focused: bool):
+        """Build the navigation-tips box shown under the interactive report.
+
+        Parameters
+        ----------
+        focused : bool
+            Whether the focused single-pair view is active; panel-click tips
+            do not apply there (click-to-focus is disabled on single-panel
+            reports).
+
+        Returns
+        -------
+        htmltools.Tag
+            The hint ``div`` with each action term in bold.
+        """
+        tips = [
+            ('scroll', 'pan up/down'),
+            ('Shift+scroll', 'pan left/right'),
+            ('Cmd/Ctrl+scroll', 'zoom'),
+            ('drag', 'zoom to region'),
+        ]
+        if not focused:
+            tips.append(('click panel', 'focus'))
+        tips.append(('click match', 'details'))
+        tips.append(('Esc', 'reset'))
+        if not focused:
+            tips.append(('double-click panel', 'standalone view'))
+        parts: list = [ui.tags.b('Navigate: ')]
+        for i, (action, effect) in enumerate(tips):
+            if i:
+                parts.append(' · ')
+            parts += [ui.tags.b(action), f' = {effect}']
+        return ui.div(*parts, class_='rd-nav-hint')
+
     @render.ui
     def plot_area():
         if result() is None:
@@ -1322,22 +1356,13 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             )
             toolbar.append(ui.span(f'{pair[0]} vs {pair[1]}', class_='rd-focus-label'))
         if input.interactive():
-            toolbar.append(
-                ui.div(
-                    ui.tags.b('Navigate: '),
-                    'scroll = pan up/down · Shift+scroll = pan left/right · '
-                    'Cmd/Ctrl+scroll = zoom · drag = zoom to region · '
-                    'click panel = focus · click match = details · '
-                    'Esc = reset · double-click panel = standalone view',
-                    class_='rd-nav-hint',
-                )
-            )
             body = ui.output_ui('report_frame')
         else:
             body = ui.output_plot('dotplot', height='72vh')
         return ui.div(
             ui.div(*toolbar, class_='rd-plot-toolbar') if toolbar else None,
             body,
+            _nav_hint(pair is not None) if input.interactive() else None,
             class_='rd-plot-area',
         )
 
