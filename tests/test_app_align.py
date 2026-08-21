@@ -11,7 +11,6 @@ sys.path.insert(0, str(APP_DIR))
 from core.align import (  # noqa: E402
     AVAILABLE_METHODS,
     BIOWASM_TOOLS,
-    LASTZ_GENERAL_FIELDS,
     METHOD_LABELS,
     MINIMAP2_PRESETS,
     QUERY_FILENAME,
@@ -19,7 +18,6 @@ from core.align import (  # noqa: E402
     alignment_from_tool_output,
     build_tool_args,
     fasta_text,
-    lastz_general_to_records,
     nucmer_delta_to_records,
 )
 from core.cache import SessionCache  # noqa: E402
@@ -29,11 +27,13 @@ from core.fasta import parse_fasta_bytes  # noqa: E402
 
 
 def test_biowasm_methods_available():
-    assert BIOWASM_TOOLS == {'minimap2', 'lastz', 'nucmer'}
+    assert BIOWASM_TOOLS == {'minimap2', 'nucmer'}
     assert BIOWASM_TOOLS <= AVAILABLE_METHODS
     assert BIOWASM_TOOLS <= set(METHOD_LABELS)
     # BLAST must not appear: no production WASM build exists.
     assert not any('blast' in m.lower() for m in METHOD_LABELS)
+    # LASTZ was removed from the app.
+    assert 'lastz' not in METHOD_LABELS
 
 
 # ---------------------------------------------------------------- fasta_text
@@ -88,34 +88,44 @@ def test_minimap2_args_negative_k():
         build_tool_args('minimap2', {'preset': 'asm5', 'k': -3})
 
 
-def test_lastz_args_defaults():
-    args = build_tool_args('lastz', {'step': 1, 'gapped': True, 'notransition': False})
+def test_minimap2_args_min_chaining_score():
+    args = build_tool_args('minimap2', {'preset': 'asm20', 'm': 200})
+    assert args == ['-x', 'asm20', '-m', '200', 'target.fa', 'query.fa']
+
+
+def test_minimap2_args_negative_m():
+    with pytest.raises(ValueError, match='-m'):
+        build_tool_args('minimap2', {'preset': 'asm20', 'm': -1})
+
+
+def test_minimap2_args_repeat_flags():
+    args = build_tool_args('minimap2', {'preset': 'asm20', 'P': True, 'D': True})
+    assert args == ['-x', 'asm20', '-P', '-D', 'target.fa', 'query.fa']
+
+
+def test_minimap2_args_repeat_flags_off_by_default():
+    args = build_tool_args('minimap2', {'preset': 'asm20', 'P': False, 'D': False})
+    assert '-P' not in args
+    assert '-D' not in args
+
+
+def test_minimap2_args_all_repeat_options():
+    args = build_tool_args(
+        'minimap2', {'preset': 'asm5', 'k': 19, 'w': 19, 'm': 200, 'P': True}
+    )
     assert args == [
-        'target.fa[multiple]',
+        '-x',
+        'asm5',
+        '-k',
+        '19',
+        '-w',
+        '19',
+        '-m',
+        '200',
+        '-P',
+        'target.fa',
         'query.fa',
-        '--format=general:' + ','.join(LASTZ_GENERAL_FIELDS),
     ]
-    # Target precedes query and is marked multi-sequence.
-    assert args[0].startswith(TARGET_FILENAME)
-
-
-def test_lastz_args_all_options():
-    args = build_tool_args('lastz', {'step': 10, 'gapped': False, 'notransition': True})
-    assert '--step=10' in args
-    assert '--notransition' in args
-    assert '--nogapped' in args
-
-
-def test_lastz_args_bad_step():
-    with pytest.raises(ValueError, match='step'):
-        build_tool_args('lastz', {'step': 0})
-
-
-def test_lastz_default_step_is_assembly_scale():
-    # Omitting step falls back to 20 (large-genome seeding), not the tool's
-    # step=1 default that is unusably slow on whole assemblies in wasm.
-    args = build_tool_args('lastz', {})
-    assert '--step=20' in args
 
 
 def test_nucmer_default_params_are_assembly_scale():
@@ -136,6 +146,18 @@ def test_nucmer_args_maxmatch():
     assert args[1:] == ['-l', '15', '-c', '40', 'target.fa', 'query.fa']
 
 
+def test_nucmer_args_nosimplify():
+    args = build_tool_args('nucmer', {'l': 15, 'c': 40, 'nosimplify': True})
+    assert args == ['--nosimplify', '-l', '15', '-c', '40', 'target.fa', 'query.fa']
+
+
+def test_nucmer_args_maxmatch_and_nosimplify():
+    args = build_tool_args(
+        'nucmer', {'l': 15, 'c': 40, 'maxmatch': True, 'nosimplify': True}
+    )
+    assert args[:2] == ['--maxmatch', '--nosimplify']
+
+
 @pytest.mark.parametrize('params', [{'l': 0}, {'c': -1}])
 def test_nucmer_args_bad_values(params):
     with pytest.raises(ValueError, match='nucmer'):
@@ -145,106 +167,6 @@ def test_nucmer_args_bad_values(params):
 def test_build_tool_args_unknown_tool():
     with pytest.raises(ValueError, match='Unknown biowasm tool'):
         build_tool_args('blast', {})
-
-
-# ---------------------------------------------------------------- LASTZ parser
-
-LASTZ_HEADER = '#' + '\t'.join(LASTZ_GENERAL_FIELDS)
-
-
-def _lastz_line(
-    name1='t1',
-    zstart1=10,
-    end1=60,
-    length1=200,
-    name2='q1',
-    strand2='+',
-    zstart2=0,
-    end2=50,
-    length2=100,
-    nmatch=48,
-):
-    return '\t'.join(
-        str(v)
-        for v in [
-            name1,
-            zstart1,
-            end1,
-            length1,
-            name2,
-            strand2,
-            zstart2,
-            end2,
-            length2,
-            nmatch,
-        ]
-    )
-
-
-def test_lastz_parser_forward():
-    text = LASTZ_HEADER + '\n' + _lastz_line() + '\n'
-    (rec,) = lastz_general_to_records(text)
-    assert rec.query_name == 'q1'
-    assert rec.target_name == 't1'
-    assert (rec.query_start, rec.query_end, rec.query_len) == (0, 50, 100)
-    assert (rec.target_start, rec.target_end, rec.target_len) == (10, 60, 200)
-    assert rec.strand == '+'
-    assert rec.residue_matches == 48
-    assert rec.alignment_block_len == 50
-    assert rec.mapping_quality == 255
-
-
-def test_lastz_parser_reverse_strand_forward_coords():
-    # zstart2+/end2+ are already forward-strand coords; the parser must
-    # keep them as-is (PAF requires forward query coords for '-' records).
-    text = _lastz_line(strand2='-', zstart2=20, end2=70)
-    (rec,) = lastz_general_to_records(text)
-    assert rec.strand == '-'
-    assert rec.query_start == 20
-    assert rec.query_end == 70
-    assert rec.query_start < rec.query_end
-
-
-def test_lastz_parser_multi_contig():
-    text = '\n'.join(
-        [
-            LASTZ_HEADER,
-            _lastz_line(name1='t1', name2='q1'),
-            _lastz_line(name1='t2', name2='q2', strand2='-'),
-            _lastz_line(name1='t1', name2='q2'),
-        ]
-    )
-    recs = lastz_general_to_records(text)
-    assert [(r.query_name, r.target_name) for r in recs] == [
-        ('q1', 't1'),
-        ('q2', 't2'),
-        ('q2', 't1'),
-    ]
-
-
-def test_lastz_parser_blank_lines_and_header_skipped():
-    text = '\n\n' + LASTZ_HEADER + '\n' + _lastz_line() + '\n\n'
-    assert len(lastz_general_to_records(text)) == 1
-
-
-def test_lastz_parser_wrong_column_count():
-    with pytest.raises(ValueError, match='columns'):
-        lastz_general_to_records('t1\t10\t60\n')
-
-
-def test_lastz_parser_non_numeric():
-    with pytest.raises(ValueError, match='line 1'):
-        lastz_general_to_records(_lastz_line(zstart1='abc'))
-
-
-def test_lastz_parser_bad_strand():
-    with pytest.raises(ValueError, match='strand'):
-        lastz_general_to_records(_lastz_line(strand2='.'))
-
-
-def test_lastz_parser_empty():
-    with pytest.raises(ValueError, match='no alignments'):
-        lastz_general_to_records(LASTZ_HEADER + '\n')
 
 
 # ---------------------------------------------------------------- delta parser
@@ -348,13 +270,6 @@ def test_alignment_from_minimap2_paf():
     assert aln.records[0].query_name == 'q1'
 
 
-def test_alignment_from_lastz_output():
-    aln = alignment_from_tool_output('lastz', LASTZ_HEADER + '\n' + _lastz_line())
-    assert len(aln) == 1
-    assert aln.query_names == ['q1']
-    assert aln.target_names == ['t1']
-
-
 def test_alignment_from_nucmer_delta():
     aln = alignment_from_tool_output('nucmer', DELTA_FWD)
     assert len(aln) == 1
@@ -389,7 +304,7 @@ def test_cache_keying_by_method_params_and_digests():
         cache.get_paf('minimap2', {**params, 'k': 19}, query.digest, target.digest)
         is None
     )
-    assert cache.get_paf('lastz', params, query.digest, target.digest) is None
+    assert cache.get_paf('nucmer', params, query.digest, target.digest) is None
     assert cache.get_paf('minimap2', params, target.digest, query.digest) is None
 
 
@@ -400,9 +315,15 @@ def test_cache_roundtrip_via_build_args_params():
     q = parse_fasta_bytes(b'>q\nAAAA\n')
     t = parse_fasta_bytes(b'>t\nTTTT\n')
     all_params = {
-        'minimap2': {'preset': 'asm5', 'k': 19, 'w': 10},
-        'lastz': {'step': 5, 'gapped': True, 'notransition': False},
-        'nucmer': {'l': 20, 'c': 65, 'maxmatch': True},
+        'minimap2': {
+            'preset': 'asm5',
+            'k': 19,
+            'w': 10,
+            'm': 200,
+            'P': True,
+            'D': False,
+        },
+        'nucmer': {'l': 20, 'c': 65, 'maxmatch': True, 'nosimplify': True},
     }
     aln = alignment_from_tool_output('nucmer', DELTA_FWD)
     for tool, params in all_params.items():

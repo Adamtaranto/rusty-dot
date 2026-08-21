@@ -35,7 +35,6 @@
   // name, outputFile: file to read back instead of stdout (or null)}
   var TOOLS = {
     minimap2: { module: 'minimap2/2.22', program: 'minimap2', outputFile: null },
-    lastz: { module: 'lastz/1.04.52', program: 'lastz', outputFile: null },
     nucmer: {
       // Object spec: Aioli's 3-part string form is tool/PROGRAM/version,
       // so the object form is used to keep the fields unambiguous.
@@ -62,12 +61,11 @@
   var currentRun = null; // {requestId, tool} while a tool is executing
 
   // A hung init/exec (bad CDN asset, wedged WebWorker) must reject rather
-  // than block the run queue forever.  Real assemblies can keep LASTZ and
-  // nucmer busy for many minutes in wasm, so runs get per-tool budgets.
+  // than block the run queue forever.  Real assemblies can keep nucmer
+  // busy for many minutes in wasm, so runs get per-tool budgets.
   var INIT_TIMEOUT_MS = 180000;
   var RUN_TIMEOUT_MS = {
     minimap2: 300000,
-    lastz: 600000,
     nucmer: 600000,
   };
 
@@ -113,9 +111,9 @@
       cliPromises[tool] = withTimeout(
         loadAioliScript().then(function () {
           // printInterleaved:false keeps stdout separate from stderr —
-          // minimap2/lastz write their PAF/general output to stdout but
-          // also log progress to stderr, and the default interleaved
-          // string is unparseable.
+          // minimap2 writes its PAF output to stdout but also logs
+          // progress to stderr, and the default interleaved string is
+          // unparseable.
           return new window.Aioli([TOOLS[tool].module], {
             printInterleaved: false,
           });

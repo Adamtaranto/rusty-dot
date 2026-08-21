@@ -101,6 +101,28 @@ def _method_choices() -> dict[str, str]:
     }
 
 
+def _lbl(text: str, tip: str):
+    """Input label with a hoverable info icon explaining the setting.
+
+    Parameters
+    ----------
+    text : str
+        The visible label text.
+    tip : str
+        One-line explanation shown in a tooltip on the icon.
+
+    Returns
+    -------
+    htmltools.Tag
+        Label span suitable as any input's ``label`` argument.
+    """
+    return ui.span(
+        text,
+        ' ',
+        ui.tooltip(ui.tags.span('ⓘ', class_='rd-info'), tip, placement='right'),
+    )
+
+
 # --- W2: interactive plot ---------------------------------------------------
 # Script injected into the generated HTML report before embedding: posts a
 # message to the parent app window when a dotplot panel is double-clicked.
@@ -255,7 +277,15 @@ app_ui = ui.page_sidebar(
                 'Query assembly (FASTA / .gz)',
                 accept=['.fa', '.fasta', '.fna', '.gz'],
             ),
-            ui.input_checkbox('self_align', 'Align assembly to itself', False),
+            ui.input_checkbox(
+                'self_align',
+                _lbl(
+                    'Align assembly to itself',
+                    'Compare one assembly against itself to reveal repeats '
+                    'and segmental duplications — no second upload needed.',
+                ),
+                False,
+            ),
             ui.panel_conditional(
                 '!input.self_align',
                 ui.input_file(
@@ -264,17 +294,50 @@ app_ui = ui.page_sidebar(
                     accept=['.fa', '.fasta', '.fna', '.gz'],
                 ),
             ),
-            ui.input_select('method', 'Alignment method', choices=_method_choices()),
+            ui.input_select(
+                'method',
+                _lbl(
+                    'Alignment method',
+                    'k-mer: fast exact matching, fully offline; minimap2 / '
+                    'nucmer: full aligners compiled to WebAssembly (fetched '
+                    'from the biowasm CDN at runtime).',
+                ),
+                choices=_method_choices(),
+            ),
             ui.panel_conditional(
                 "input.method === 'kmer'",
-                ui.input_slider('k', 'k-mer size', min=8, max=64, value=21, step=1),
-                ui.input_checkbox('merge', 'Merge adjacent matches', True),
+                ui.input_slider(
+                    'k',
+                    _lbl(
+                        'k-mer size',
+                        'Exact-match seed length; larger k gives fewer, more '
+                        'specific matches.',
+                    ),
+                    min=8,
+                    max=64,
+                    value=21,
+                    step=1,
+                ),
+                ui.input_checkbox(
+                    'merge',
+                    _lbl(
+                        'Merge adjacent matches',
+                        'Join runs of adjacent k-mer hits into longer '
+                        'diagonal segments.',
+                    ),
+                    True,
+                ),
                 # Compute-time filter: repeat-rich assembly pairs can produce
                 # millions of short match blocks that exhaust browser memory;
                 # dropping them natively keeps real genomes workable.
                 ui.input_numeric(
                     'kmer_min_block',
-                    'Min match block (bp, 0 = keep all)',
+                    _lbl(
+                        'Min match block (bp, 0 = keep all)',
+                        'Drop merged match blocks shorter than this before '
+                        'they reach the plot; keeps repeat-rich genome pairs '
+                        'from producing millions of records.',
+                    ),
                     50,
                     min=0,
                 ),
@@ -284,31 +347,67 @@ app_ui = ui.page_sidebar(
                 "input.method === 'minimap2'",
                 ui.input_select(
                     'mm2_preset',
-                    'Preset (-x)',
+                    _lbl(
+                        'Preset (-x)',
+                        'Divergence preset: asm5 ≲1% sequence divergence, '
+                        'asm10 ≲5%, asm20 ≲10% (safe default across '
+                        'strains/isolates).',
+                    ),
                     choices={p: p for p in MINIMAP2_PRESETS},
                     selected='asm20',
                 ),
-                ui.help_text(
-                    'asm5 ≲1% sequence divergence, asm10 ≲5%, asm20 ≲10% '
-                    '(safe default across strains/isolates).'
+                ui.input_numeric(
+                    'mm2_k',
+                    _lbl(
+                        'k-mer size (-k, 0 = preset default)',
+                        'Minimizer k-mer length; smaller values increase '
+                        'sensitivity for diverged repeats. The asm presets '
+                        'default to k=19.',
+                    ),
+                    0,
+                    min=0,
+                    max=28,
                 ),
                 ui.input_numeric(
-                    'mm2_k', 'k-mer size (-k, 0 = preset default)', 0, min=0, max=28
+                    'mm2_w',
+                    _lbl(
+                        'Minimizer window (-w, 0 = preset default)',
+                        'Minimizer window size; smaller windows increase '
+                        'seed density. The asm presets default to w=19.',
+                    ),
+                    0,
+                    min=0,
                 ),
                 ui.input_numeric(
-                    'mm2_w', 'Minimizer window (-w, 0 = preset default)', 0, min=0
+                    'mm2_m',
+                    _lbl(
+                        'Min chaining score (-m, 0 = default)',
+                        'Discard chains scoring below this; raise (e.g. 200) '
+                        'to filter weak or noisy repeat matches.',
+                    ),
+                    0,
+                    min=0,
                 ),
-            ),
-            ui.panel_conditional(
-                "input.method === 'lastz'",
-                # Whole-assembly defaults: LASTZ's step=1 seeding is built for
-                # short regions and is extremely slow on tens of megabases;
-                # step=20 with exact seeds matches its own recommendation for
-                # large-genome alignment and keeps wasm runtimes in minutes.
-                ui.input_numeric('lastz_step', 'Seed step (--step)', 20, min=1),
-                ui.input_checkbox('lastz_gapped', 'Gapped extension', True),
                 ui.input_checkbox(
-                    'lastz_notransition', 'Exact seeds only (--notransition)', True
+                    'mm2_p',
+                    _lbl(
+                        'Retain all chains (-P)',
+                        'Keep every chain instead of dropping secondary '
+                        'matches, so each repeat copy maps — larger output.',
+                    ),
+                    False,
+                ),
+                ui.panel_conditional(
+                    'input.self_align',
+                    ui.input_checkbox(
+                        'mm2_d',
+                        _lbl(
+                            'Skip self-diagonal matches (-D)',
+                            'Drop the trivial full-length match of each '
+                            'contig against itself on the main diagonal.',
+                        ),
+                        False,
+                    ),
                 ),
             ),
             ui.panel_conditional(
@@ -317,10 +416,44 @@ app_ui = ui.page_sidebar(
                 # for assembly-scale dotplots they mostly add noise clusters
                 # and minutes of runtime.  -l 100 -c 200 is the conventional
                 # whole-genome comparison setting.
-                ui.input_numeric('nucmer_l', 'Min match length (-l)', 100, min=1),
-                ui.input_numeric('nucmer_c', 'Min cluster length (-c)', 200, min=1),
+                ui.input_numeric(
+                    'nucmer_l',
+                    _lbl(
+                        'Min match length (-l)',
+                        'Minimum exact-match anchor length; larger values '
+                        'run faster with fewer spurious matches.',
+                    ),
+                    100,
+                    min=1,
+                ),
+                ui.input_numeric(
+                    'nucmer_c',
+                    _lbl(
+                        'Min cluster length (-c)',
+                        'Minimum combined anchor length for a cluster to be '
+                        'reported as an alignment.',
+                    ),
+                    200,
+                    min=1,
+                ),
                 ui.input_checkbox(
-                    'nucmer_maxmatch', 'Use all matches (--maxmatch)', False
+                    'nucmer_maxmatch',
+                    _lbl(
+                        'Use all matches (--maxmatch)',
+                        'Use every anchor match regardless of uniqueness — '
+                        'required to see all copies of repetitive regions.',
+                    ),
+                    False,
+                ),
+                ui.input_checkbox(
+                    'nucmer_nosimplify',
+                    _lbl(
+                        'Keep repeat-induced alignments (--nosimplify)',
+                        'Keep shadowed clusters instead of simplifying them '
+                        'away — needed to find inexact repeats in '
+                        'self-alignments.',
+                    ),
+                    False,
                 ),
             ),
             # --- end W1 ---
@@ -338,27 +471,91 @@ app_ui = ui.page_sidebar(
         ui.hr(),
         ui.h5('Plot options'),
         # --- W2: interactive plot ---
-        ui.input_checkbox('interactive', 'Interactive plot (zoom & drill-down)', True),
-        ui.input_select('contig_order', 'Contig order', choices=ORDER_CHOICES),
-        ui.input_checkbox('auto_reverse', 'Auto-flip reversed contigs', False),
-        ui.input_checkbox('hide_internal_axes', 'Hide internal axes', False),
+        ui.input_checkbox(
+            'interactive',
+            _lbl(
+                'Interactive plot (zoom & drill-down)',
+                'Render a zoomable HTML report with clickable matches '
+                'instead of a static image.',
+            ),
+            True,
+        ),
+        ui.input_select(
+            'contig_order',
+            _lbl(
+                'Contig order',
+                'How contigs are arranged along the axes: upload order, '
+                'longest first, or reordered to maximise colinearity with '
+                'the other assembly.',
+            ),
+            choices=ORDER_CHOICES,
+        ),
+        ui.input_checkbox(
+            'auto_reverse',
+            _lbl(
+                'Auto-flip reversed contigs',
+                'Display contigs that align mostly in reverse on their '
+                'reverse strand so synteny reads as a forward diagonal.',
+            ),
+            False,
+        ),
+        ui.input_checkbox(
+            'hide_internal_axes',
+            _lbl(
+                'Hide internal axes',
+                'Remove the internal panel borders and ticks so the '
+                'all-vs-all grid reads as one continuous plot.',
+            ),
+            False,
+        ),
         # Identity colouring only makes sense for tool/PAF alignments (k-mer
         # matches are always 100% identity); output.result_kind is a hidden
         # text output that tracks the current result.
         ui.panel_conditional(
             "output.result_kind === 'paf'",
-            ui.input_checkbox('color_by_identity', 'Colour by % identity', False),
+            ui.input_checkbox(
+                'color_by_identity',
+                _lbl(
+                    'Colour by % identity',
+                    'Colour each match by its percent identity instead of '
+                    'forward/reverse strand (aligner and PAF results only).',
+                ),
+                False,
+            ),
             ui.panel_conditional(
                 'input.color_by_identity',
                 ui.input_select(
                     'identity_palette',
-                    'Identity palette',
+                    _lbl(
+                        'Identity palette',
+                        'Colour map used for the identity scale.',
+                    ),
                     choices=['viridis', 'plasma', 'cividis', 'coolwarm'],
                 ),
             ),
         ),
-        ui.input_numeric('min_length', 'Min match length (bp)', 0, min=0),
-        ui.input_numeric('dot_size', 'Line width', 0.5, min=0.1, max=5, step=0.1),
+        ui.input_numeric(
+            'min_length',
+            _lbl(
+                'Min match length (bp)',
+                'Hide matches shorter than this many base pairs — applied '
+                'instantly, without re-rendering.',
+            ),
+            0,
+            min=0,
+        ),
+        ui.input_numeric(
+            'dot_size',
+            _lbl(
+                'Line width',
+                'Stroke width of the match segments — applied instantly, '
+                'without re-rendering.',
+            ),
+            0.5,
+            min=0.1,
+            max=5,
+            step=0.1,
+        ),
         ui.hr(),
         # --- GFF annotations -------------------------------------------------
         ui.h5('Annotations (GFF3)'),
@@ -453,8 +650,8 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             raise ValueError(
                 f'Combined assemblies are {total / 1e6:.0f} Mb — the k-mer '
                 'index needs more memory than the browser allows above '
-                '~80 Mb and would crash the app. Use minimap2 (or LASTZ / '
-                'nucmer) for assemblies this size.'
+                '~80 Mb and would crash the app. Use minimap2 (or nucmer) '
+                'for assemblies this size.'
             )
         if total > _KMER_WARN_LIMIT:
             ui.notification_show(
@@ -524,7 +721,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             ui.notification_show(str(exc), type='error', duration=8)
 
     # --- W1: biowasm aligners ---
-    # Runs minimap2 / LASTZ / nucmer in a browser WebWorker via biowasm
+    # Runs minimap2 / nucmer in a browser WebWorker via biowasm
     # (Aioli).  Python builds the CLI args and plain-FASTA payload, sends a
     # 'rd_run_aligner' custom message to www/aligners.js, and receives the
     # tool's text output back through the 'aligner_result' input.
@@ -577,17 +774,18 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 'preset': input.mm2_preset(),
                 'k': int(input.mm2_k() or 0),
                 'w': int(input.mm2_w() or 0),
-            }
-        if method == 'lastz':
-            return {
-                'step': int(input.lastz_step() or 20),
-                'gapped': bool(input.lastz_gapped()),
-                'notransition': bool(input.lastz_notransition()),
+                'm': int(input.mm2_m() or 0),
+                'P': bool(input.mm2_p()),
+                # -D only applies when a sequence can meet itself; storing
+                # the effective value keeps the cache key honest when the
+                # checkbox stays ticked but self-align is turned off.
+                'D': bool(input.mm2_d()) and bool(input.self_align()),
             }
         return {
             'l': int(input.nucmer_l() or 100),
             'c': int(input.nucmer_c() or 200),
             'maxmatch': bool(input.nucmer_maxmatch()),
+            'nosimplify': bool(input.nucmer_nosimplify()),
         }
 
     async def _send_dataset(data: FastaInput) -> None:
@@ -1108,6 +1306,40 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             title='Interactive dotplot report',
         )
 
+    def _nav_hint(focused: bool):
+        """Build the navigation-tips box shown under the interactive report.
+
+        Parameters
+        ----------
+        focused : bool
+            Whether the focused single-pair view is active; panel-click tips
+            do not apply there (click-to-focus is disabled on single-panel
+            reports).
+
+        Returns
+        -------
+        htmltools.Tag
+            The hint ``div`` with each action term in bold.
+        """
+        tips = [
+            ('scroll', 'pan up/down'),
+            ('Shift+scroll', 'pan left/right'),
+            ('Cmd/Ctrl+scroll', 'zoom'),
+            ('drag', 'zoom to region'),
+        ]
+        if not focused:
+            tips.append(('click panel', 'focus'))
+        tips.append(('click match', 'details'))
+        tips.append(('Esc', 'reset'))
+        if not focused:
+            tips.append(('double-click panel', 'standalone view'))
+        parts: list = [ui.tags.b('Navigate: ')]
+        for i, (action, effect) in enumerate(tips):
+            if i:
+                parts.append(' · ')
+            parts += [ui.tags.b(action), f' = {effect}']
+        return ui.div(*parts, class_='rd-nav-hint')
+
     @render.ui
     def plot_area():
         if result() is None:
@@ -1124,22 +1356,13 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             )
             toolbar.append(ui.span(f'{pair[0]} vs {pair[1]}', class_='rd-focus-label'))
         if input.interactive():
-            toolbar.append(
-                ui.div(
-                    ui.tags.b('Navigate: '),
-                    'scroll = pan up/down · Shift+scroll = pan left/right · '
-                    'Cmd/Ctrl+scroll = zoom · drag = zoom to region · '
-                    'click panel = focus · click match = details · '
-                    'Esc = reset · double-click panel = standalone view',
-                    class_='rd-nav-hint',
-                )
-            )
             body = ui.output_ui('report_frame')
         else:
             body = ui.output_plot('dotplot', height='72vh')
         return ui.div(
             ui.div(*toolbar, class_='rd-plot-toolbar') if toolbar else None,
             body,
+            _nav_hint(pair is not None) if input.interactive() else None,
             class_='rd-plot-area',
         )
 

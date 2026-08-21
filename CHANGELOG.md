@@ -8,6 +8,34 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Removed
+
+- Browser app: LASTZ was removed as an alignment method (its wasm build was
+  impractically slow on assembly-scale inputs compared with minimap2 and
+  nucmer). Precomputed LASTZ alignments can still be imported as PAF.
+
+### Added (app UI batch)
+
+- Browser app: every aligner and plot setting gained a hoverable ⓘ info
+  icon explaining what the option does.
+- Browser app: repeat-genome aligner options — minimap2 `-m` (min chaining
+  score), `-P` (retain all chains) and `-D` (skip self-diagonal matches;
+  offered in self-alignment mode), and nucmer `--nosimplify` alongside the
+  existing `--maxmatch`.
+- Focused single-pair (drill-down) views now label the axes with the
+  contig names — left of the y axis, below the x axis, offset past the
+  GFF side annotation tracks when present — and axis ticks read in
+  bp/Kbp/Mbp units instead of scientific notation.
+- Multi-panel grids use one bp/Kbp/Mbp unit across every contig (chosen
+  from the longest, announced once per axis as "Position (Mbp)") and
+  angle the x tick labels 45° so long position labels no longer overlap.
+
+### Changed (app UI batch)
+
+- Browser app: the navigation tips moved from above the plot to below it,
+  with each action term (scroll, drag, Esc, …) in bold; the focused view
+  omits the panel-click tips that don't apply there.
+
 ### Performance (app rendering)
 
 - Browser app: line width and min match length now update **instantly**

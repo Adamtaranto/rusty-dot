@@ -19,6 +19,7 @@ import matplotlib.colors as mcolors
 import matplotlib.figure
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 
 from rusty_dot._annotation_draw import annotation_legend_handles, draw_track
@@ -65,6 +66,58 @@ def _resolve_rasterized(
     if rasterized == 'auto':
         return n_segments > threshold
     raise ValueError(f"rasterized must be True, False, or 'auto', got {rasterized!r}")
+
+
+# Extra axis-label padding (points) past a side annotation track, leaving
+# room for the tick labels drawn on the track's outer edge.
+_TICK_LABEL_PAD_PTS = 14.0
+
+
+def _bp_unit(span_bp: float) -> tuple[float, str]:
+    """Pick a base-pair display unit for an axis span.
+
+    Parameters
+    ----------
+    span_bp : float
+        Axis span in base pairs.
+
+    Returns
+    -------
+    tuple[float, str]
+        ``(divisor, unit)`` — ``(1e6, 'Mbp')`` for spans of 1 Mbp and up,
+        ``(1e3, 'Kbp')`` from 10 Kbp, else ``(1, 'bp')``.
+    """
+    if span_bp >= 1_000_000:
+        return 1e6, 'Mbp'
+    if span_bp >= 10_000:
+        return 1e3, 'Kbp'
+    return 1.0, 'bp'
+
+
+def _apply_bp_units(axis, span_bp: float) -> str:
+    """Format an axis's ticks in bp/Kbp/Mbp instead of raw base pairs.
+
+    Keeps tick text short (``1.2`` rather than ``1200000`` or matplotlib's
+    ``1e6`` offset notation); the caller appends the returned unit to the
+    axis label.
+
+    Parameters
+    ----------
+    axis : matplotlib.axis.Axis
+        The ``ax.xaxis`` / ``ax.yaxis`` to install the formatter on.
+    span_bp : float
+        Axis span in base pairs, used to choose the unit.
+
+    Returns
+    -------
+    str
+        The chosen unit ('bp', 'Kbp' or 'Mbp') for the axis label.
+    """
+    divisor, unit = _bp_unit(span_bp)
+    axis.set_major_formatter(
+        mticker.FuncFormatter(lambda value, _pos: f'{value / divisor:g}')
+    )
+    return unit
 
 
 def _chain_blocks(
@@ -941,7 +994,8 @@ class DotPlotter:
 
                 # Column label at top of each column (top row only), rotated.
                 # Use the display name (strip group prefix for CrossIndex).
-                if row_idx == 0:
+                # Focused single-pair views label the axes instead (below).
+                if row_idx == 0 and not (nrows == 1 and ncols == 1):
                     ax.set_title(
                         self._strip_group_prefix(t_name),
                         fontsize=8,
@@ -1051,6 +1105,62 @@ class DotPlotter:
                 )
                 drew_track_features = drew_track_features or lanes > 0
                 main_ax.tick_params(axis='x', labelbottom=False)
+
+        # Focused single-pair views: contig names become conventional axis
+        # labels — left of the y axis, below the x axis — and ticks read in
+        # bp/Kbp/Mbp units instead of matplotlib's scientific offset text.
+        if nrows == 1 and ncols == 1:
+            main_ax = axes[0][0]
+            q_name = query_names[0]
+            t_name = target_names[0]
+            q_len = self.index.get_sequence_length(q_name)
+            t_len = self.index.get_sequence_length(t_name)
+            x_unit = _apply_bp_units(main_ax.xaxis, t_len)
+            y_unit = _apply_bp_units(main_ax.yaxis, q_len)
+            x_label = f'{self._strip_group_prefix(t_name)} ({x_unit})'
+            y_label = f'{self._strip_group_prefix(q_name)} ({y_unit})'
+            # When a side annotation track occupies an axis edge, its outer
+            # edge carries the tick labels and the name label pads past the
+            # whole band (fixed inches -> points).
+            track_pad = annotation_track_size * 72.0 + _TICK_LABEL_PAD_PTS
+            if x_track_ax is not None and x_track_ax.axison:
+                _apply_bp_units(x_track_ax.xaxis, t_len)
+                x_track_ax.tick_params(
+                    axis='x', bottom=True, labelbottom=True, labelsize=6
+                )
+                main_ax.set_xlabel(x_label, fontsize=8, labelpad=track_pad)
+            else:
+                main_ax.tick_params(axis='x', labelbottom=True)
+                main_ax.set_xlabel(x_label, fontsize=8)
+            if y_track_ax is not None and y_track_ax.axison:
+                _apply_bp_units(y_track_ax.yaxis, q_len)
+                y_track_ax.tick_params(axis='y', left=True, labelleft=True, labelsize=6)
+                main_ax.set_ylabel(y_label, fontsize=8, labelpad=track_pad)
+            else:
+                main_ax.tick_params(axis='y', labelleft=True)
+                main_ax.set_ylabel(y_label, fontsize=8)
+        else:
+            # Multi-panel grids: raw-bp tick labels are long enough to
+            # overlap along the x axis.  Use one bp/Kbp/Mbp unit across all
+            # contigs (chosen from the longest, so positions stay
+            # comparable between panels) and angle the x tick labels; the
+            # shared unit is announced once per axis via a figure label.
+            max_len = max(
+                self.index.get_sequence_length(n) for n in (*query_names, *target_names)
+            )
+            for row in axes:
+                for ax in row:
+                    _apply_bp_units(ax.xaxis, max_len)
+                    _apply_bp_units(ax.yaxis, max_len)
+                    plt.setp(
+                        ax.get_xticklabels(),
+                        rotation=45,
+                        ha='right',
+                        rotation_mode='anchor',
+                    )
+            _divisor, grid_unit = _bp_unit(max_len)
+            fig.supxlabel(f'Position ({grid_unit})', fontsize=8)
+            fig.supylabel(f'Position ({grid_unit})', fontsize=8)
 
         # Feature-type colour legend whenever annotation features are shown.
         annotations_shown = [
@@ -1899,14 +2009,21 @@ class DotPlotter:
             rasterization_threshold=rasterization_threshold,
         )
 
+        # Contig names as conventional axis labels with bp/Kbp/Mbp ticks —
+        # matching plot()'s focused single-pair view.
+        display_t = self._strip_group_prefix(target_name)
+        display_q = self._strip_group_prefix(query_name)
+        q_len = self.index.get_sequence_length(query_name)
+        t_len = self.index.get_sequence_length(target_name)
+        x_unit = _apply_bp_units(main_ax.xaxis, t_len)
+        y_unit = _apply_bp_units(main_ax.yaxis, q_len)
+        x_label = f'{display_t} ({x_unit})'
+        y_label = f'{display_q} ({y_unit})'
         if has_tracks:
-            # Hide main-axis tick labels that duplicate the track labels.
-            plt.setp(main_ax.get_xticklabels(), visible=False)
-            plt.setp(main_ax.get_yticklabels(), visible=False)
-
-            # Display names for track axis labels (strip group prefix).
-            display_t = self._strip_group_prefix(target_name)
-            display_q = self._strip_group_prefix(query_name)
+            # The tracks own the near axis edges: their outer edges carry
+            # the tick labels and the name labels pad past the whole band.
+            main_ax.tick_params(axis='x', labelbottom=False)
+            main_ax.tick_params(axis='y', labelleft=False)
 
             # Shared lane-packed track rendering (strand arrows, rounded
             # rectangles, multi-part connectors) — identical to plot()'s
@@ -1915,18 +2032,36 @@ class DotPlotter:
                 x_track_ax,
                 annotation,  # type: ignore[arg-type]
                 display_t,
-                self.index.get_sequence_length(target_name),
+                t_len,
                 orientation='x',
             )
-            x_track_ax.set_xlabel(display_t, fontsize=8)
             draw_track(
                 y_track_ax,
                 annotation,  # type: ignore[arg-type]
                 display_q,
-                self.index.get_sequence_length(query_name),
+                q_len,
                 orientation='y',
             )
-            y_track_ax.set_ylabel(display_q, fontsize=8)
+            track_pad = annotation_track_size * 72.0 + _TICK_LABEL_PAD_PTS
+            if x_track_ax.axison:
+                _apply_bp_units(x_track_ax.xaxis, t_len)
+                x_track_ax.tick_params(
+                    axis='x', bottom=True, labelbottom=True, labelsize=6
+                )
+                main_ax.set_xlabel(x_label, fontsize=8, labelpad=track_pad)
+            else:
+                main_ax.tick_params(axis='x', labelbottom=True)
+                main_ax.set_xlabel(x_label, fontsize=8)
+            if y_track_ax.axison:
+                _apply_bp_units(y_track_ax.yaxis, q_len)
+                y_track_ax.tick_params(axis='y', left=True, labelleft=True, labelsize=6)
+                main_ax.set_ylabel(y_label, fontsize=8, labelpad=track_pad)
+            else:
+                main_ax.tick_params(axis='y', labelleft=True)
+                main_ax.set_ylabel(y_label, fontsize=8)
+        else:
+            main_ax.set_xlabel(x_label, fontsize=8)
+            main_ax.set_ylabel(y_label, fontsize=8)
 
         # Title: use display names (strip group prefix for CrossIndex).
         if title is None:

@@ -1674,3 +1674,116 @@ def test_identity_colorbar_appends_key_axes():
     plt.close(fig_plain)
     plt.close(fig_keyed)
     plt.close(fig_off)
+
+
+# ------------------------------------------------- focused-view axis labels
+
+
+@pytest.mark.parametrize(
+    ('span', 'divisor', 'unit'),
+    [
+        (500, 1.0, 'bp'),
+        (9_999, 1.0, 'bp'),
+        (10_000, 1e3, 'Kbp'),
+        (999_999, 1e3, 'Kbp'),
+        (1_000_000, 1e6, 'Mbp'),
+        (37_000_000, 1e6, 'Mbp'),
+    ],
+)
+def test_bp_unit_thresholds(span, divisor, unit):
+    from rusty_dot.dotplot import _bp_unit
+
+    assert _bp_unit(span) == (divisor, unit)
+
+
+def test_focused_pair_axis_labels_and_units(dotplot_index):
+    """A 1x1 plot labels the axes with contig names + units, no rotated title."""
+    plotter = DotPlotter(dotplot_index)
+    fig = plotter.plot(query_names=['seq1'], target_names=['seq2'])
+    ax = fig.axes[0]
+    assert ax.get_xlabel() == 'seq2 (bp)'
+    assert ax.get_ylabel() == 'seq1 (bp)'
+    assert ax.get_title() == ''
+    fig.canvas.draw()
+    tick_texts = [t.get_text() for t in ax.get_xticklabels()]
+    assert tick_texts
+    assert all('e' not in t and '×' not in t for t in tick_texts)
+    plt.close(fig)
+
+
+def test_focused_pair_ticks_scaled_to_unit():
+    """Mbp-scale focused plots show scaled tick values, not raw bp."""
+    from rusty_dot.paf_io import PafAlignment, PafRecord
+
+    rec = PafRecord(
+        'q1',
+        3_000_000,
+        0,
+        2_500_000,
+        '+',
+        't1',
+        4_000_000,
+        0,
+        2_500_000,
+        2_000_000,
+        2_500_000,
+        255,
+    )
+    plotter = DotPlotter(PafAlignment([rec]))
+    fig = plotter.plot(query_names=['q1'], target_names=['t1'])
+    ax = fig.axes[0]
+    assert ax.get_xlabel() == 't1 (Mbp)'
+    assert ax.get_ylabel() == 'q1 (Mbp)'
+    fig.canvas.draw()
+    tick_texts = [t.get_text() for t in ax.get_xticklabels() if t.get_text()]
+    # All tick values fit in the scaled range (no 7-digit raw bp text).
+    assert all(len(t.replace('.', '').replace('-', '')) <= 4 for t in tick_texts)
+    plt.close(fig)
+
+
+def test_grid_keeps_rotated_titles(dotplot_index):
+    """Multi-panel grids keep the rotated top titles and raw-bp ticks."""
+    plotter = DotPlotter(dotplot_index)
+    fig = plotter.plot(query_names=['seq1', 'seq2'], target_names=['seq1', 'seq2'])
+    top_titles = [ax.get_title() for ax in fig.axes[:2]]
+    assert top_titles == ['seq1', 'seq2']
+    plt.close(fig)
+
+
+def test_grid_shared_units_and_angled_x_ticks():
+    """Grids share one bp unit across contigs and angle the x tick labels."""
+    from rusty_dot.paf_io import PafAlignment, PafRecord
+
+    records = [
+        PafRecord(
+            'q1',
+            3_000_000,
+            0,
+            2_000_000,
+            '+',
+            't1',
+            4_000_000,
+            0,
+            2_000_000,
+            1_500_000,
+            2_000_000,
+            255,
+        ),
+        PafRecord(
+            'q2', 40_000, 0, 30_000, '+', 't2', 50_000, 0, 30_000, 25_000, 30_000, 255
+        ),
+    ]
+    plotter = DotPlotter(PafAlignment(records))
+    fig = plotter.plot(query_names=['q1', 'q2'], target_names=['t1', 't2'])
+    fig.canvas.draw()
+    bottom_left, bottom_right = fig.axes[2], fig.axes[3]
+    # The short q2/t2 contigs use the grid-wide Mbp unit, not their own Kbp.
+    texts = [t.get_text() for t in bottom_right.get_xticklabels() if t.get_text()]
+    assert texts
+    assert all(float(t) < 1 for t in texts if t not in ('0',))
+    # x tick labels are angled to avoid overlap.
+    assert all(t.get_rotation() == 45 for t in bottom_left.get_xticklabels())
+    # The shared unit is announced once per axis at figure level.
+    fig_texts = [t.get_text() for t in fig.texts]
+    assert fig_texts.count('Position (Mbp)') == 2
+    plt.close(fig)
