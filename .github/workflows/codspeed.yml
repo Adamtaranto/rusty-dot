@@ -1,17 +1,26 @@
 name: CodSpeed
 on:
-  push:
-    branches:
-      - main
+#  push:
+#    branches: [main]
   pull_request:
+    branches: [main]
+    paths:
+      - "benches/**"
+      - "src/**"
+      - "python/**"
+      - ".github/workflows/codspeed.yml"
   # `workflow_dispatch` allows CodSpeed to trigger backtest
   # performance analysis in order to generate initial data.
   workflow_dispatch:
+concurrency:
+  group: codspeed-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
   id-token: write # for OpenID Connect authentication with CodSpeed
 jobs:
   rust-benchmarks:
+    if: ${{ github.actor != 'dependabot[bot]' }} # Do not run on commits created by dependabot
     name: Rust benchmarks
     runs-on: ubuntu-latest
     steps:
@@ -43,6 +52,7 @@ jobs:
           mode: simulation
           run: cargo codspeed run
   python-benchmarks:
+    if: ${{ github.actor != 'dependabot[bot]' }} # Do not run on commits created by dependabot
     name: Python benchmarks
     runs-on: ubuntu-latest
     steps:
