@@ -88,6 +88,46 @@ def test_minimap2_args_negative_k():
         build_tool_args('minimap2', {'preset': 'asm5', 'k': -3})
 
 
+def test_minimap2_args_min_chaining_score():
+    args = build_tool_args('minimap2', {'preset': 'asm20', 'm': 200})
+    assert args == ['-x', 'asm20', '-m', '200', 'target.fa', 'query.fa']
+
+
+def test_minimap2_args_negative_m():
+    with pytest.raises(ValueError, match='-m'):
+        build_tool_args('minimap2', {'preset': 'asm20', 'm': -1})
+
+
+def test_minimap2_args_repeat_flags():
+    args = build_tool_args('minimap2', {'preset': 'asm20', 'P': True, 'D': True})
+    assert args == ['-x', 'asm20', '-P', '-D', 'target.fa', 'query.fa']
+
+
+def test_minimap2_args_repeat_flags_off_by_default():
+    args = build_tool_args('minimap2', {'preset': 'asm20', 'P': False, 'D': False})
+    assert '-P' not in args
+    assert '-D' not in args
+
+
+def test_minimap2_args_all_repeat_options():
+    args = build_tool_args(
+        'minimap2', {'preset': 'asm5', 'k': 19, 'w': 19, 'm': 200, 'P': True}
+    )
+    assert args == [
+        '-x',
+        'asm5',
+        '-k',
+        '19',
+        '-w',
+        '19',
+        '-m',
+        '200',
+        '-P',
+        'target.fa',
+        'query.fa',
+    ]
+
+
 def test_nucmer_default_params_are_assembly_scale():
     # Omitting -l/-c falls back to whole-genome settings (100/200) rather
     # than mummer's small-region defaults (20/65).
@@ -104,6 +144,18 @@ def test_nucmer_args_maxmatch():
     args = build_tool_args('nucmer', {'l': 15, 'c': 40, 'maxmatch': True})
     assert args[0] == '--maxmatch'
     assert args[1:] == ['-l', '15', '-c', '40', 'target.fa', 'query.fa']
+
+
+def test_nucmer_args_nosimplify():
+    args = build_tool_args('nucmer', {'l': 15, 'c': 40, 'nosimplify': True})
+    assert args == ['--nosimplify', '-l', '15', '-c', '40', 'target.fa', 'query.fa']
+
+
+def test_nucmer_args_maxmatch_and_nosimplify():
+    args = build_tool_args(
+        'nucmer', {'l': 15, 'c': 40, 'maxmatch': True, 'nosimplify': True}
+    )
+    assert args[:2] == ['--maxmatch', '--nosimplify']
 
 
 @pytest.mark.parametrize('params', [{'l': 0}, {'c': -1}])
@@ -263,8 +315,15 @@ def test_cache_roundtrip_via_build_args_params():
     q = parse_fasta_bytes(b'>q\nAAAA\n')
     t = parse_fasta_bytes(b'>t\nTTTT\n')
     all_params = {
-        'minimap2': {'preset': 'asm5', 'k': 19, 'w': 10},
-        'nucmer': {'l': 20, 'c': 65, 'maxmatch': True},
+        'minimap2': {
+            'preset': 'asm5',
+            'k': 19,
+            'w': 10,
+            'm': 200,
+            'P': True,
+            'D': False,
+        },
+        'nucmer': {'l': 20, 'c': 65, 'maxmatch': True, 'nosimplify': True},
     }
     aln = alignment_from_tool_output('nucmer', DELTA_FWD)
     for tool, params in all_params.items():

@@ -145,9 +145,11 @@ def build_tool_args(tool: str, params: dict[str, Any]) -> list[str]:
         Tool parameters from the UI:
 
         * ``minimap2`` — ``preset`` (one of :data:`MINIMAP2_PRESETS`),
-          optional ``k`` and ``w`` (0 or ``None`` = use the preset default).
+          optional ``k``, ``w`` and ``m`` (min chaining score; 0 or
+          ``None`` = use the preset default), plus boolean ``P`` (retain
+          all chains) and ``D`` (skip the same-name self-diagonal).
         * ``nucmer`` — ``l`` (min match length), ``c`` (min cluster
-          length), ``maxmatch`` (bool).
+          length), ``maxmatch`` (bool), ``nosimplify`` (bool).
 
     Returns
     -------
@@ -165,12 +167,16 @@ def build_tool_args(tool: str, params: dict[str, Any]) -> list[str]:
         if preset not in MINIMAP2_PRESETS:
             raise ValueError(f'Unknown minimap2 preset: {preset!r}')
         args = ['-x', preset]
-        for flag, key in (('-k', 'k'), ('-w', 'w')):
+        for flag, key in (('-k', 'k'), ('-w', 'w'), ('-m', 'm')):
             value = params.get(key) or 0
             if value < 0:
                 raise ValueError(f'minimap2 {flag} must be >= 0, got {value}')
             if value:
                 args += [flag, str(int(value))]
+        if params.get('P'):
+            args.append('-P')
+        if params.get('D'):
+            args.append('-D')
         # minimap2 writes PAF to stdout by default: minimap2 [opts] target query
         return [*args, TARGET_FILENAME, QUERY_FILENAME]
     if tool == 'nucmer':
@@ -188,6 +194,8 @@ def build_tool_args(tool: str, params: dict[str, Any]) -> list[str]:
         args = []
         if params.get('maxmatch'):
             args.append('--maxmatch')
+        if params.get('nosimplify'):
+            args.append('--nosimplify')
         args += ['-l', str(min_match), '-c', str(min_cluster)]
         # nucmer writes <prefix>.delta (default prefix "out"); aligners.js
         # reads out.delta back after the run.

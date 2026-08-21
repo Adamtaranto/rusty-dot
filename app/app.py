@@ -298,6 +298,16 @@ app_ui = ui.page_sidebar(
                 ui.input_numeric(
                     'mm2_w', 'Minimizer window (-w, 0 = preset default)', 0, min=0
                 ),
+                ui.input_numeric(
+                    'mm2_m', 'Min chaining score (-m, 0 = default)', 0, min=0
+                ),
+                ui.input_checkbox('mm2_p', 'Retain all chains (-P)', False),
+                ui.panel_conditional(
+                    'input.self_align',
+                    ui.input_checkbox(
+                        'mm2_d', 'Skip self-diagonal matches (-D)', False
+                    ),
+                ),
             ),
             ui.panel_conditional(
                 "input.method === 'nucmer'",
@@ -309,6 +319,11 @@ app_ui = ui.page_sidebar(
                 ui.input_numeric('nucmer_c', 'Min cluster length (-c)', 200, min=1),
                 ui.input_checkbox(
                     'nucmer_maxmatch', 'Use all matches (--maxmatch)', False
+                ),
+                ui.input_checkbox(
+                    'nucmer_nosimplify',
+                    'Keep repeat-induced alignments (--nosimplify)',
+                    False,
                 ),
             ),
             # --- end W1 ---
@@ -565,11 +580,18 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 'preset': input.mm2_preset(),
                 'k': int(input.mm2_k() or 0),
                 'w': int(input.mm2_w() or 0),
+                'm': int(input.mm2_m() or 0),
+                'P': bool(input.mm2_p()),
+                # -D only applies when a sequence can meet itself; storing
+                # the effective value keeps the cache key honest when the
+                # checkbox stays ticked but self-align is turned off.
+                'D': bool(input.mm2_d()) and bool(input.self_align()),
             }
         return {
             'l': int(input.nucmer_l() or 100),
             'c': int(input.nucmer_c() or 200),
             'maxmatch': bool(input.nucmer_maxmatch()),
+            'nosimplify': bool(input.nucmer_nosimplify()),
         }
 
     async def _send_dataset(data: FastaInput) -> None:
