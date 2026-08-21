@@ -10,71 +10,19 @@ index. Written in Rust with PyO3 python bindings.
 [![Web App](https://img.shields.io/badge/Web%20App-live-teal)](https://adamtaranto.github.io/rusty-dot/app/)
 
 Try rusty-dot without installing anything:
-**<https://adamtaranto.github.io/rusty-dot/app/>**.
+**[Launch Rusty-Dot Live](https://adamtaranto.github.io/rusty-dot/app/)**.
+
 The app runs entirely in your browser (WebAssembly + Pyodide) — uploaded
 assemblies never leave your machine. Align with the k-mer engine, minimap2,
-or nucmer (or import a PAF file, or align an assembly to itself),
-overlay GFF3 annotations with per-type toggles and colours, reconfigure the
-dotplot without recomputing, cancel long aligner runs mid-flight, and
-download SVG/PDF plots, PAF alignments, and a reordered/reoriented query
-FASTA. The k-mer method accepts up to ~80 Mb of combined input in-browser;
-larger genomes should use minimap2 or a local install. See
-[docs/webapp.md](docs/webapp.md) for capabilities and limits, and
-[app/README.md](app/README.md) to run or build it locally.
+or nucmer (or import a PAF file), overlay GFF3 annotations, and download SVG/PDF
+plots, PAF alignments, and a reordered/reoriented query FASTA.
 
-## Features
+In-browser computation is memory limited (~2GB), larger genomes should use
+minimap2 instead of k-mer based plotting. Alternatively, generate plots using 
+the python API localy or on google colab.
 
-- Read FASTA / gzipped FASTA files via [needletail](https://docs.rs/needletail)
-- Build a rolling-hash [ntHash](https://github.com/bcgsc/ntHash) k-mer index per
-  sequence in a single O(n) pass, in parallel across sequences (via
-  [rayon](https://docs.rs/rayon))
-- Compact canonical-hash index (both strands in one sorted CSR table,
-  ~12–16 bytes/bp) intersected with a two-pointer walk and byte-verified for
-  exact matching
-- **Both-strand k-mer matching**: forward (`+`) and reverse-complement (`-`)
-hits detected via `compare_sequences_stranded`, with a batched
-`compare_pairs_stranded(pairs, merge, min_block_len)` for whole Q×T grids
-(one native call; short blocks can be filtered before they reach Python)
-- Merge sequential k-mer runs into contiguous match blocks for both orientations:
-  - Forward-strand co-linear diagonal merging (`py_merge_kmer_runs`)
-  - RC anti-diagonal merging — standard inverted repeats (`py_merge_rev_runs`)
-  - RC co-diagonal merging — both arms run in same direction (`py_merge_rev_fwd_runs`)
-  - Unified strand-aware entry-point (`py_merge_runs`)
-- PAF format output for alignment records
-- Index serialization/deserialization with [serde](https://docs.rs/serde) +
-  postcard (stores sequence bytes; the k-mer index is rebuilt on load)
-- All-vs-all dotplot visualization with matplotlib:
-  - Forward hits drawn in **blue** (configurable via `dot_color`)
-  - Reverse-complement hits drawn in **red** (configurable via `rc_color`)
-  - Sequence names rendered once — at the bottom of each column and left of each row
-  - **SVG vector output** in addition to PNG/PDF via the `format` parameter
-  - **Minimum alignment length filter** (`min_length`) to suppress
-  short/spurious hits before rendering
-- Cross-index comparisons between two sequence sets (e.g. two genome assemblies)
-- Relative sequence scaling in dotplot subpanels
-- d-genies-style gravity contig ordering for maximum collinearity: matches are
-  weighted by `(1 + euclidean_length)²`, each contig is assigned to its single
-  best-matching chromosome, and reverse-oriented contigs are detected and can be
-  rendered flipped along the main diagonal (`DotPlotter.plot(reverse_contigs=…)`)
-- Export the collinearity layout to FASTA (`CrossIndex.write_fasta()`): contigs
-  written in the reordered order with reverse-oriented contigs reverse-complemented
-- **`PafAlignment.filter_by_min_length()`** — discard short alignment records from a loaded PAF file
-- **Identity colouring** for PAF-backed plots —
-  `plot(color_by_identity=True, identity_palette=…, identity_colorbar=True)`
-  shades match segments by percent identity with an optional colour key
-- **GFF3 annotation overlays** — `GffAnnotation.from_file/from_text/from_bytes`
-  (gzip auto-detected), per-type colours, diagonal shading behind alignments,
-  and lane-packed side tracks with strand arrows on focused single-pair plots
-- **Interactive HTML dotplot reports** (`DotPlotter.to_html()`, or an `.html`
-  output path): single self-contained file with click-to-focus sub-panels,
-  scroll zoom, a click-a-match detail bar, and clickable annotation features
-- Opt-in **Nature-journal plot style** via the `nature_style()` context manager
-  in `rusty_dot.style`
-- `plot(hide_internal_axes=True)` for continuous grid plots without internal
-  axis clutter
-- **Plot-time contig ordering** — `plot(contig_order='length'|'colinearity')`
-  with `auto_reverse=True` to flip reverse-oriented contigs automatically
-- Full Python bindings via [PyO3](https://pyo3.rs)
+See [docs/webapp.md](docs/webapp.md) for capabilities and limits, and
+[Python library tutorials](https://adamtaranto.github.io/rusty-dot/tutorials/quickstart/) to run analysis locally.
 
 ## Installation
 
@@ -93,34 +41,6 @@ pip install maturin
 # Build and install the python package
 maturin develop --release
 ```
-
-## Performance
-
-rusty-dot is built for large sequences and many-contig genomes:
-
-- **Always build with `--release`.** Debug builds are dramatically slower; the
-  release profile additionally enables link-time optimisation.
-- **Parallel index construction.** Building the per-sequence k-mer index for the
-  records of a FASTA file, and computing all-vs-all pairwise comparisons, run
-  across all available CPU cores (rayon) with the Python GIL released.
-- **Rolling-hash matching on a compact canonical index.** Each sequence is
-  scanned once with ntHash (forward and reverse-complement hashes rolled
-  together) into a single canonical-hash table: every k-mer window is keyed by
-  `min(forward, revcomp)` hash with a strand flag packed into its position,
-  sorted into three flat CSR arrays. That covers **both strands in
-  ~12–16 bytes per base pair** (the previous two-hash-map layout cost
-  ~100 B/bp). Matching intersects two indexes with a cache-friendly
-  two-pointer walk and byte-verifies representatives — no hash probing and no
-  suffix-array construction on the comparison path.
-- **Vector-first, high-resolution plotting.** Dotplot matches are built as NumPy
-  segment arrays and drawn with one `LineCollection` per panel/strand. By default
-  (`rasterized='auto'`) the match layer is **true vector** — infinitely zoomable in
-  SVG/PDF — until a panel exceeds `rasterization_threshold` segments, above which
-  only that layer is rasterised at `dpi` to bound file size (axes and labels
-  always stay vector; raise `dpi` for a higher-resolution PNG). Enable
-  `chain_gap=<bp>` to chain co-linear matches
-  across gaps into a few long lines, cutting render time and file size for dense,
-  genome-scale plots.
 
 ## Quick Start — single multi-FASTA index
 
@@ -345,3 +265,83 @@ idx.save("my_index.bin")
 idx2 = SequenceIndex(k=15)
 idx2.load("my_index.bin")
 ```
+
+## Features
+
+- Read FASTA / gzipped FASTA files via [needletail](https://docs.rs/needletail)
+- Build a rolling-hash [ntHash](https://github.com/bcgsc/ntHash) k-mer index per
+  sequence in a single O(n) pass, in parallel across sequences (via
+  [rayon](https://docs.rs/rayon))
+- Compact canonical-hash index (both strands in one sorted CSR table,
+  ~12–16 bytes/bp) intersected with a two-pointer walk and byte-verified for
+  exact matching
+- **Both-strand k-mer matching**: forward (`+`) and reverse-complement (`-`)
+hits detected via `compare_sequences_stranded`, with a batched
+`compare_pairs_stranded(pairs, merge, min_block_len)` for whole Q×T grids
+(one native call; short blocks can be filtered before they reach Python)
+- Merge sequential k-mer runs into contiguous match blocks for both orientations:
+  - Forward-strand co-linear diagonal merging (`py_merge_kmer_runs`)
+  - RC anti-diagonal merging — standard inverted repeats (`py_merge_rev_runs`)
+  - RC co-diagonal merging — both arms run in same direction (`py_merge_rev_fwd_runs`)
+  - Unified strand-aware entry-point (`py_merge_runs`)
+- PAF format output for alignment records
+- Index serialization/deserialization with [serde](https://docs.rs/serde) +
+  postcard (stores sequence bytes; the k-mer index is rebuilt on load)
+- All-vs-all dotplot visualization with matplotlib:
+  - Forward hits drawn in **blue** (configurable via `dot_color`)
+  - Reverse-complement hits drawn in **red** (configurable via `rc_color`)
+  - Sequence names rendered once — at the bottom of each column and left of each row
+  - **SVG vector output** in addition to PNG/PDF via the `format` parameter
+  - **Minimum alignment length filter** (`min_length`) to suppress
+  short/spurious hits before rendering
+- Cross-index comparisons between two sequence sets (e.g. two genome assemblies)
+- Relative sequence scaling in dotplot subpanels
+- d-genies-style gravity contig ordering for maximum collinearity: matches are
+  weighted by `(1 + euclidean_length)²`, each contig is assigned to its single
+  best-matching chromosome, and reverse-oriented contigs are detected and can be
+  rendered flipped along the main diagonal (`DotPlotter.plot(reverse_contigs=…)`)
+- Export the collinearity layout to FASTA (`CrossIndex.write_fasta()`): contigs
+  written in the reordered order with reverse-oriented contigs reverse-complemented
+- **`PafAlignment.filter_by_min_length()`** — discard short alignment records from a loaded PAF file
+- **Identity colouring** for PAF-backed plots —
+  `plot(color_by_identity=True, identity_palette=…, identity_colorbar=True)`
+  shades match segments by percent identity with an optional colour key
+- **GFF3 annotation overlays** — `GffAnnotation.from_file/from_text/from_bytes`
+  (gzip auto-detected), per-type colours, diagonal shading behind alignments,
+  and lane-packed side tracks with strand arrows on focused single-pair plots
+- **Interactive HTML dotplot reports** (`DotPlotter.to_html()`, or an `.html`
+  output path): single self-contained file with click-to-focus sub-panels,
+  scroll zoom, a click-a-match detail bar, and clickable annotation features
+- `plot(hide_internal_axes=True)` for continuous grid plots without internal
+  axis clutter
+- **Plot-time contig ordering** — `plot(contig_order='length'|'colinearity')`
+  with `auto_reverse=True` to flip reverse-oriented contigs automatically
+- Full Python bindings via [PyO3](https://pyo3.rs)
+
+## Performance
+
+rusty-dot is built for large sequences and many-contig genomes:
+
+- **Always build with `--release`.** Debug builds are dramatically slower; the
+  release profile additionally enables link-time optimisation.
+- **Parallel index construction.** Building the per-sequence k-mer index for the
+  records of a FASTA file, and computing all-vs-all pairwise comparisons, run
+  across all available CPU cores (rayon) with the Python GIL released.
+- **Rolling-hash matching on a compact canonical index.** Each sequence is
+  scanned once with ntHash (forward and reverse-complement hashes rolled
+  together) into a single canonical-hash table: every k-mer window is keyed by
+  `min(forward, revcomp)` hash with a strand flag packed into its position,
+  sorted into three flat CSR arrays. That covers **both strands in
+  ~12–16 bytes per base pair** (the previous two-hash-map layout cost
+  ~100 B/bp). Matching intersects two indexes with a cache-friendly
+  two-pointer walk and byte-verifies representatives — no hash probing and no
+  suffix-array construction on the comparison path.
+- **Vector-first, high-resolution plotting.** Dotplot matches are built as NumPy
+  segment arrays and drawn with one `LineCollection` per panel/strand. By default
+  (`rasterized='auto'`) the match layer is **true vector** — infinitely zoomable
+  in SVG/PDF — until a panel exceeds `rasterization_threshold` segments, above which
+  only that layer is rasterised at `dpi` to bound file size (axes and labels
+  always stay vector; raise `dpi` for a higher-resolution PNG). Enable
+  `chain_gap=<bp>` to chain co-linear matches
+  across gaps into a few long lines, cutting render time and file size for dense,
+  genome-scale plots.

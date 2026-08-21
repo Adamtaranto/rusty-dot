@@ -13,23 +13,13 @@ At its core, it builds a compact canonical-hash [ntHash](https://github.com/bcgs
 - **Read FASTA / gzipped FASTA files** via [needletail](https://docs.rs/needletail)
 - **Rolling-hash k-mer index** per sequence ([ntHash](https://github.com/bcgsc/ntHash)); records of a file are indexed in parallel across CPU cores ([rayon](https://docs.rs/rayon))
 - **Compact canonical index** — both strands share one sorted CSR table (~12–16 bytes/bp); shared k-mers are found by a two-pointer walk and byte-verified for exact matching
-- **Both-strand k-mer matching**: forward (`+`) and reverse-complement (`-`) hits via `compare_sequences_stranded`
-- **Complete RC hit coverage**: two patterns merged independently — anti-diagonal (standard inverted repeat) and co-diagonal (both arms same direction)
-- **Unified merge API** (`py_merge_runs`) handles all orientation cases with a single call
 - **PAF format output** for alignment records
 - **Index serialization/deserialization** with [serde](https://docs.rs/serde) + postcard (sequence bytes are stored; the k-mer index is rebuilt on load)
 - **All-vs-all dotplot visualization** with matplotlib: forward hits in blue, RC hits in red; edge-only axis labels in grid plots; subpanels scaled by sequence length by default (`scale_sequences=True`)
 - **SVG vector output** via the `format` parameter (`format='svg'`) or by using a `.svg` file extension — suitable for publication-quality figures
-- **Minimum alignment length filter** (`min_length`) on `DotPlotter.plot()` / `plot_single()` — suppresses short or spurious alignment hits before rendering
-- **Identity-based alignment colouring** — when alignments are loaded from a PAF file, pass `color_by_identity=True` to colour each segment by `residue_matches / alignment_block_len` using any Matplotlib colormap (`identity_palette`); add `identity_colorbar=True` for an inline colour key, or use `DotPlotter.plot_identity_colorbar()` for a standalone scale figure
 - **GFF3 annotation overlays** — `GffAnnotation` (from a file, text, or raw bytes; gzip auto-detected) shades features behind self-vs-self panels and draws lane-packed side tracks with strand arrows on focused single-pair plots; features are clickable in HTML reports
-- **`CrossIndex`** multi-group cross-index: N arbitrary sequence groups, configurable group pairs for alignment, per-group contig ordering (insertion order, length, or collinearity), compatible with `DotPlotter`. `compute_matches()` (with optional `merge` and `min_block_len`) is the primary computation step and must be called before `reorder_contigs()` / `reorder_for_colinearity()`
-- **`PafAlignment.filter_by_min_length()`** — discard short alignment records from a loaded PAF file; filters on query aligned length
 - **Interactive HTML dotplot reports** (`DotPlotter.to_html()`, or an `.html` output path) — single self-contained file with click-to-focus sub-panels, scroll zoom, and a click-a-match detail bar
-- **Nature-journal plot style** — opt-in via the `nature_style()` context manager in `rusty_dot.style`
-- **`plot(hide_internal_axes=True)`** — continuous grid plots without internal axis clutter
 - **Plot-time contig ordering** — `plot(contig_order='length'|'colinearity')` with `auto_reverse=True` to flip reverse-oriented contigs automatically
-- **Full Python bindings** via [PyO3](https://pyo3.rs)
 
 ## Quick Start
 
