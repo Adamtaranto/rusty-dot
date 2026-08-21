@@ -8,6 +8,23 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed (focused-view canvas)
+
+- Focused single-pair (drill-down) views with extreme sequence-length
+  ratios (tiny query vs long target) no longer let the title overlap the
+  plot area or truncate the y-axis contig label: the canvas reserves
+  absolute inch-based margins around the untouched panel (bp-per-inch
+  parity preserved), the title keeps a fixed physical offset, an
+  over-tall rotated y label falls back to horizontal, and ultra-thin
+  axes show a single end tick instead of overlapping position labels.
+
+### Changed (aligner options)
+
+- Browser app: the minimap2 `-k`/`-w`/`-m` inputs are pre-filled with the
+  selected preset's actual values (asm5/asm10: k=19 w=19; asm20: k=19
+  w=10; m=40) and refresh when the preset changes, replacing the
+  "0 = preset default" sentinel.
+
 ### Removed
 
 - Browser app: LASTZ was removed as an alignment method (its wasm build was

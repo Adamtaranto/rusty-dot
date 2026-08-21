@@ -385,3 +385,109 @@ def test_plot_single_tracks_labels_on_main_axes():
     assert all(ax.get_xlabel() == '' for ax in track_axes)
     assert all(ax.get_ylabel() == '' for ax in track_axes)
     plt.close(fig)
+
+
+# ------------------------------------------------- reverse-display mirroring
+
+
+@pytest.mark.parametrize(
+    ('start', 'end', 'seq_len', 'expected'),
+    [
+        (0, 10, 100, (90, 100)),
+        (100, 800, 2290, (1490, 2190)),
+        (0, 100, 100, (0, 100)),
+    ],
+)
+def test_mirror_half_open(start, end, seq_len, expected):
+    from rusty_dot._annotation_draw import _mirror
+
+    assert _mirror(start, end, seq_len) == expected
+    # Involution: mirroring twice restores the original interval.
+    assert _mirror(*_mirror(start, end, seq_len), seq_len) == (start, end)
+
+
+def test_focused_y_track_mirrors_on_reversed_query():
+    """reverse_contigs mirrors the y-track features; the x-track stays put."""
+    pl = _plotter()
+    ann = GffAnnotation.from_text(GFF)
+    c2_len = pl.index.get_sequence_length('c2')
+
+    def track_polys(**kwargs):
+        fig = pl.plot(
+            query_names=['c2'],
+            target_names=['c1'],
+            annotation_query=ann,
+            annotation_target=ann,
+            annotation_tracks=True,
+            **kwargs,
+        )
+        _main, y_track, x_track = fig.axes
+        y_polys = [p.get_xy() for p in y_track.patches if isinstance(p, Polygon)]
+        x_polys = [p.get_xy() for p in x_track.patches if isinstance(p, Polygon)]
+        plt.close(fig)
+        return y_polys, x_polys
+
+    fwd_y, fwd_x = track_polys()
+    rev_y, rev_x = track_polys(reverse_contigs={'c2'})
+
+    # c2's gene (0-based 100..800) mirrors to [c2_len-800, c2_len-100] on
+    # the y (along-sequence) coordinate of the y track.
+    ys = rev_y[0][:, 1]
+    assert ys.min() == c2_len - 800
+    assert ys.max() == c2_len - 100
+    fwd_ys = fwd_y[0][:, 1]
+    assert fwd_ys.min() == 100 and fwd_ys.max() == 800
+    # The target (x) track is untouched by a reversed *query* contig.
+    assert [p.tolist() for p in rev_x] == [p.tolist() for p in fwd_x]
+
+
+def test_auto_reverse_mirrors_diagonal_squares():
+    """auto_reverse (not explicit reverse_contigs) also mirrors squares."""
+    import random
+
+    from rusty_dot.paf_io import CrossIndex
+
+    comp = str.maketrans('ACGT', 'TGCA')
+    rng = random.Random(17)
+    chrom = ''.join(rng.choice('ACGT') for _ in range(1200))
+    cross = CrossIndex(k=11)
+    cross.add_sequence('c1', chrom.translate(comp)[::-1], group='qry')
+    cross.add_sequence('c1', chrom, group='ref')
+    plotter = DotPlotter(cross)
+    ann = GffAnnotation.from_text('c1\tt\tgene\t101\t300\t.\t+\t.\tID=a')
+    seq_len = len(chrom)
+
+    fig = plotter.plot(contig_order='colinearity', auto_reverse=True, annotation=ann)
+    ax = fig.axes[0]
+    patch_colls = [c for c in ax.collections if c.get_zorder() == 0.5]
+    assert patch_colls
+    rect = patch_colls[0].get_paths()[0]
+    xs, ys = rect.vertices[:, 0], rect.vertices[:, 1]
+    assert cross.reversed_contigs('qry') == {'c1'}
+    # x forward, y mirrored — same convention as explicit reverse_contigs.
+    assert xs.min() == 100 and xs.max() == 300
+    assert ys.min() == seq_len - 300 and ys.max() == seq_len - 100
+    plt.close(fig)
+
+
+def test_html_payload_keeps_genomic_coords_on_reversed_panel(tmp_path):
+    """The clickable-feature payload reports raw GFF coords, not display."""
+    pl = _plotter()
+    ann = GffAnnotation.from_text('c1\tt\tgene\t101\t300\t.\t+\t.\tID=a')
+    out = tmp_path / 'rev_report.html'
+    pl.to_html(
+        out,
+        query_names=['c1'],
+        target_names=['c1'],
+        annotation=ann,
+        reverse_contigs={'c1'},
+    )
+    html = out.read_text()
+    m = re.search(
+        r'<script type="application/json" id="rd-data">(.*?)</script>', html, re.S
+    )
+    payload = json.loads(m.group(1))
+    (annot,) = payload['panels']['rd-panel-0-0']['annotations']
+    # Original genomic locus and strand, even though the patch is mirrored.
+    assert annot['start'] == 100 and annot['end'] == 300
+    assert annot['strand'] == '+'

@@ -330,3 +330,34 @@ def test_cache_roundtrip_via_build_args_params():
         build_tool_args(tool, params)  # must not raise
         cache.put_paf(tool, params, aln, q.digest, t.digest)
         assert cache.get_paf(tool, params, q.digest, t.digest) is aln
+
+
+def test_minimap2_preset_defaults_table():
+    from core.align import MINIMAP2_PRESET_DEFAULTS
+
+    assert set(MINIMAP2_PRESET_DEFAULTS) == set(MINIMAP2_PRESETS)
+    # asm presets share k=19; asm20 lowers the minimizer window to 10;
+    # -m is minimap2's tool-wide default.
+    assert MINIMAP2_PRESET_DEFAULTS['asm5'] == {'k': 19, 'w': 19, 'm': 40}
+    assert MINIMAP2_PRESET_DEFAULTS['asm10'] == {'k': 19, 'w': 19, 'm': 40}
+    assert MINIMAP2_PRESET_DEFAULTS['asm20'] == {'k': 19, 'w': 10, 'm': 40}
+
+
+@pytest.mark.parametrize('preset', MINIMAP2_PRESETS)
+def test_minimap2_args_with_prefilled_defaults(preset):
+    from core.align import MINIMAP2_PRESET_DEFAULTS
+
+    d = MINIMAP2_PRESET_DEFAULTS[preset]
+    args = build_tool_args('minimap2', {'preset': preset, **d})
+    assert args == [
+        '-x',
+        preset,
+        '-k',
+        str(d['k']),
+        '-w',
+        str(d['w']),
+        '-m',
+        str(d['m']),
+        TARGET_FILENAME,
+        QUERY_FILENAME,
+    ]
