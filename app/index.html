@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>rusty-dot</title>
+    <script
+      src="./shinylive/load-shinylive-sw.js"
+      type="module"
+    ></script>
+    <script type="module">
+      import { runExportedApp } from "./shinylive/shinylive.js";
+      runExportedApp({
+        id: "root",
+        appEngine: "python",
+        relPath: "",
+      });
+    </script>
+    <link rel="stylesheet" href="./shinylive/style-resets.css" />
+    <link rel="stylesheet" href="./shinylive/shinylive.css" />
+    
+  </head>
+  <body>
+    
+    <div style="height: 100vh; width: 100vw" id="root"></div>
+    
+  <!-- rd-loading-splash -->
+<style>
+  #rd-splash {
+    position: fixed; inset: 0; z-index: 9999;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 1rem;
+    background: #fff; color: #1f3a5f;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+      Helvetica, Arial, sans-serif;
+    transition: opacity 0.4s ease;
+  }
+  #rd-splash.rd-hide { opacity: 0; pointer-events: none; }
+  #rd-splash h1 { font-size: 1.4rem; font-weight: 600; margin: 0; }
+  #rd-splash .rd-sub { font-size: 0.95rem; color: #48627f; }
+  #rd-splash .rd-spinner {
+    width: 42px; height: 42px; border-radius: 50%;
+    border: 4px solid #d6e2f0; border-top-color: #2c6bb3;
+    animation: rd-spin 0.9s linear infinite;
+  }
+  @keyframes rd-spin { to { transform: rotate(360deg); } }
+  @media (prefers-color-scheme: dark) {
+    #rd-splash { background: #14181d; color: #cfe1f5; }
+    #rd-splash .rd-sub { color: #8fa8c4; }
+    #rd-splash .rd-spinner { border-color: #2a3947; border-top-color: #5b9bd5; }
+  }
+</style>
+<div id="rd-splash">
+  <div class="rd-spinner"></div>
+  <h1>rusty-dot &middot; assembly comparison</h1>
+  <div class="rd-sub" id="rd-splash-msg">Starting&hellip;</div>
+  <div class="rd-sub" style="font-size: 0.8rem">
+    Everything runs in your browser &mdash; your files never leave your machine.
+  </div>
+</div>
+<script>
+  (function () {
+    'use strict';
+    var msgs = [
+      [0, 'Downloading the Python runtime (\u224830 MB on first visit, cached afterwards)\u2026'],
+      [8, 'Starting Python in your browser\u2026'],
+      [16, 'Installing rusty-dot and matplotlib\u2026'],
+      [30, 'Almost there \u2014 first visits take the longest\u2026'],
+      [60, 'Still working. Slow connection? The runtime is \u224830 MB\u2026'],
+    ];
+    var start = Date.now();
+    var msgEl = document.getElementById('rd-splash-msg');
+    var timer = setInterval(function () {
+      var t = (Date.now() - start) / 1000;
+      for (var i = msgs.length - 1; i >= 0; i--) {
+        if (t >= msgs[i][0]) { msgEl.textContent = msgs[i][1]; break; }
+      }
+    }, 1000);
+    function appReady() {
+      // The shinylive viewer hosts the app in a same-origin iframe; the app
+      // is usable once its own widgets exist in that frame.
+      var frames = document.querySelectorAll('iframe');
+      for (var i = 0; i < frames.length; i++) {
+        try {
+          var doc = frames[i].contentDocument;
+          if (doc && doc.getElementById('run')) return true;
+        } catch (e) { /* cross-origin frame: not ours */ }
+      }
+      return false;
+    }
+    var poll = setInterval(function () {
+      // Give up (and get out of the way) after 5 minutes regardless.
+      if (appReady() || Date.now() - start > 300000) {
+        clearInterval(poll);
+        clearInterval(timer);
+        var el = document.getElementById('rd-splash');
+        el.classList.add('rd-hide');
+        setTimeout(function () { el.remove(); }, 500);
+      }
+    }, 400);
+  })();
+</script>
+</body>
+</html>
