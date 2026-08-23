@@ -178,6 +178,9 @@ class PafRecord:
         Total number of gap bases (``I`` + ``D`` bases) from CIGAR.
     n_gap_bases : int or None
         Same as ``n_gaps`` (alias kept for clarity).
+    tag_types : dict[str, str]
+        SAM tag type characters (e.g. ``{'tp': 'A'}``) recorded at parse
+        time so :meth:`to_line` can round-trip tags exactly.
     """
 
     query_name: str
@@ -199,6 +202,7 @@ class PafRecord:
     n_mismatches: int | None = None
     n_gaps: int | None = None
     n_gap_bases: int | None = None
+    tag_types: dict[str, str] = field(default_factory=dict)
 
     @property
     def query_aligned_len(self) -> int:
@@ -221,6 +225,41 @@ class PafRecord:
             ``target_end - target_start``.
         """
         return self.target_end - self.target_start
+
+    @property
+    def identity(self) -> float:
+        """Return the fraction identity of this alignment in ``[0, 1]``.
+
+        The most accurate available metric is used, in order of preference:
+
+        1. ``1 - de`` from the ``de:f`` tag — minimap2's gap-compressed
+           per-base divergence, emitted with base-level alignment (``-c``
+           or ``--cs``).  A gap run counts as a single difference.
+        2. Gap-compressed identity derived from the CIGAR:
+           ``residue_matches / (aligned columns + gap openings)``.  Column
+           10 is used as the match count because minimap2's default
+           ``M``-style CIGAR does not distinguish mismatches.
+        3. BLAST-style identity from the required PAF columns:
+           ``residue_matches / alignment_block_len``.  For output without
+           base-level alignment this is an approximation.
+
+        Returns
+        -------
+        float
+            Fraction identity, clamped to ``[0, 1]``.
+        """
+        de = self.tags.get('de')
+        if isinstance(de, float):
+            return max(0.0, min(1.0, 1.0 - de))
+        if self.cigar is not None:
+            ops = _parse_cigar(self.cigar)
+            aligned_cols = ops.get('M', 0) + ops.get('=', 0) + ops.get('X', 0)
+            denom = aligned_cols + (self.n_gaps or 0)
+            if denom > 0:
+                return min(1.0, self.residue_matches / denom)
+        if self.alignment_block_len > 0:
+            return min(1.0, self.residue_matches / self.alignment_block_len)
+        return 1.0
 
     @classmethod
     def from_line(cls, line: str) -> 'PafRecord':
@@ -247,6 +286,7 @@ class PafRecord:
                 f'PAF line has {len(fields)} fields; expected at least 12: {line!r}'
             )
         tags: dict[str, Any] = {}
+        tag_types: dict[str, str] = {}
         cigar: str | None = None
         for tag_field in fields[12:]:
             parts = tag_field.split(':', 2)
@@ -258,6 +298,7 @@ class PafRecord:
                     tags[tag_name] = float(tag_value)
                 else:
                     tags[tag_name] = tag_value
+                tag_types[tag_name] = tag_type
                 if tag_name == 'cg' and tag_type == 'Z':
                     cigar = tag_value
 
@@ -286,6 +327,7 @@ class PafRecord:
             n_mismatches=stats.get('n_mismatches'),
             n_gaps=stats.get('n_gaps'),
             n_gap_bases=stats.get('n_gap_bases'),
+            tag_types=tag_types,
         )
 
     def to_line(self) -> str:
@@ -294,10 +336,13 @@ class PafRecord:
         Returns
         -------
         str
-            Tab-separated PAF line with the 12 required columns.  Optional
-            tags are not included.
+            Tab-separated PAF line with the 12 required columns followed by
+            any optional tags in insertion order.  Tag type characters come
+            from :attr:`tag_types` when recorded at parse time, otherwise
+            they are inferred from the Python value (``int`` -> ``i``,
+            ``float`` -> ``f``, else ``Z``).
         """
-        return '\t'.join(
+        parts = [
             str(v)
             for v in [
                 self.query_name,
@@ -313,7 +358,19 @@ class PafRecord:
                 self.alignment_block_len,
                 self.mapping_quality,
             ]
-        )
+        ]
+        for name, value in self.tags.items():
+            tag_type = self.tag_types.get(name)
+            if tag_type is None:
+                if isinstance(value, int):
+                    tag_type = 'i'
+                elif isinstance(value, float):
+                    tag_type = 'f'
+                else:
+                    tag_type = 'Z'
+            text = f'{value:g}' if isinstance(value, float) else str(value)
+            parts.append(f'{name}:{tag_type}:{text}')
+        return '\t'.join(parts)
 
 
 # ---------------------------------------------------------------------------

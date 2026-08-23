@@ -8,6 +8,51 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added (identity & aligned sequences)
+
+- Browser app: minimap2 gained a **Base-level alignment (`-c`)** option that
+  adds `cg:Z` CIGAR, `NM:i` and `de:f` tags to the PAF output. (`-L` was
+  evaluated and is unnecessary: it only affects SAM/BAM CIGAR storage, not
+  PAF stdout.)
+- Browser app: clicking an identity-coloured match now fetches and displays
+  the gapped query/match/target alignment in the detail bar, built
+  server-side from the record's CIGAR and the uploaded assemblies (sequences
+  are sliced on demand — nothing is pre-extracted or embedded in the
+  report). Requires a minimap2 run with `-c` (or an uploaded PAF with `cg`
+  tags) plus the source FASTAs.
+- `PafRecord.identity`: fraction identity choosing the most accurate
+  available metric — `1 - de` (gap-compressed, from `-c`/`--cs` output),
+  else gap-compressed identity derived from the CIGAR, else the BLAST-style
+  `residue_matches / alignment_block_len` estimate from the required PAF
+  columns.
+- `rusty_dot.alignment_view.aligned_text()`: render a gapped pairwise
+  alignment view (query / match line / target) from a PAF record's CIGAR.
+- Browser app: matches without a CIGAR (minimap2 without `-c`, nucmer,
+  k-mer) show the raw query and target sequences as two unaligned lines in
+  the detail bar instead of nothing, each truncated at 20,000 bases.
+- Browser app: **Copy query seq** / **Copy target seq** buttons in the
+  match detail bar copy the full (untruncated) sequence of the selected
+  match to the clipboard.
+
+### Performance (match detail)
+
+- Browser app: clicking a match no longer ships the full query/target
+  sequences with the preview (up to ~0.7 s on 8 Mbp matches, ~60–80 ms per
+  Mbp); the detail reply now carries only the clipped preview, and the copy
+  buttons fetch the full sequence on demand, caching it client-side so
+  repeat copies are instant. Preview slices and the gapped-alignment
+  builder also clip to the 20,000-column window before any copy/revcomp,
+  so megabase matches never materialise full slices for display.
+
+### Changed (identity & PAF round-trip)
+
+- Identity colouring (`color_by_identity=True`) now uses
+  `PafRecord.identity`, preferring the gap-compressed `de` tag over the PAF
+  column 10/11 estimate when base-level alignment output is available.
+- `PafRecord.to_line()` now preserves optional SAM-style tags (with their
+  original type characters), so exported and cached PAF retains
+  `cg`/`NM`/`de` instead of being truncated to the 12 required columns.
+
 ### Fixed (focused-view canvas)
 
 - Focused single-pair (drill-down) views with extreme sequence-length

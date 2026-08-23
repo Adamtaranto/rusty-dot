@@ -135,6 +135,34 @@ g[id^='rd-matches-'] * { pointer-events: stroke; cursor: pointer; }
   border-radius: 4px;
 }
 
+#rd-detail-actions {
+  margin: 0.35rem 0 0;
+  display: flex;
+  gap: 0.5rem;
+}
+
+#rd-detail-actions button {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--rd-bar-fg);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+#rd-detail-actions button:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Gapped query/match/target blocks: keep columns aligned (no soft wrap)
+   and scroll instead. */
+#rd-detail-seq.rd-aligned {
+  white-space: pre;
+  word-break: normal;
+  max-height: 12rem;
+}
+
 #rd-detail-close {
   position: absolute;
   top: 0.35rem;

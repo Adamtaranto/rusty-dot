@@ -98,6 +98,23 @@ def test_minimap2_args_negative_m():
         build_tool_args('minimap2', {'preset': 'asm20', 'm': -1})
 
 
+def test_minimap2_args_base_level_alignment():
+    args = build_tool_args('minimap2', {'preset': 'asm20', 'c': True})
+    assert args == ['-x', 'asm20', '-c', 'target.fa', 'query.fa']
+
+
+def test_minimap2_args_base_level_off_by_default():
+    args = build_tool_args('minimap2', {'preset': 'asm20'})
+    assert '-c' not in args
+
+
+def test_minimap2_args_c_composes_with_repeat_flags():
+    args = build_tool_args(
+        'minimap2', {'preset': 'asm20', 'c': True, 'P': True, 'D': True}
+    )
+    assert args == ['-x', 'asm20', '-c', '-P', '-D', 'target.fa', 'query.fa']
+
+
 def test_minimap2_args_repeat_flags():
     args = build_tool_args('minimap2', {'preset': 'asm20', 'P': True, 'D': True})
     assert args == ['-x', 'asm20', '-P', '-D', 'target.fa', 'query.fa']

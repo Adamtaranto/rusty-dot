@@ -378,10 +378,132 @@
   var detail = document.getElementById('rd-detail');
   var detailCoords = document.getElementById('rd-detail-coords');
   var detailSeq = document.getElementById('rd-detail-seq');
+  var detailActions = document.getElementById('rd-detail-actions');
+  var copyQueryBtn = document.getElementById('rd-copy-query');
+  var copyTargetBtn = document.getElementById('rd-copy-target');
   var selectedMatch = null;
+  // Key ("row:col:layer:idx") of the aligned-sequence request in flight;
+  // guards against stale 'rd-seq-response' messages after another click.
+  var pendingSeqKey = null;
+  // Copy-button state for the selected match.  Full sequences are NOT
+  // shipped with the preview (that made clicks slow on megabase
+  // matches); they are fetched from the embedding app on the first copy
+  // press and cached here, so repeat copies are instant.
+  var copyState = {
+    query: { avail: false, seq: null },
+    target: { avail: false, seq: null },
+  };
+  // Segment identity of the current selection, echoed in copy requests.
+  var currentSeg = null;
+
+  function setCopyState(qAvail, tAvail, qSeq, tSeq) {
+    copyState.query = { avail: !!qAvail, seq: qSeq || null };
+    copyState.target = { avail: !!tAvail, seq: tSeq || null };
+    copyQueryBtn.hidden = !copyState.query.avail;
+    copyTargetBtn.hidden = !copyState.target.avail;
+    detailActions.hidden = !(copyState.query.avail || copyState.target.avail);
+  }
+
+  function copyText(text, btn, label) {
+    var done = function (ok) {
+      btn.textContent = ok ? 'Copied!' : 'Copy failed';
+      setTimeout(function () {
+        btn.textContent = label;
+      }, 1200);
+    };
+    // execCommand works on user activation even in a sandboxed
+    // (opaque-origin) frame; the async clipboard API is the fallback.
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (e) {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+    if (!ok && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        function () {
+          done(true);
+        },
+        function () {
+          done(false);
+        }
+      );
+    } else {
+      done(ok);
+    }
+  }
+
+  function wireCopy(btn, side, label) {
+    btn.addEventListener('click', function () {
+      var st = copyState[side];
+      if (!st.avail) return;
+      if (st.seq) {
+        copyText(st.seq, btn, label);
+        return;
+      }
+      if (!currentSeg || window.parent === window) return;
+      btn.textContent = 'Fetching…';
+      window.parent.postMessage(
+        Object.assign({ type: 'rd-copy-request', side: side }, currentSeg),
+        '*'
+      );
+    });
+  }
+
+  wireCopy(copyQueryBtn, 'query', 'Copy query seq');
+  wireCopy(copyTargetBtn, 'target', 'Copy target seq');
+
+  function segKey(seg) {
+    return seg ? seg.row + ':' + seg.col + ':' + seg.layer + ':' + seg.idx : null;
+  }
+
+  function handleCopyResponse(msg) {
+    var side = msg.side === 'target' ? 'target' : 'query';
+    var btn = side === 'target' ? copyTargetBtn : copyQueryBtn;
+    var label = side === 'target' ? 'Copy target seq' : 'Copy query seq';
+    var key = msg.row + ':' + msg.col + ':' + msg.layer + ':' + msg.idx;
+    if (key !== segKey(currentSeg)) return; // stale: selection changed
+    if (typeof msg.seq !== 'string' || !msg.seq) {
+      btn.textContent = 'Copy failed';
+      setTimeout(function () {
+        btn.textContent = label;
+      }, 1200);
+      return;
+    }
+    copyState[side].seq = msg.seq;
+    // The fetch usually completes inside the click's transient-activation
+    // window, so the async clipboard write succeeds directly; if it
+    // doesn't, the sequence is now cached and the next press copies
+    // synchronously.
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(msg.seq).then(
+        function () {
+          btn.textContent = 'Copied!';
+          setTimeout(function () {
+            btn.textContent = label;
+          }, 1200);
+        },
+        function () {
+          btn.textContent = 'Press again to copy';
+        }
+      );
+    } else {
+      btn.textContent = 'Press again to copy';
+    }
+  }
 
   function hideDetail() {
     detail.hidden = true;
+    pendingSeqKey = null;
+    currentSeg = null;
+    setCopyState(false, false, null, null);
     if (selectedMatch) {
       selectedMatch.classList.remove('rd-selected-match');
       selectedMatch = null;
@@ -421,9 +543,44 @@
       payload.has_sequences && panel.seqs && panel.seqs[layer]
         ? panel.seqs[layer][idx]
         : null;
+    detailSeq.classList.remove('rd-aligned');
+    currentSeg = null;
+    setCopyState(false, false, null, null);
     if (seq) {
       detailSeq.textContent = seq;
       detailSeq.hidden = false;
+      setCopyState(true, false, seq, null);
+    } else if (window.parent && window.parent !== window) {
+      // Embedded report: ask the embedding app for this match's
+      // sequences (a CIGAR-based alignment when available, otherwise the
+      // raw query/target slices).  The segment coordinates travel along
+      // so non-identity layers need no server-side record lookup.
+      var pm = panelGid.match(/^rd-panel-(\d+)-(\d+)$/);
+      if (pm) {
+        var row = parseInt(pm[1], 10);
+        var col = parseInt(pm[2], 10);
+        pendingSeqKey = row + ':' + col + ':' + layer + ':' + idx;
+        currentSeg = {
+          row: row,
+          col: col,
+          layer: layer,
+          idx: idx,
+          qs: seg[0],
+          qe: seg[1],
+          ts: seg[2],
+          te: seg[3],
+          strand: strand,
+        };
+        detailSeq.textContent = 'Fetching sequences…';
+        detailSeq.hidden = false;
+        window.parent.postMessage(
+          Object.assign({ type: 'rd-match-select' }, currentSeg),
+          '*'
+        );
+      } else {
+        detailSeq.textContent = '';
+        detailSeq.hidden = true;
+      }
     } else {
       detailSeq.textContent = '';
       detailSeq.hidden = true;
@@ -587,8 +744,35 @@
 
   window.addEventListener('message', function (ev) {
     var msg = ev && ev.data;
-    if (!msg || msg.type !== 'rd-display-opts') return;
-    applyDisplayOpts(msg);
+    if (!msg) return;
+    if (msg.type === 'rd-display-opts') {
+      applyDisplayOpts(msg);
+      return;
+    }
+    if (msg.type === 'rd-seq-response') {
+      // Sequences for the last clicked segment; ignore responses for
+      // anything but the request currently in flight.
+      var key = msg.row + ':' + msg.col + ':' + msg.layer + ':' + msg.idx;
+      if (key !== pendingSeqKey) return;
+      pendingSeqKey = null;
+      if (typeof msg.text === 'string' && msg.text) {
+        detailSeq.textContent = msg.text;
+        // Gapped alignments need column-preserving layout; plain
+        // query/target previews soft-wrap instead.
+        detailSeq.classList.toggle('rd-aligned', !!msg.aligned);
+        detailSeq.hidden = false;
+        // Sequences exist server-side; they are fetched (and cached) on
+        // the first copy press rather than shipped with the preview.
+        setCopyState(!!msg.copy, !!msg.copy, null, null);
+      } else {
+        detailSeq.textContent = '';
+        detailSeq.hidden = true;
+      }
+      return;
+    }
+    if (msg.type === 'rd-copy-response') {
+      handleCopyResponse(msg);
+    }
   });
 
   // Tell the embedding app the report is wired (the iframe element is

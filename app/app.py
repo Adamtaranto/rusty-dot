@@ -391,6 +391,17 @@ app_ui = ui.page_sidebar(
                     min=1,
                 ),
                 ui.input_checkbox(
+                    'mm2_c',
+                    _lbl(
+                        'Base-level alignment (-c)',
+                        'Compute exact CIGARs and identity tags (cg/NM/de): '
+                        'enables gap-compressed identity colouring and '
+                        'aligned-sequence display, but is slower on large '
+                        'assemblies.',
+                    ),
+                    False,
+                ),
+                ui.input_checkbox(
                     'mm2_p',
                     _lbl(
                         'Retain all chains (-P)',
@@ -790,6 +801,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 'k': int(input.mm2_k() or 0),
                 'w': int(input.mm2_w() or 0),
                 'm': int(input.mm2_m() or 0),
+                'c': bool(input.mm2_c()),
                 'P': bool(input.mm2_p()),
                 # -D only applies when a sequence can meet itself; storing
                 # the effective value keeps the cache key honest when the
@@ -1134,6 +1146,11 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     # copies the full record list).  Both are invalidated with the result.
     order_cache: dict = {}
     figure_ctx_cache: dict = {}
+    # (query_name, target_name) -> [PafRecord], filled lazily from the
+    # current result's records for aligned-sequence lookups.  The grouping
+    # mirrors DotPlotter._records_for_pair, so a payload segment index maps
+    # straight onto the per-pair list.
+    paf_pair_index: dict = {}
 
     @reactive.effect
     def _reset_focus_on_new_result():
@@ -1141,6 +1158,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         focus.set(None)
         order_cache.clear()
         figure_ctx_cache.clear()
+        paf_pair_index.clear()
 
     @reactive.calc
     def ordering_config() -> tuple[str, bool]:
@@ -1406,6 +1424,244 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     @reactive.event(input.back_overview)
     def _back_to_overview():
         focus.set(None)
+
+    def _pair_records(obj, q: str, t: str) -> list:
+        """Return the PAF records for one pair, building the index lazily."""
+        if not paf_pair_index:
+            for rec in obj.records:
+                paf_pair_index.setdefault((rec.query_name, rec.target_name), []).append(
+                    rec
+                )
+        return paf_pair_index.get((q, t), [])
+
+    def _record_for_segment(obj, q: str, t: str, idx: int):
+        """Return the PAF record behind identity-layer payload row *idx*."""
+        recs = _pair_records(obj, q, t)
+        return recs[idx] if 0 <= idx < len(recs) else None
+
+    def _genomic_coords(info: dict, q: str, lay, qlen: int):
+        """Map a clicked segment's payload coords to genomic values.
+
+        The payload's query side is mirrored on reverse-oriented contigs;
+        the target side is always genomic.
+
+        Returns
+        -------
+        tuple or None
+            ``(q_start, q_end, t_start, t_end, strand)`` or ``None`` when
+            the message lacks usable coordinates.
+        """
+        try:
+            gqs, gqe = int(info['qs']), int(info['qe'])
+            ts_, te_ = int(info['ts']), int(info['te'])
+        except (KeyError, TypeError, ValueError):
+            return None
+        strand = info.get('strand', '+')
+        if strand not in ('+', '-'):
+            strand = '+'
+        if q in lay['reverse']:
+            gqs, gqe = qlen - gqe, qlen - gqs
+            strand = '-' if strand == '+' else '+'
+        return gqs, gqe, ts_, te_, strand
+
+    def _preview_slice(seq: str, start: int, end: int, minus: bool) -> str:
+        """Return an alignment-oriented preview of ``seq[start:end]``.
+
+        Clipped to 20,000 bases *before* any copy or revcomp so megabase
+        matches never materialise a full slice for the preview.  On the
+        minus strand the alignment-oriented sequence begins at the genomic
+        end, so the window is taken from there.
+        """
+        from rusty_dot.alignment_view import revcomp
+
+        cap = 20_000
+        n = end - start
+        if n <= cap:
+            s = seq[start:end]
+            return revcomp(s) if minus else s
+        if minus:
+            s = revcomp(seq[end - cap : end])
+        else:
+            s = seq[start : start + cap]
+        return s + f'… [truncated at {cap:,} bases]'
+
+    def _sequence_for(meta: dict, name: str, side: str):
+        """Look up a full sequence by name, preferring *side*'s FASTA.
+
+        Falls back to the other assembly so self-align mode (one file) and
+        PAF uploads with a single FASTA still resolve.
+        """
+        order = ('query', 'target') if side == 'query' else ('target', 'query')
+        for key in order:
+            fasta = meta.get(key)
+            if fasta is not None:
+                seq = next((s for n, s in fasta.records if n == name), None)
+                if seq is not None:
+                    return seq
+        return None
+
+    def _match_context(info):
+        """Resolve a clicked segment to sequences and genomic coordinates.
+
+        Shared by the match-detail and copy-request handlers.
+
+        Returns
+        -------
+        dict or None
+            ``{'q', 't', 'rec', 'qseq', 'tseq', 'gqs', 'gqe', 'ts', 'te',
+            'strand'}`` with genomic (unmirrored) coordinates, or ``None``
+            when the panel or sequences cannot be resolved.  ``rec`` is
+            the exact PAF record when one matches (its CIGAR, if any,
+            enables the gapped view).
+        """
+        res = result()
+        if not info or res is None:
+            return None
+        kind, obj, meta = res
+        pair = focus()
+        if pair is not None:
+            q, t = pair
+            lay = layout()
+        else:
+            try:
+                lay = layout()
+                q, t = panel_pair(
+                    lay['query_names'],
+                    lay['target_names'],
+                    int(info['row']),
+                    int(info['col']),
+                )
+            except (KeyError, TypeError, ValueError, IndexError):
+                return None
+        qseq = _sequence_for(meta, q, 'query')
+        tseq = _sequence_for(meta, t, 'target')
+        if qseq is None or tseq is None:
+            return None
+        rec = None
+        if kind == 'paf' and info.get('layer') == 'identity':
+            try:
+                rec = _record_for_segment(obj, q, t, int(info['idx']))
+            except (TypeError, ValueError):
+                rec = None
+        # Strand-coloured (fwd/rev) layers have no stable index->record
+        # mapping (blocks may be chained), but an unchained block's coords
+        # match its record exactly — recover the CIGAR that way so runs
+        # with -c get the gapped view without identity colouring on.
+        if rec is None and kind == 'paf':
+            g = _genomic_coords(info, q, lay, len(qseq))
+            if g is not None:
+                gqs0, gqe0, ts0, te0, gstrand0 = g
+                rec = next(
+                    (
+                        r
+                        for r in _pair_records(obj, q, t)
+                        if r.query_start == gqs0
+                        and r.query_end == gqe0
+                        and r.target_start == ts0
+                        and r.target_end == te0
+                        and r.strand == gstrand0
+                    ),
+                    None,
+                )
+        if rec is not None:
+            gqs, gqe = rec.query_start, rec.query_end
+            ts_, te_ = rec.target_start, rec.target_end
+            strand = rec.strand
+        else:
+            g = _genomic_coords(info, q, lay, len(qseq))
+            if g is None:
+                return None
+            gqs, gqe, ts_, te_, strand = g
+        return {
+            'q': q,
+            't': t,
+            'rec': rec,
+            'qseq': qseq,
+            'tseq': tseq,
+            'gqs': gqs,
+            'gqe': gqe,
+            'ts': ts_,
+            'te': te_,
+            'strand': strand,
+        }
+
+    @reactive.effect
+    @reactive.event(input.match_select)
+    async def _on_match_select():
+        """Serve the sequence preview for a clicked match.
+
+        The report posts 'rd-match-select'; the reply travels back through
+        bridge.js as an 'rd-seq-response' echoing row/col/layer/idx so the
+        report can discard stale responses.  When the record has a CIGAR
+        (minimap2 ``-c``) the reply is a gapped alignment view; otherwise
+        the raw query and target slices are shown unaligned.  Only the
+        clipped preview is sent — full sequences are fetched separately on
+        copy (`_on_copy_request`), so click latency stays flat regardless
+        of match size.
+        """
+        from rusty_dot.alignment_view import aligned_text
+
+        info = input.match_select()
+        ctx = _match_context(info)
+        reply = {k: (info or {}).get(k) for k in ('row', 'col', 'layer', 'idx')}
+        if ctx is None:
+            reply['error'] = 'no-sequences'
+            await session.send_custom_message('rd_match_seq', reply)
+            return
+        rec = ctx['rec']
+        # Full sequences are available for on-demand copy in either branch.
+        reply['copy'] = True
+        if rec is not None and rec.cigar is not None:
+            view = aligned_text(rec, ctx['qseq'], ctx['tseq'])
+            reply['aligned'] = True
+            reply['text'] = (
+                f'{rec.query_name}:{rec.query_start:,}-{rec.query_end:,} '
+                f'({rec.strand}) vs '
+                f'{rec.target_name}:{rec.target_start:,}-{rec.target_end:,}'
+                f'\n\n{view["text"]}'
+            )
+        else:
+            reply['aligned'] = False
+            reply['text'] = (
+                f'{ctx["q"]}:{ctx["gqs"]:,}-{ctx["gqe"]:,} ({ctx["strand"]}) '
+                f'vs {ctx["t"]}:{ctx["ts"]:,}-{ctx["te"]:,}\n'
+                'No CIGAR for this match — sequences shown unaligned; run '
+                'minimap2 with base-level alignment (-c) for a gapped '
+                'alignment view.\n\n'
+                f'>query {ctx["q"]}:{ctx["gqs"]:,}-{ctx["gqe"]:,} '
+                f'({ctx["strand"]})\n'
+                f'{_preview_slice(ctx["qseq"], ctx["gqs"], ctx["gqe"], ctx["strand"] == "-")}\n'
+                f'>target {ctx["t"]}:{ctx["ts"]:,}-{ctx["te"]:,}\n'
+                f'{_preview_slice(ctx["tseq"], ctx["ts"], ctx["te"], False)}'
+            )
+        await session.send_custom_message('rd_match_seq', reply)
+
+    @reactive.effect
+    @reactive.event(input.copy_request)
+    async def _on_copy_request():
+        """Serve one full match sequence for a copy-button press.
+
+        Shipping megabases of sequence with every click made match details
+        slow; instead the detail reply carries only the preview and the
+        full sequence crosses the boundary once, here, when actually
+        requested.  The reply echoes the segment key plus ``side`` so the
+        report caches it client-side (repeat copies are then instant).
+        """
+        from rusty_dot.alignment_view import revcomp
+
+        info = input.copy_request()
+        side = (info or {}).get('side')
+        reply = {k: (info or {}).get(k) for k in ('row', 'col', 'layer', 'idx')}
+        reply['side'] = side
+        ctx = _match_context(info)
+        if ctx is None or side not in ('query', 'target'):
+            reply['error'] = 'no-sequences'
+        elif side == 'query':
+            seq = ctx['qseq'][ctx['gqs'] : ctx['gqe']]
+            reply['seq'] = revcomp(seq) if ctx['strand'] == '-' else seq
+        else:
+            reply['seq'] = ctx['tseq'][ctx['ts'] : ctx['te']]
+        await session.send_custom_message('rd_copy_seq', reply)
 
     # --- end W2 --------------------------------------------------------------
 

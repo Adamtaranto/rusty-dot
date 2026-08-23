@@ -156,8 +156,10 @@ def build_tool_args(tool: str, params: dict[str, Any]) -> list[str]:
 
         * ``minimap2`` — ``preset`` (one of :data:`MINIMAP2_PRESETS`),
           optional ``k``, ``w`` and ``m`` (min chaining score; 0 or
-          ``None`` = use the preset default), plus boolean ``P`` (retain
-          all chains) and ``D`` (skip the same-name self-diagonal).
+          ``None`` = use the preset default), plus boolean ``c``
+          (base-level alignment: adds ``cg``/``NM``/``de`` tags to the
+          PAF), ``P`` (retain all chains) and ``D`` (skip the same-name
+          self-diagonal).
         * ``nucmer`` — ``l`` (min match length), ``c`` (min cluster
           length), ``maxmatch`` (bool), ``nosimplify`` (bool).
 
@@ -183,6 +185,8 @@ def build_tool_args(tool: str, params: dict[str, Any]) -> list[str]:
                 raise ValueError(f'minimap2 {flag} must be >= 0, got {value}')
             if value:
                 args += [flag, str(int(value))]
+        if params.get('c'):
+            args.append('-c')
         if params.get('P'):
             args.append('-P')
         if params.get('D'):

@@ -18,7 +18,7 @@ or nucmer (or import a PAF file), overlay GFF3 annotations, and download SVG/PDF
 plots, PAF alignments, and a reordered/reoriented query FASTA.
 
 In-browser computation is memory limited (~2GB), larger genomes should use
-minimap2 instead of k-mer based plotting. Alternatively, generate plots using 
+minimap2 instead of k-mer based plotting. Alternatively, generate plots using
 the python API localy or on google colab.
 
 See [docs/webapp.md](docs/webapp.md) for capabilities and limits, and

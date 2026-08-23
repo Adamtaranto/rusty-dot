@@ -115,6 +115,61 @@ class TestPafRecordFromLine:
         # to_line() should reproduce the 12 core fields
         assert rec.to_line() == line
 
+    def test_to_line_roundtrips_tags(self):
+        # Realistic minimap2 -c output: A/i/f/Z tag types all preserved,
+        # in their original order.
+        line = (
+            'q\t100\t0\t50\t+\tt\t200\t0\t53\t45\t53\t60'
+            '\ttp:A:P\tNM:i:3\tde:f:0.0123\tcg:Z:10M2I5D38M'
+        )
+        rec = PafRecord.from_line(line)
+        assert rec.to_line() == line
+
+    def test_to_line_infers_tag_types_for_constructed_records(self):
+        rec = PafRecord.from_line('q\t100\t0\t50\t+\tt\t200\t0\t50\t45\t50\t255')
+        rec.tags['NM'] = 3
+        rec.tags['de'] = 0.05
+        rec.tags['cg'] = '50M'
+        assert rec.to_line().endswith('\tNM:i:3\tde:f:0.05\tcg:Z:50M')
+
+
+# ---------------------------------------------------------------------------
+# PafRecord.identity
+# ---------------------------------------------------------------------------
+
+
+class TestPafRecordIdentity:
+    BASE = 'q\t100\t0\t50\t+\tt\t200\t0\t50\t45\t50\t255'
+
+    def test_de_tag_preferred(self):
+        rec = PafRecord.from_line(self.BASE + '\tde:f:0.02\tcg:Z:50M')
+        assert rec.identity == pytest.approx(0.98)
+
+    def test_cigar_gap_compressed(self):
+        # 50M2I48M: 98 aligned columns + 1 gap opening; col 10 = 95 matches.
+        line = 'q\t100\t0\t100\t+\tt\t200\t0\t98\t95\t100\t60\tcg:Z:50M2I48M'
+        rec = PafRecord.from_line(line)
+        assert rec.identity == pytest.approx(95 / 99)
+
+    def test_cigar_eqx_ops(self):
+        line = 'q\t100\t0\t20\t+\tt\t200\t0\t22\t18\t22\t60\tcg:Z:18=2X'
+        rec = PafRecord.from_line(line)
+        assert rec.identity == pytest.approx(18 / 20)
+
+    def test_blast_fallback_without_tags(self):
+        rec = PafRecord.from_line(self.BASE)
+        assert rec.identity == pytest.approx(45 / 50)
+
+    def test_zero_block_len_gives_full_identity(self):
+        rec = PafRecord.from_line('q\t100\t0\t0\t+\tt\t200\t0\t0\t0\t0\t255')
+        assert rec.identity == 1.0
+
+    def test_clamped_to_unit_interval(self):
+        rec = PafRecord.from_line(self.BASE + '\tde:f:1.5')
+        assert rec.identity == 0.0
+        rec2 = PafRecord.from_line(self.BASE + '\tde:f:-0.5')
+        assert rec2.identity == 1.0
+
 
 # ---------------------------------------------------------------------------
 # parse_paf_file
