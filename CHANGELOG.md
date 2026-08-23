@@ -8,6 +8,23 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added (browser-app build docs)
+
+- `environment-wasm.yml`: conda environment for building and serving the
+  browser app, pinning Emscripten 3.1.58 from conda-forge (no `emsdk` clone
+  needed) alongside `shiny`, `shinylive` and `maturin`. Kept separate from
+  `environment.yml`, whose `python-freethreading` pin the wasm build cannot
+  use.
+
+### Fixed (docs)
+
+- `app/README.md` cited the wrong pinned Rust nightly (`nightly-2025-02-17`);
+  the toolchain required by `.cargo/config.toml` and CI is
+  `nightly-2025-05-01`. The local build recipe is now complete and verified
+  end to end: nightly install, Emscripten setup, the version pins that must
+  agree (Pyodide 0.27.x / CPython 3.12 / Emscripten 3.1.58), the wheel-tag
+  check, `scripts/add_loading_splash.py`, and a troubleshooting table.
+
 ### Added (identity & aligned sequences)
 
 - Browser app: minimap2 gained a **Base-level alignment (`-c`)** option that

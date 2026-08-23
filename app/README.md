@@ -15,27 +15,145 @@ static Shinylive/Pyodide site). Uploads never leave the browser.
 
 ## Run natively (development)
 
+The fastest edit/reload loop: Python runs on your machine against a natively
+built rusty-dot, so there is no wasm wheel and no export step. Use the
+native dev environment (`environment.yml`, see
+[docs/development.md](../docs/development.md)), not the wasm environment
+below.
+
 ```bash
-pip install shiny rusty-dot   # or maturin develop from the repo root
+pip install shiny            # plus a native rusty-dot:
+maturin develop --release    # from the repo root
 shiny run --launch-browser app/app.py
 ```
 
-## Build the static site
+Everything works except the k-mer method's provenance: it uses your local
+rusty-dot instead of the wheel. `minimap2`/`nucmer` still run in the browser
+via biowasm, so they behave identically.
+
+## Build the static Shinylive site
+
+The exported site runs entirely in the browser, so rusty-dot must be
+cross-compiled to a Pyodide-compatible wasm wheel. Three versions have to
+agree exactly:
+
+| Component | Pinned to | Why |
+|---|---|---|
+| Pyodide | 0.27.x (whatever shinylive bundles) | supplies the runtime |
+| CPython | 3.12 | Pyodide 0.27 ships CPython 3.12 |
+| Emscripten | 3.1.58 | the wheel's platform tag derives from it |
+
+The wheel filename encodes the last two
+(`…-cp312-cp312-emscripten_3_1_58_wasm32.whl`). If either is wrong, micropip
+rejects the wheel at app startup and the app never finishes loading.
+
+To check what your shinylive actually bundles (this recipe was verified
+against shinylive 0.10.14 → Pyodide 0.27.7, CPython 3.12.7,
+`emscripten_3_1_58`):
 
 ```bash
-pip install shinylive
-# 1. build or download the wasm wheel (CI job "Wasm (Pyodide) Wheel Build"):
-mkdir -p app/wheels && cp rusty_dot-*-cp312-cp312-emscripten_3_1_58_wasm32.whl app/wheels/
-# 2. export and serve (service worker => must be http, not file://):
+python -c "import json;print(json.load(open('site/app/shinylive/pyodide/pyodide-lock.json'))['info'])"
+```
+
+### 1. Prerequisites
+
+**Rust nightly, pinned.** `.cargo/config.toml` passes
+`-Z link-native-libraries=no` to rustc for the wasm target, which is a
+nightly-only flag, so a stable toolchain fails with
+`error: the option 'Z' is only accepted on the nightly compiler`. The pin
+matters in both directions: newer nightlies default to wasm-exceptions
+(incompatible with Pyodide 0.27's non-EH ABI) and older ones predate stdlib
+APIs used by our dependencies.
+
+```bash
+rustup toolchain install nightly-2025-05-01 --target wasm32-unknown-emscripten
+```
+
+This does **not** change your default toolchain — native builds and
+`cargo test` keep using stable. The build command below opts in per-invocation
+with `RUSTUP_TOOLCHAIN`. (The repo deliberately has no `rust-toolchain.toml`
+for exactly this reason.)
+
+**Python + Emscripten + shinylive**, via the dedicated conda environment
+(`environment-wasm.yml` at the repo root). It is separate from
+`environment.yml` because that env pins `python-freethreading`, which the wasm
+build cannot use. `emscripten` comes from conda-forge at exactly 3.1.58 — no
+`emsdk` clone or `emsdk_env.sh` sourcing needed:
+
+```bash
+conda env create -f environment-wasm.yml
+conda activate rustydot-wasm
+emcc --version   # must report 3.1.58
+```
+
+### 2. Build the wasm wheel
+
+```bash
+rm -rf target/wheels     # never let a stale wheel reach app/wheels/
+RUSTUP_TOOLCHAIN=nightly-2025-05-01 maturin build --release \
+  --target wasm32-unknown-emscripten \
+  --no-default-features \
+  -i python3.12
+ls target/wheels/*cp312-cp312-emscripten_3_1_58_wasm32.whl   # tag check
+```
+
+- `--no-default-features` drops `needletail` (native-only FASTA I/O).
+- A cold build (empty `target/wasm32-unknown-emscripten/`, warm cargo
+  registry) takes well under a minute; the first ever build also downloads
+  crates.
+- `-i python3.12` does **not** need a CPython 3.12 on your machine: for
+  Emscripten targets maturin uses a built-in interpreter config, so this works
+  from the Python 3.14 environment above.
+- maturin ≥ 1.14 prints a warning about falling back to the "legacy"
+  `emscripten_3_1_58_wasm32` platform tag and suggests
+  `MATURIN_PYEMSCRIPTEN_PLATFORM_VERSION` / `MATURIN_PYODIDE_ABI_VERSION`
+  (PEP 783). **Ignore it and do not set those variables** — Pyodide 0.27 wants
+  the legacy tag; a PEP 783 tag will not install.
+
+Optional, mirrors CI (needs node):
+
+```bash
+npm install pyodide@0.27.7
+node scripts/wasm_smoke_test.mjs target/wheels/*cp312*emscripten*.whl
+```
+
+### 3. Export and serve
+
+```bash
+mkdir -p app/wheels && rm -f app/wheels/*.whl
+cp target/wheels/*cp312-cp312-emscripten_3_1_58_wasm32.whl app/wheels/
 shinylive export app site/app
-python3 -m http.server --directory site 8741
+python scripts/add_loading_splash.py site/app/index.html   # optional, matches deploy
+python -m http.server --directory site 8741
 # open http://127.0.0.1:8741/app/
 ```
 
-The wasm wheel must target the Pyodide release bundled by shinylive
-(currently Pyodide 0.27.x = CPython 3.12 + Emscripten 3.1.58, built with the
-pinned `nightly-2025-02-17` Rust toolchain); see the `wasm-build` job in
-`.github/workflows/ci.yml` for the exact recipe.
+The export bundles everything under `app/` — including the wheel in
+`app/wheels/` — into the static site; `ensure_rusty_dot()` in `app.py`
+installs it from the Pyodide virtual filesystem at startup. The site must be
+served over http (the shinylive service worker does not run from `file://`).
+
+**Testing changes: clear the service worker first.** A previously loaded
+shinylive site caches aggressively, so a rebuild can appear to do nothing.
+In DevTools → Application, unregister service workers and clear storage for
+`127.0.0.1:8741`, then hard-reload.
+
+### Alternative: use the CI-built wheel
+
+To run the app without a local Rust/Emscripten setup, download the
+`wasm-wheel` artifact from a recent run of the "Wasm (Pyodide) Wheel Build"
+job in [ci.yml](../.github/workflows/ci.yml), drop it into `app/wheels/`, and
+start at step 3. The same wheel is built by `docs.yml` for the deployed site.
+
+### Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| `the option 'Z' is only accepted on the nightly compiler` | missing `RUSTUP_TOOLCHAIN=nightly-2025-05-01` |
+| wheel tag is not `…emscripten_3_1_58_wasm32` | wrong `emcc` on PATH (check `emcc --version`, and that the conda env is activated) |
+| app hangs on the loading splash; micropip error in the console | wheel tag mismatch, or a stale wheel left in `app/wheels/` |
+| edits do not appear after re-export | stale service worker / browser cache (see above) |
+| `maturin` picks the wrong interpreter | an unrelated env is activated; `CONDA_PREFIX` should point at `rustydot-wasm` |
 
 ## Usage notes
 

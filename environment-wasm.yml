@@ -1,0 +1,20 @@
+# Environment for building and serving the browser app (Shinylive / Pyodide).
+#
+# Separate from environment.yml because that env pins python-freethreading,
+# which the wasm wheel build cannot use.  The emscripten pin is load-bearing:
+# the wheel's platform tag derives from it and micropip rejects a mismatch at
+# app startup, so it MUST match the Emscripten version of the Pyodide release
+# bundled by shinylive (Pyodide 0.27.x = CPython 3.12 + Emscripten 3.1.58).
+#
+# The Rust side needs a pinned nightly toolchain as well; see app/README.md.
+name: rustydot-wasm
+channels:
+  - conda-forge
+dependencies:
+  - python 3.14
+  - emscripten 3.1.58
+  - shiny
+  - pip
+  - pip:
+      - maturin
+      - shinylive
