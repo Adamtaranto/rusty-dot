@@ -10,9 +10,12 @@
  *       the current display options (the iframe element is replaced on every
  *       re-render, so state must be re-sent each time).
  *   'rd-match-select' {row, col, layer, idx, qs, qe, ts, te, strand} — a
- *       clicked match wants its sequences (aligned when a CIGAR exists,
- *       plain slices otherwise); forwarded to Shiny as the
+ *       clicked match wants its sequence preview (aligned when a CIGAR
+ *       exists, plain slices otherwise); forwarded to Shiny as the
  *       'match_select' input.
+ *   'rd-copy-request' {row, col, layer, idx, qs, qe, ts, te, strand,
+ *       side} — a copy button wants one full match sequence ('query' or
+ *       'target'); forwarded to Shiny as the 'copy_request' input.
  *
  * parent -> child
  *   'rd-display-opts' {dot_size, min_length} — display-only options applied
@@ -21,9 +24,13 @@
  *       Values arrive from the server via the 'rd_display_opts' custom
  *       message. The child has an opaque origin (sandbox without
  *       allow-same-origin), so targetOrigin must be '*'.
- *   'rd-seq-response' {row, col, layer, idx, text?, error?} — the aligned
- *       sequences (or an error code) for a prior 'rd-match-select'; arrives
- *       from the server via the 'rd_match_seq' custom message.
+ *   'rd-seq-response' {row, col, layer, idx, text?, aligned?, copy?,
+ *       error?} — the sequence preview (or an error code) for a prior
+ *       'rd-match-select'; arrives from the server via the 'rd_match_seq'
+ *       custom message.
+ *   'rd-copy-response' {row, col, layer, idx, side, seq?, error?} — one
+ *       full match sequence for a prior 'rd-copy-request'; arrives from
+ *       the server via the 'rd_copy_seq' custom message.
  */
 (function () {
   'use strict';
@@ -61,7 +68,7 @@
       }
       return;
     }
-    if (msg.type === 'rd-match-select') {
+    if (msg.type === 'rd-match-select' || msg.type === 'rd-copy-request') {
       var frame2 = reportFrame();
       if (!frame2 || ev.source !== frame2.contentWindow) {
         return;
@@ -87,8 +94,16 @@
       if (msg.strand === '+' || msg.strand === '-') {
         payload.strand = msg.strand;
       }
+      var inputName = 'match_select';
+      if (msg.type === 'rd-copy-request') {
+        if (msg.side !== 'query' && msg.side !== 'target') {
+          return;
+        }
+        payload.side = msg.side;
+        inputName = 'copy_request';
+      }
       if (window.Shiny && typeof window.Shiny.setInputValue === 'function') {
-        window.Shiny.setInputValue('match_select', payload, {
+        window.Shiny.setInputValue(inputName, payload, {
           priority: 'event',
         });
       }
@@ -130,6 +145,15 @@
         if (frame && frame.contentWindow && msg) {
           frame.contentWindow.postMessage(
             Object.assign({ type: 'rd-seq-response' }, msg),
+            '*'
+          );
+        }
+      });
+      window.Shiny.addCustomMessageHandler('rd_copy_seq', function (msg) {
+        var frame = reportFrame();
+        if (frame && frame.contentWindow && msg) {
+          frame.contentWindow.postMessage(
+            Object.assign({ type: 'rd-copy-response' }, msg),
             '*'
           );
         }

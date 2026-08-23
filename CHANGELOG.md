@@ -34,6 +34,16 @@ and this project adheres to
   match detail bar copy the full (untruncated) sequence of the selected
   match to the clipboard.
 
+### Performance (match detail)
+
+- Browser app: clicking a match no longer ships the full query/target
+  sequences with the preview (up to ~0.7 s on 8 Mbp matches, ~60–80 ms per
+  Mbp); the detail reply now carries only the clipped preview, and the copy
+  buttons fetch the full sequence on demand, caching it client-side so
+  repeat copies are instant. Preview slices and the gapped-alignment
+  builder also clip to the 20,000-column window before any copy/revcomp,
+  so megabase matches never materialise full slices for display.
+
 ### Changed (identity & PAF round-trip)
 
 - Identity colouring (`color_by_identity=True`) now uses

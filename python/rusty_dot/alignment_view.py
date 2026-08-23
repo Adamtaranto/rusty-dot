@@ -96,10 +96,17 @@ def aligned_text(
     """
     if rec.cigar is None:
         raise ValueError('PafRecord has no CIGAR (cg:Z tag)')
-    q = query_seq[rec.query_start : rec.query_end]
+    # Each alignment column consumes at most one base per side, so only
+    # the first max_cols bases of each slice can ever be rendered — clip
+    # before any copy/revcomp so megabase matches stay cheap.  In
+    # alignment orientation a '-' strand query starts at its genomic end.
+    q_need = min(rec.query_end - rec.query_start, max_cols)
     if rec.strand == '-':
-        q = revcomp(q)
-    t = target_seq[rec.target_start : rec.target_end]
+        q = revcomp(query_seq[rec.query_end - q_need : rec.query_end])
+    else:
+        q = query_seq[rec.query_start : rec.query_start + q_need]
+    t_need = min(rec.target_end - rec.target_start, max_cols)
+    t = target_seq[rec.target_start : rec.target_start + t_need]
     q_buf: list[str] = []
     m_buf: list[str] = []
     t_buf: list[str] = []

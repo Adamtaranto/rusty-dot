@@ -1464,6 +1464,27 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             strand = '-' if strand == '+' else '+'
         return gqs, gqe, ts_, te_, strand
 
+    def _preview_slice(seq: str, start: int, end: int, minus: bool) -> str:
+        """Return an alignment-oriented preview of ``seq[start:end]``.
+
+        Clipped to 20,000 bases *before* any copy or revcomp so megabase
+        matches never materialise a full slice for the preview.  On the
+        minus strand the alignment-oriented sequence begins at the genomic
+        end, so the window is taken from there.
+        """
+        from rusty_dot.alignment_view import revcomp
+
+        cap = 20_000
+        n = end - start
+        if n <= cap:
+            s = seq[start:end]
+            return revcomp(s) if minus else s
+        if minus:
+            s = revcomp(seq[end - cap : end])
+        else:
+            s = seq[start : start + cap]
+        return s + f'… [truncated at {cap:,} bases]'
+
     def _sequence_for(meta: dict, name: str, side: str):
         """Look up a full sequence by name, preferring *side*'s FASTA.
 
@@ -1479,30 +1500,24 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                     return seq
         return None
 
-    @reactive.effect
-    @reactive.event(input.match_select)
-    async def _on_match_select():
-        """Serve sequences for a clicked match in the embedded report.
+    def _match_context(info):
+        """Resolve a clicked segment to sequences and genomic coordinates.
 
-        The report posts 'rd-match-select'; the reply travels back through
-        bridge.js as an 'rd-seq-response' echoing row/col/layer/idx so the
-        report can discard stale responses.  When the record has a CIGAR
-        (minimap2 ``-c``) the reply is a gapped alignment view; otherwise
-        the raw query and target slices are shown unaligned.  Full
-        (untruncated) sequences ride along for the copy buttons.
+        Shared by the match-detail and copy-request handlers.
+
+        Returns
+        -------
+        dict or None
+            ``{'q', 't', 'rec', 'qseq', 'tseq', 'gqs', 'gqe', 'ts', 'te',
+            'strand'}`` with genomic (unmirrored) coordinates, or ``None``
+            when the panel or sequences cannot be resolved.  ``rec`` is
+            the exact PAF record when one matches (its CIGAR, if any,
+            enables the gapped view).
         """
-        from rusty_dot.alignment_view import (
-            aligned_text,
-            clip_sequence,
-            revcomp,
-        )
-
-        info = input.match_select()
         res = result()
         if not info or res is None:
-            return
+            return None
         kind, obj, meta = res
-        reply = {k: info.get(k) for k in ('row', 'col', 'layer', 'idx')}
         pair = focus()
         if pair is not None:
             q, t = pair
@@ -1517,24 +1532,22 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                     int(info['col']),
                 )
             except (KeyError, TypeError, ValueError, IndexError):
-                q = t = None
-        if q is None:
-            reply['error'] = 'no-sequences'
-            await session.send_custom_message('rd_match_seq', reply)
-            return
+                return None
+        qseq = _sequence_for(meta, q, 'query')
+        tseq = _sequence_for(meta, t, 'target')
+        if qseq is None or tseq is None:
+            return None
         rec = None
         if kind == 'paf' and info.get('layer') == 'identity':
             try:
                 rec = _record_for_segment(obj, q, t, int(info['idx']))
             except (TypeError, ValueError):
                 rec = None
-        qseq = _sequence_for(meta, q, 'query')
-        tseq = _sequence_for(meta, t, 'target')
         # Strand-coloured (fwd/rev) layers have no stable index->record
         # mapping (blocks may be chained), but an unchained block's coords
         # match its record exactly — recover the CIGAR that way so runs
         # with -c get the gapped view without identity colouring on.
-        if rec is None and kind == 'paf' and qseq is not None:
+        if rec is None and kind == 'paf':
             g = _genomic_coords(info, q, lay, len(qseq))
             if g is not None:
                 gqs0, gqe0, ts0, te0, gstrand0 = g
@@ -1550,16 +1563,57 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                     ),
                     None,
                 )
-        if qseq is None or tseq is None:
+        if rec is not None:
+            gqs, gqe = rec.query_start, rec.query_end
+            ts_, te_ = rec.target_start, rec.target_end
+            strand = rec.strand
+        else:
+            g = _genomic_coords(info, q, lay, len(qseq))
+            if g is None:
+                return None
+            gqs, gqe, ts_, te_, strand = g
+        return {
+            'q': q,
+            't': t,
+            'rec': rec,
+            'qseq': qseq,
+            'tseq': tseq,
+            'gqs': gqs,
+            'gqe': gqe,
+            'ts': ts_,
+            'te': te_,
+            'strand': strand,
+        }
+
+    @reactive.effect
+    @reactive.event(input.match_select)
+    async def _on_match_select():
+        """Serve the sequence preview for a clicked match.
+
+        The report posts 'rd-match-select'; the reply travels back through
+        bridge.js as an 'rd-seq-response' echoing row/col/layer/idx so the
+        report can discard stale responses.  When the record has a CIGAR
+        (minimap2 ``-c``) the reply is a gapped alignment view; otherwise
+        the raw query and target slices are shown unaligned.  Only the
+        clipped preview is sent — full sequences are fetched separately on
+        copy (`_on_copy_request`), so click latency stays flat regardless
+        of match size.
+        """
+        from rusty_dot.alignment_view import aligned_text
+
+        info = input.match_select()
+        ctx = _match_context(info)
+        reply = {k: (info or {}).get(k) for k in ('row', 'col', 'layer', 'idx')}
+        if ctx is None:
             reply['error'] = 'no-sequences'
-        elif rec is not None and rec.cigar is not None:
-            view = aligned_text(rec, qseq, tseq)
-            q_slice = qseq[rec.query_start : rec.query_end]
-            if rec.strand == '-':
-                q_slice = revcomp(q_slice)
+            await session.send_custom_message('rd_match_seq', reply)
+            return
+        rec = ctx['rec']
+        # Full sequences are available for on-demand copy in either branch.
+        reply['copy'] = True
+        if rec is not None and rec.cigar is not None:
+            view = aligned_text(rec, ctx['qseq'], ctx['tseq'])
             reply['aligned'] = True
-            reply['qseq'] = q_slice
-            reply['tseq'] = tseq[rec.target_start : rec.target_end]
             reply['text'] = (
                 f'{rec.query_name}:{rec.query_start:,}-{rec.query_end:,} '
                 f'({rec.strand}) vs '
@@ -1567,39 +1621,47 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 f'\n\n{view["text"]}'
             )
         else:
-            # No CIGAR: show the two slices unaligned.  Segment coords come
-            # from the record when available (raw genomic values), else
-            # from the clicked payload row — whose query side is mirrored
-            # on reverse-oriented contigs and must be mapped back.
-            if rec is not None:
-                gqs, gqe = rec.query_start, rec.query_end
-                ts_, te_ = rec.target_start, rec.target_end
-                strand = rec.strand
-            else:
-                g = _genomic_coords(info, q, lay, len(qseq))
-                if g is None:
-                    reply['error'] = 'no-sequences'
-                    await session.send_custom_message('rd_match_seq', reply)
-                    return
-                gqs, gqe, ts_, te_, strand = g
-            q_slice = qseq[gqs:gqe]
-            if strand == '-':
-                q_slice = revcomp(q_slice)
-            t_slice = tseq[ts_:te_]
             reply['aligned'] = False
-            reply['qseq'] = q_slice
-            reply['tseq'] = t_slice
             reply['text'] = (
-                f'{q}:{gqs:,}-{gqe:,} ({strand}) vs {t}:{ts_:,}-{te_:,}\n'
+                f'{ctx["q"]}:{ctx["gqs"]:,}-{ctx["gqe"]:,} ({ctx["strand"]}) '
+                f'vs {ctx["t"]}:{ctx["ts"]:,}-{ctx["te"]:,}\n'
                 'No CIGAR for this match — sequences shown unaligned; run '
                 'minimap2 with base-level alignment (-c) for a gapped '
                 'alignment view.\n\n'
-                f'>query {q}:{gqs:,}-{gqe:,} ({strand})\n'
-                f'{clip_sequence(q_slice)}\n'
-                f'>target {t}:{ts_:,}-{te_:,}\n'
-                f'{clip_sequence(t_slice)}'
+                f'>query {ctx["q"]}:{ctx["gqs"]:,}-{ctx["gqe"]:,} '
+                f'({ctx["strand"]})\n'
+                f'{_preview_slice(ctx["qseq"], ctx["gqs"], ctx["gqe"], ctx["strand"] == "-")}\n'
+                f'>target {ctx["t"]}:{ctx["ts"]:,}-{ctx["te"]:,}\n'
+                f'{_preview_slice(ctx["tseq"], ctx["ts"], ctx["te"], False)}'
             )
         await session.send_custom_message('rd_match_seq', reply)
+
+    @reactive.effect
+    @reactive.event(input.copy_request)
+    async def _on_copy_request():
+        """Serve one full match sequence for a copy-button press.
+
+        Shipping megabases of sequence with every click made match details
+        slow; instead the detail reply carries only the preview and the
+        full sequence crosses the boundary once, here, when actually
+        requested.  The reply echoes the segment key plus ``side`` so the
+        report caches it client-side (repeat copies are then instant).
+        """
+        from rusty_dot.alignment_view import revcomp
+
+        info = input.copy_request()
+        side = (info or {}).get('side')
+        reply = {k: (info or {}).get(k) for k in ('row', 'col', 'layer', 'idx')}
+        reply['side'] = side
+        ctx = _match_context(info)
+        if ctx is None or side not in ('query', 'target'):
+            reply['error'] = 'no-sequences'
+        elif side == 'query':
+            seq = ctx['qseq'][ctx['gqs'] : ctx['gqe']]
+            reply['seq'] = revcomp(seq) if ctx['strand'] == '-' else seq
+        else:
+            reply['seq'] = ctx['tseq'][ctx['ts'] : ctx['te']]
+        await session.send_custom_message('rd_copy_seq', reply)
 
     # --- end W2 --------------------------------------------------------------
 
