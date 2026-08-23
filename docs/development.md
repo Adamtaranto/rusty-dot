@@ -32,6 +32,13 @@ conda env create -f environment.yml
 conda activate rustydot
 ```
 
+!!! note
+    This environment is for **native** development. Building the browser app's
+    wasm wheel needs a separate environment (`environment-wasm.yml`) because
+    the wasm build cannot use the `python-freethreading` build pinned here,
+    and it needs a pinned Emscripten toolchain. See
+    [`app/README.md`](https://github.com/Adamtaranto/rusty-dot/blob/main/app/README.md).
+
 Alternatively, use any Python ≥ 3.9 virtual environment:
 
 ```bash
