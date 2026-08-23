@@ -45,8 +45,13 @@ __pycache__/
 *.pyd
 .venv/
 
-# MkDocs build output
+# Docs build output (Zensical)
 site/
+.zensical/
+
+# Tutorial notebooks rendered to Markdown by scripts/notebooks_to_md.py
+docs/tutorials/*.md
+docs/tutorials/*_files/
 .coverage
 coverage.xml
 target/

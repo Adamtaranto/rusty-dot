@@ -5,7 +5,8 @@ on:
     branches: ["main"]
     paths:
       - "docs/**"
-      - "mkdocs.yml"
+      - "zensical.toml"
+      - "scripts/notebooks_to_md.py"
       - "app/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
@@ -83,8 +84,14 @@ jobs:
         with:
           name: app-wasm-wheel
           path: app/wheels
-      - name: Build MkDocs site
-        run: mkdocs build
+      - name: Render tutorial notebooks to Markdown
+        # Zensical has no notebook support; the .ipynb files stay the source
+        # of truth and are converted (not executed) before the build.
+        run: python scripts/notebooks_to_md.py
+      - name: Build docs site
+        # mkdocstrings imports rusty_dot, including the compiled extension
+        # installed by `pip install ".[docs]"` above.
+        run: zensical build --clean --strict
       - name: Export browser app into the site
         # The wheel in app/wheels/ is bundled into the exported app.json and
         # installed from the Pyodide virtual filesystem at app startup.

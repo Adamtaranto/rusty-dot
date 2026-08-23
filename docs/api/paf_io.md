@@ -6,11 +6,12 @@ alignment records.
 
 ## PafAlignment — Alignment record collection
 
-`PafAlignment` wraps a list of :class:`~rusty_dot.paf_io.PafRecord` objects
-and provides filtering, contig reordering, and sequence-length lookup
+`PafAlignment` wraps a list of [`PafRecord`](#rusty_dot.paf_io.PafRecord)
+objects and provides filtering, contig reordering, and sequence-length lookup
 utilities.  It can be passed directly to
-:class:`~rusty_dot.dotplot.DotPlotter` — no
-:class:`~rusty_dot.SequenceIndex` is required:
+[`DotPlotter`](dotplot.md#rusty_dot.dotplot.DotPlotter) — no
+[`SequenceIndex`](sequence_index.md#rusty_dot._rusty_dot.SequenceIndex) is
+required:
 
 ```python
 from rusty_dot.paf_io import PafAlignment
