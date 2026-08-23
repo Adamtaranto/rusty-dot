@@ -1,0 +1,112 @@
+# Zensical configuration for the rusty-dot documentation site.
+#
+# Replaces the previous mkdocs.yml (MkDocs + Material).  Two things about this
+# project are not standard:
+#
+#   * The Tutorials section is generated: docs/tutorials/*.ipynb are converted
+#     to Markdown by scripts/notebooks_to_md.py before the build (Zensical has
+#     no notebook support).  The .md files are gitignored build products.
+#   * The API pages use mkdocstrings, which imports rusty_dot — so the package
+#     must be installed (built) before building the docs.
+#
+# The site is deployed to gh-pages by .github/workflows/docs.yml, which also
+# exports the Shinylive browser app into site/app *after* this build runs.
+[project]
+site_name = "rusty-dot"
+site_description = "Fast dot plot comparisons of DNA sequences using a rolling-hash k-mer index"
+site_url = "https://adamtaranto.github.io/rusty-dot/"
+repo_url = "https://github.com/Adamtaranto/rusty-dot"
+repo_name = "Adamtaranto/rusty-dot"
+site_dir = "site"
+
+nav = [
+  { "Home" = "index.md" },
+  { "Web App" = "webapp.md" },
+  { "Installation" = "installation.md" },
+  { "Development Guide" = "development.md" },
+  { "Tutorials" = [
+    { "Quick Start" = "tutorials/quickstart.md" },
+    { "Dotplot Visualization" = "tutorials/dotplot_tutorial.md" },
+    { "PAF Workflow" = "tutorials/paf_workflow.md" },
+    { "All-vs-All Between Two Indices" = "tutorials/all_vs_all_two_indices.md" },
+    { "Writing Reordered FASTA" = "tutorials/write_reordered_fasta.md" },
+    { "Minimap2 PAF Visualization" = "tutorials/minimap2_paf_tutorial.md" },
+    { "Reorder & Reorient an Assembly" = "tutorials/reorder_reorient_assembly.md" },
+  ] },
+  { "API Reference" = [
+    { "Overview" = "api/index.md" },
+    { "SequenceIndex" = "api/sequence_index.md" },
+    { "DotPlotter" = "api/dotplot.md" },
+    { "CrossIndex" = "api/cross_index.md" },
+    { "PAF I/O" = "api/paf_io.md" },
+    { "Plot Style" = "api/style.md" },
+    { "Low-Level Functions" = "api/functions.md" },
+  ] },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.code.annotate",
+  "content.code.copy",
+  "navigation.expand",
+  "navigation.footer",
+  "navigation.sections",
+  "navigation.tabs",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+  "search.suggest",
+  "toc.follow",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "teal"
+accent = "teal"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "teal"
+accent = "teal"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[project.plugins.mkdocstrings.handlers.python]
+options.docstring_style = "numpy"
+options.show_source = true
+options.show_root_heading = true
+options.show_root_full_path = false
+options.show_category_heading = true
+options.members_order = "source"
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+tables = {}
+toc.permalink = true
+pymdownx.betterem = {}
+pymdownx.caret = {}
+pymdownx.details = {}
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.magiclink = {}
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+pymdownx.superfences = {}
+pymdownx.tabbed.alternate_style = true
+pymdownx.tasklist.custom_checkbox = true
+pymdownx.tilde = {}

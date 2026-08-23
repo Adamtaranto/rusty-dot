@@ -35,14 +35,15 @@ dev = [
 ]
 
 docs = [
-    "mkdocs>=1.5,<2.0",
-    "mkdocs-material>=9.0",
-    "mkdocstrings[python]>=0.24",
-    "mkdocs-jupyter>=0.24",
+    "zensical>=0.0.57",
+    "mkdocstrings-python>=2.0",
+    # Zensical has no notebook support; scripts/notebooks_to_md.py renders
+    # docs/tutorials/*.ipynb to Markdown before the build.
+    "nbconvert>=7.0",
 ]
 
 [project.urls]
-documentation = "https://github.com/adamtaranto/rusty-dot"
+documentation = "https://adamtaranto.github.io/rusty-dot/"
 homepage = "https://github.com/adamtaranto/rusty-dot"
 repository = "https://github.com/adamtaranto/rusty-dot"
 

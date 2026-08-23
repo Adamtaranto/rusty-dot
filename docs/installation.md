@@ -36,7 +36,8 @@ To build the documentation locally:
 
 ```bash
 pip install rusty-dot[docs]
-mkdocs serve
+python scripts/notebooks_to_md.py   # render the tutorial notebooks
+zensical serve
 ```
 
 ## Verify the installation

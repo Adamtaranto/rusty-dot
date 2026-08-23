@@ -2,7 +2,7 @@
 
 `CrossIndex` manages sequences divided into named groups and computes
 cross-group pairwise comparisons.  It is compatible with
-:class:`~rusty_dot.dotplot.DotPlotter`.
+[`DotPlotter`](dotplot.md#rusty_dot.dotplot.DotPlotter).
 
 ## Workflow
 

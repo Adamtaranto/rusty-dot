@@ -5,8 +5,11 @@ no installation required. The app is fully client-side: your FASTA files are
 parsed, aligned, and plotted **entirely in your browser** (via WebAssembly and
 [Pyodide](https://pyodide.org)) and **never leave your machine**.
 
+<!-- The href is relative to the docs root, not to this page: Zensical
+     rebases links in raw HTML, so "app/" becomes "../app/" here and points at
+     the Shinylive export that .github/workflows/docs.yml writes to site/app. -->
 <p style="margin: 1.2rem 0;">
-  <a href="../app/" target="_blank" rel="noopener" class="md-button md-button--primary">
+  <a href="app/" target="_blank" rel="noopener" class="md-button md-button--primary">
     Launch the app in a new window &rarr;
   </a>
 </p>

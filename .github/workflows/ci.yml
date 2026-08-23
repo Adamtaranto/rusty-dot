@@ -190,3 +190,24 @@ jobs:
         with:
           name: wasm-wheel
           path: target/wheels/*cp312-cp312-emscripten_3_1_58_wasm32.whl
+
+  docs-build:
+    name: Docs Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install docs dependencies
+        # Builds the compiled extension too: mkdocstrings imports rusty_dot
+        # to document it.
+        run: pip install ".[docs]"
+      - name: Render tutorial notebooks to Markdown
+        run: python scripts/notebooks_to_md.py
+      - name: Build docs site
+        # Same command as the deploy workflow, minus the app export.
+        run: zensical build --clean --strict

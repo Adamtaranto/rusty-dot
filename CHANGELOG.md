@@ -8,6 +8,24 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed (documentation build)
+
+- The docs site is now built with [Zensical](https://zensical.org) instead of
+  MkDocs + Material (the same authors' successor project). `mkdocs.yml` is
+  replaced by `zensical.toml`; the site URLs, the `site/` output directory and
+  the `/app/` Shinylive export path are unchanged.
+- Tutorial notebooks are pre-rendered to Markdown by the new
+  `scripts/notebooks_to_md.py` (Zensical has no notebook support). The
+  `.ipynb` files remain the source of truth and are still not executed at
+  build time; the generated `.md` and image directories are gitignored.
+- `docs` extra: `zensical`, `mkdocstrings-python` and `nbconvert` replace
+  `mkdocs`, `mkdocs-material`, `mkdocstrings[python]` and `mkdocs-jupyter`.
+- CI gained a `Docs Build` job, so a broken docs build now fails on the pull
+  request rather than after merge.
+- `docs/api/style.md` was orphaned (not in the nav) and is now published as
+  **Plot Style**; a few leftover Sphinx `:class:` roles in the API pages were
+  turned into working links.
+
 ### Added (browser-app build docs)
 
 - `environment-wasm.yml`: conda environment for building and serving the
