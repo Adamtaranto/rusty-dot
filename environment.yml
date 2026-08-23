@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
+  - minimap2
   - pip
   - python 3.14
   - python-freethreading
