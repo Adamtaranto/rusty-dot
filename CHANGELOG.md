@@ -27,6 +27,12 @@ and this project adheres to
   columns.
 - `rusty_dot.alignment_view.aligned_text()`: render a gapped pairwise
   alignment view (query / match line / target) from a PAF record's CIGAR.
+- Browser app: matches without a CIGAR (minimap2 without `-c`, nucmer,
+  k-mer) show the raw query and target sequences as two unaligned lines in
+  the detail bar instead of nothing, each truncated at 20,000 bases.
+- Browser app: **Copy query seq** / **Copy target seq** buttons in the
+  match detail bar copy the full (untruncated) sequence of the selected
+  match to the clipboard.
 
 ### Changed (identity & PAF round-trip)
 

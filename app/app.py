@@ -1453,13 +1453,20 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     @reactive.effect
     @reactive.event(input.match_select)
     async def _on_match_select():
-        """Serve aligned sequences for a clicked identity-layer match.
+        """Serve sequences for a clicked match in the embedded report.
 
         The report posts 'rd-match-select'; the reply travels back through
         bridge.js as an 'rd-seq-response' echoing row/col/layer/idx so the
-        report can discard stale responses.
+        report can discard stale responses.  When the record has a CIGAR
+        (minimap2 ``-c``) the reply is a gapped alignment view; otherwise
+        the raw query and target slices are shown unaligned.  Full
+        (untruncated) sequences ride along for the copy buttons.
         """
-        from rusty_dot.alignment_view import aligned_text
+        from rusty_dot.alignment_view import (
+            aligned_text,
+            clip_sequence,
+            revcomp,
+        )
 
         info = input.match_select()
         res = result()
@@ -1467,42 +1474,87 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             return
         kind, obj, meta = res
         reply = {k: info.get(k) for k in ('row', 'col', 'layer', 'idx')}
+        pair = focus()
+        if pair is not None:
+            q, t = pair
+            lay = layout()
+        else:
+            try:
+                lay = layout()
+                q, t = panel_pair(
+                    lay['query_names'],
+                    lay['target_names'],
+                    int(info['row']),
+                    int(info['col']),
+                )
+            except (KeyError, TypeError, ValueError, IndexError):
+                q = t = None
+        if q is None:
+            reply['error'] = 'no-sequences'
+            await session.send_custom_message('rd_match_seq', reply)
+            return
         rec = None
         if kind == 'paf' and info.get('layer') == 'identity':
-            pair = focus()
-            if pair is not None:
-                q, t = pair
-            else:
-                try:
-                    lay = layout()
-                    q, t = panel_pair(
-                        lay['query_names'],
-                        lay['target_names'],
-                        int(info['row']),
-                        int(info['col']),
-                    )
-                except (KeyError, TypeError, ValueError, IndexError):
-                    q = t = None
-            if q is not None:
-                try:
-                    rec = _record_for_segment(obj, q, t, int(info['idx']))
-                except (TypeError, ValueError):
-                    rec = None
-        if rec is None or rec.cigar is None:
-            reply['error'] = 'no-cigar'
+            try:
+                rec = _record_for_segment(obj, q, t, int(info['idx']))
+            except (TypeError, ValueError):
+                rec = None
+        qseq = _sequence_for(meta, q, 'query')
+        tseq = _sequence_for(meta, t, 'target')
+        if qseq is None or tseq is None:
+            reply['error'] = 'no-sequences'
+        elif rec is not None and rec.cigar is not None:
+            view = aligned_text(rec, qseq, tseq)
+            q_slice = qseq[rec.query_start : rec.query_end]
+            if rec.strand == '-':
+                q_slice = revcomp(q_slice)
+            reply['aligned'] = True
+            reply['qseq'] = q_slice
+            reply['tseq'] = tseq[rec.target_start : rec.target_end]
+            reply['text'] = (
+                f'{rec.query_name}:{rec.query_start:,}-{rec.query_end:,} '
+                f'({rec.strand}) vs '
+                f'{rec.target_name}:{rec.target_start:,}-{rec.target_end:,}'
+                f'\n\n{view["text"]}'
+            )
         else:
-            qseq = _sequence_for(meta, rec.query_name, 'query')
-            tseq = _sequence_for(meta, rec.target_name, 'target')
-            if qseq is None or tseq is None:
-                reply['error'] = 'no-sequences'
+            # No CIGAR: show the two slices unaligned.  Segment coords come
+            # from the record when available (raw genomic values), else
+            # from the clicked payload row — whose query side is mirrored
+            # on reverse-oriented contigs and must be mapped back.
+            if rec is not None:
+                gqs, gqe = rec.query_start, rec.query_end
+                ts_, te_ = rec.target_start, rec.target_end
+                strand = rec.strand
             else:
-                view = aligned_text(rec, qseq, tseq)
-                reply['text'] = (
-                    f'{rec.query_name}:{rec.query_start:,}-{rec.query_end:,} '
-                    f'({rec.strand}) vs '
-                    f'{rec.target_name}:{rec.target_start:,}-{rec.target_end:,}'
-                    f'\n\n{view["text"]}'
-                )
+                try:
+                    gqs, gqe = int(info['qs']), int(info['qe'])
+                    ts_, te_ = int(info['ts']), int(info['te'])
+                except (KeyError, TypeError, ValueError):
+                    reply['error'] = 'no-sequences'
+                    await session.send_custom_message('rd_match_seq', reply)
+                    return
+                strand = info.get('strand', '+')
+                if q in lay['reverse']:
+                    gqs, gqe = len(qseq) - gqe, len(qseq) - gqs
+                    strand = '-' if strand == '+' else '+'
+            q_slice = qseq[gqs:gqe]
+            if strand == '-':
+                q_slice = revcomp(q_slice)
+            t_slice = tseq[ts_:te_]
+            reply['aligned'] = False
+            reply['qseq'] = q_slice
+            reply['tseq'] = t_slice
+            reply['text'] = (
+                f'{q}:{gqs:,}-{gqe:,} ({strand}) vs {t}:{ts_:,}-{te_:,}\n'
+                'No CIGAR for this match — sequences shown unaligned; run '
+                'minimap2 with base-level alignment (-c) for a gapped '
+                'alignment view.\n\n'
+                f'>query {q}:{gqs:,}-{gqe:,} ({strand})\n'
+                f'{clip_sequence(q_slice)}\n'
+                f'>target {t}:{ts_:,}-{te_:,}\n'
+                f'{clip_sequence(t_slice)}'
+            )
         await session.send_custom_message('rd_match_seq', reply)
 
     # --- end W2 --------------------------------------------------------------

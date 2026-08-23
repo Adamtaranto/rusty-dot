@@ -378,13 +378,72 @@
   var detail = document.getElementById('rd-detail');
   var detailCoords = document.getElementById('rd-detail-coords');
   var detailSeq = document.getElementById('rd-detail-seq');
+  var detailActions = document.getElementById('rd-detail-actions');
+  var copyQueryBtn = document.getElementById('rd-copy-query');
+  var copyTargetBtn = document.getElementById('rd-copy-target');
   var selectedMatch = null;
   // Key ("row:col:layer:idx") of the aligned-sequence request in flight;
   // guards against stale 'rd-seq-response' messages after another click.
   var pendingSeqKey = null;
+  // Full (untruncated) sequences of the selected match, for the copy
+  // buttons; the on-screen preview may be clipped.
+  var copySeqs = { query: null, target: null };
+
+  function setCopySeqs(q, t) {
+    copySeqs.query = q || null;
+    copySeqs.target = t || null;
+    copyQueryBtn.hidden = !copySeqs.query;
+    copyTargetBtn.hidden = !copySeqs.target;
+    detailActions.hidden = !(copySeqs.query || copySeqs.target);
+  }
+
+  function wireCopy(btn, key, label) {
+    btn.addEventListener('click', function () {
+      var text = copySeqs[key];
+      if (!text) return;
+      var done = function (ok) {
+        btn.textContent = ok ? 'Copied!' : 'Copy failed';
+        setTimeout(function () {
+          btn.textContent = label;
+        }, 1200);
+      };
+      // execCommand works on user activation even in a sandboxed
+      // (opaque-origin) frame; the async clipboard API is the fallback.
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch (e) {
+        ok = false;
+      }
+      document.body.removeChild(ta);
+      if (!ok && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(
+          function () {
+            done(true);
+          },
+          function () {
+            done(false);
+          }
+        );
+      } else {
+        done(ok);
+      }
+    });
+  }
+
+  wireCopy(copyQueryBtn, 'query', 'Copy query seq');
+  wireCopy(copyTargetBtn, 'target', 'Copy target seq');
 
   function hideDetail() {
     detail.hidden = true;
+    pendingSeqKey = null;
+    setCopySeqs(null, null);
     if (selectedMatch) {
       selectedMatch.classList.remove('rd-selected-match');
       selectedMatch = null;
@@ -425,25 +484,36 @@
         ? panel.seqs[layer][idx]
         : null;
     detailSeq.classList.remove('rd-aligned');
+    setCopySeqs(null, null);
     if (seq) {
       detailSeq.textContent = seq;
       detailSeq.hidden = false;
-    } else if (
-      layer === 'identity' &&
-      window.parent &&
-      window.parent !== window
-    ) {
-      // Embedded identity layer: ask the embedding app for the aligned
-      // sequences of this record (built server-side from the CIGAR).
+      setCopySeqs(seq, null);
+    } else if (window.parent && window.parent !== window) {
+      // Embedded report: ask the embedding app for this match's
+      // sequences (a CIGAR-based alignment when available, otherwise the
+      // raw query/target slices).  The segment coordinates travel along
+      // so non-identity layers need no server-side record lookup.
       var pm = panelGid.match(/^rd-panel-(\d+)-(\d+)$/);
       if (pm) {
         var row = parseInt(pm[1], 10);
         var col = parseInt(pm[2], 10);
         pendingSeqKey = row + ':' + col + ':' + layer + ':' + idx;
-        detailSeq.textContent = 'Fetching aligned sequences…';
+        detailSeq.textContent = 'Fetching sequences…';
         detailSeq.hidden = false;
         window.parent.postMessage(
-          { type: 'rd-match-select', row: row, col: col, layer: layer, idx: idx },
+          {
+            type: 'rd-match-select',
+            row: row,
+            col: col,
+            layer: layer,
+            idx: idx,
+            qs: seg[0],
+            qe: seg[1],
+            ts: seg[2],
+            te: seg[3],
+            strand: strand,
+          },
           '*'
         );
       } else {
@@ -619,20 +689,18 @@
       return;
     }
     if (msg.type === 'rd-seq-response') {
-      // Aligned sequences for the last clicked identity segment; ignore
-      // responses for anything but the request currently in flight.
+      // Sequences for the last clicked segment; ignore responses for
+      // anything but the request currently in flight.
       var key = msg.row + ':' + msg.col + ':' + msg.layer + ':' + msg.idx;
       if (key !== pendingSeqKey) return;
       pendingSeqKey = null;
       if (typeof msg.text === 'string' && msg.text) {
         detailSeq.textContent = msg.text;
-        detailSeq.classList.add('rd-aligned');
+        // Gapped alignments need column-preserving layout; plain
+        // query/target previews soft-wrap instead.
+        detailSeq.classList.toggle('rd-aligned', !!msg.aligned);
         detailSeq.hidden = false;
-      } else if (msg.error === 'no-cigar') {
-        detailSeq.textContent =
-          'No CIGAR for this match — run minimap2 with base-level ' +
-          'alignment (-c) to enable aligned-sequence display.';
-        detailSeq.hidden = false;
+        setCopySeqs(msg.qseq, msg.tseq);
       } else {
         detailSeq.textContent = '';
         detailSeq.hidden = true;

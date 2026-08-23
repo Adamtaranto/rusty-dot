@@ -9,8 +9,9 @@
  *   'rd-report-ready'               — the report finished wiring; reply with
  *       the current display options (the iframe element is replaced on every
  *       re-render, so state must be re-sent each time).
- *   'rd-match-select' {row, col, layer, idx} — a clicked identity-layer
- *       match wants its aligned sequences; forwarded to Shiny as the
+ *   'rd-match-select' {row, col, layer, idx, qs, qe, ts, te, strand} — a
+ *       clicked match wants its sequences (aligned when a CIGAR exists,
+ *       plain slices otherwise); forwarded to Shiny as the
  *       'match_select' input.
  *
  * parent -> child
@@ -76,12 +77,20 @@
       ) {
         return;
       }
+      var payload = { row: mrow, col: mcol, layer: msg.layer, idx: midx };
+      ['qs', 'qe', 'ts', 'te'].forEach(function (k) {
+        var v = Number(msg[k]);
+        if (Number.isFinite(v) && v >= 0) {
+          payload[k] = v;
+        }
+      });
+      if (msg.strand === '+' || msg.strand === '-') {
+        payload.strand = msg.strand;
+      }
       if (window.Shiny && typeof window.Shiny.setInputValue === 'function') {
-        window.Shiny.setInputValue(
-          'match_select',
-          { row: mrow, col: mcol, layer: msg.layer, idx: midx },
-          { priority: 'event' }
-        );
+        window.Shiny.setInputValue('match_select', payload, {
+          priority: 'event',
+        });
       }
       return;
     }

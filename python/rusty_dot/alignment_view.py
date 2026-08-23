@@ -17,9 +17,41 @@ if TYPE_CHECKING:  # pragma: no cover - only for type checkers
 _COMPLEMENT = str.maketrans('ACGTacgtNn', 'TGCAtgcaNn')
 
 
-def _revcomp(seq: str) -> str:
-    """Return the reverse complement of a nucleotide sequence."""
+def revcomp(seq: str) -> str:
+    """Return the reverse complement of a nucleotide sequence.
+
+    Parameters
+    ----------
+    seq : str
+        Nucleotide sequence (ACGTN, either case).
+
+    Returns
+    -------
+    str
+        The reverse complement, preserving case.
+    """
     return seq.translate(_COMPLEMENT)[::-1]
+
+
+def clip_sequence(seq: str, max_len: int = 20_000) -> str:
+    """Return *seq*, truncated with a notice when longer than *max_len*.
+
+    Parameters
+    ----------
+    seq : str
+        Sequence to clip.
+    max_len : int
+        Maximum number of bases to keep.
+
+    Returns
+    -------
+    str
+        The sequence, with ``… [truncated at N bases]`` appended when it
+        was longer than *max_len*.
+    """
+    if len(seq) <= max_len:
+        return seq
+    return seq[:max_len] + f'… [truncated at {max_len:,} bases]'
 
 
 def aligned_text(
@@ -66,7 +98,7 @@ def aligned_text(
         raise ValueError('PafRecord has no CIGAR (cg:Z tag)')
     q = query_seq[rec.query_start : rec.query_end]
     if rec.strand == '-':
-        q = _revcomp(q)
+        q = revcomp(q)
     t = target_seq[rec.target_start : rec.target_end]
     q_buf: list[str] = []
     m_buf: list[str] = []
