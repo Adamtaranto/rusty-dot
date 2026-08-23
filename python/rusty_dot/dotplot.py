@@ -69,8 +69,20 @@ def _resolve_rasterized(
 
 
 # Extra axis-label padding (points) past a side annotation track, leaving
-# room for the tick labels drawn on the track's outer edge.
-_TICK_LABEL_PAD_PTS = 14.0
+# room for the tick labels drawn on the track's outer edge so position
+# (length) tick text cannot touch the contig-name label.
+_TICK_LABEL_PAD_PTS = 30.0
+
+# Absolute margins (inches) reserved around the focused single-pair panel so
+# the title and axis labels always have room, however thin the proportional
+# panel gets for extreme sequence-length ratios.
+_FOCUS_MARGIN_IN = {
+    'left': 0.9,
+    'right': 0.2,
+    'bottom': 0.65,
+    'top_title': 0.55,
+    'top_plain': 0.2,
+}
 
 
 def _bp_unit(span_bp: float) -> tuple[float, str]:
@@ -1188,15 +1200,79 @@ class DotPlotter:
                 title_fontsize=9,
             )
 
-        if title:
+        if title and not (nrows == 1 and ncols == 1):
             fig.suptitle(title, fontsize=14, y=1.01)
 
-        if tracks_on:
-            # The 2x2 track gridspec is not tight_layout-compatible (shared
-            # axes + fixed ratios); its explicit h/wspace already lay it out.
-            # Margins span equal fractions horizontally and vertically so
-            # the gridspec ratios (and thus the panel's aspect) stay true.
-            fig.subplots_adjust(left=0.13, right=0.97, bottom=0.08, top=0.92)
+        if nrows == 1 and ncols == 1:
+            # Focused single-pair views: reserve absolute (inch) margins for
+            # the title and axis labels.  The proportional figure can be a
+            # very thin strip for extreme length ratios, so fractional
+            # margins (and a figure-fraction suptitle y) collapse to nothing
+            # — grow the canvas around the untouched panel region instead.
+            # The subplot region keeps exactly its original size, so the
+            # panel's bp-per-inch aspect (and the tracks gridspec ratios)
+            # are preserved.
+            margins = _FOCUS_MARGIN_IN
+            top_in = margins['top_title'] if title else margins['top_plain']
+            left_in = margins['left']
+            panel_w, panel_h = fig.get_size_inches()
+            # In the tracks layout the figure includes the fixed track band;
+            # the panel itself is the remainder on each dimension.
+            eff_w = panel_w - (annotation_track_size if tracks_on else 0.0)
+            eff_h = panel_h - (annotation_track_size if tracks_on else 0.0)
+            main_ax = axes[0][0]
+            # A rotated y label taller than a thin panel would protrude into
+            # the title band; render it horizontally instead and widen the
+            # left margin to fit the text.
+            y_text = main_ax.get_ylabel()
+            est_label_in = len(y_text) * 8.0 * 0.62 / 72.0
+            if y_text and est_label_in > eff_h:
+                label = main_ax.yaxis.label
+                label.set_rotation(0)
+                label.set_ha('right')
+                label.set_va('center')
+                left_in = max(left_in, est_label_in + 0.55)
+            # Thin panels cannot fit the default tick density without the
+            # position labels colliding — scale the tick count to the
+            # physical axis length (track axes carry the visible labels in
+            # the tracks layout and have their own locators).
+            for length_in, span, axis_objs in (
+                (
+                    eff_h,
+                    self.index.get_sequence_length(query_names[0]),
+                    [main_ax.yaxis]
+                    + ([y_track_ax.yaxis] if y_track_ax is not None else []),
+                ),
+                (
+                    eff_w,
+                    self.index.get_sequence_length(target_names[0]),
+                    [main_ax.xaxis]
+                    + ([x_track_ax.xaxis] if x_track_ax is not None else []),
+                ),
+            ):
+                if length_in < 0.4:
+                    # Too thin for more than one label without overlap: a
+                    # single end tick states the sequence's full length.
+                    locator = mticker.FixedLocator([span])
+                elif length_in < 1.5:
+                    locator = mticker.MaxNLocator(nbins=max(1, int(length_in * 2.5)))
+                else:
+                    continue
+                for axis_obj in axis_objs:
+                    axis_obj.set_major_locator(locator)
+            total_w = panel_w + left_in + margins['right']
+            total_h = panel_h + top_in + margins['bottom']
+            fig.set_size_inches(total_w, total_h)
+            fig.subplots_adjust(
+                left=left_in / total_w,
+                right=1 - margins['right'] / total_w,
+                bottom=margins['bottom'] / total_h,
+                top=1 - top_in / total_h,
+            )
+            if title:
+                # A fixed physical offset below the canvas top keeps the
+                # title clear of the plot area at any figure height.
+                fig.suptitle(title, fontsize=14, y=1 - 0.1 / total_h, va='top')
         elif hide_internal_axes:
             # tight_layout() would reinsert inter-panel gaps; keep the panels
             # flush and just leave margins for the outer labels and titles.

@@ -45,6 +45,16 @@ QUERY_FILENAME = 'query.fa'
 #: minimap2 presets exposed in the UI (assembly-to-assembly modes).
 MINIMAP2_PRESETS: tuple[str, ...] = ('asm5', 'asm10', 'asm20')
 
+#: The actual per-preset values minimap2 2.22 uses for -k/-w plus its -m
+#: default, shown pre-filled in the UI instead of a "0 = preset default"
+#: sentinel.  asm20 lowers the minimizer window to 10; -m is the tool-wide
+#: default (asm presets tune -s/-z, not -m).
+MINIMAP2_PRESET_DEFAULTS: dict[str, dict[str, int]] = {
+    'asm5': {'k': 19, 'w': 19, 'm': 40},
+    'asm10': {'k': 19, 'w': 19, 'm': 40},
+    'asm20': {'k': 19, 'w': 10, 'm': 40},
+}
+
 
 def paf_alignment_from_text(text: str) -> PafAlignment:
     """Build a ``PafAlignment`` from PAF text.

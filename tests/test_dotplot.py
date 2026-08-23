@@ -1787,3 +1787,92 @@ def test_grid_shared_units_and_angled_x_ticks():
     fig_texts = [t.get_text() for t in fig.texts]
     assert fig_texts.count('Position (Mbp)') == 2
     plt.close(fig)
+
+
+# ---------------------------------------------- focused-view canvas margins
+
+
+def _extreme_pair_plotter():
+    from rusty_dot.paf_io import PafAlignment, PafRecord
+
+    rec = PafRecord(
+        'tiny_query_contig',
+        30_000,
+        0,
+        30_000,
+        '+',
+        'very_long_target_chromosome',
+        3_000_000,
+        0,
+        30_000,
+        28_000,
+        30_000,
+        255,
+    )
+    return DotPlotter(PafAlignment([rec]))
+
+
+def test_focused_extreme_ratio_title_clear_of_panel():
+    """1:100 pair: the title must not overlap the plot area."""
+    plotter = _extreme_pair_plotter()
+    fig = plotter.plot(
+        query_names=['tiny_query_contig'],
+        target_names=['very_long_target_chromosome'],
+        title='tiny_query_contig vs very_long_target_chromosome',
+    )
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    ax_bbox = fig.axes[0].get_window_extent(renderer)
+    title_bbox = fig._suptitle.get_window_extent(renderer)
+    assert not ax_bbox.overlaps(title_bbox)
+    plt.close(fig)
+
+
+def test_focused_extreme_ratio_labels_inside_canvas():
+    """1:100 pair: axis name labels fit fully inside the figure canvas."""
+    plotter = _extreme_pair_plotter()
+    fig = plotter.plot(
+        query_names=['tiny_query_contig'],
+        target_names=['very_long_target_chromosome'],
+        title='a title',
+    )
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    fig_bbox = fig.bbox
+    ax = fig.axes[0]
+    for label in (ax.yaxis.label, ax.xaxis.label):
+        bbox = label.get_window_extent(renderer)
+        assert fig_bbox.contains(bbox.x0, bbox.y0)
+        assert fig_bbox.contains(bbox.x1, bbox.y1)
+    plt.close(fig)
+
+
+def test_focused_extreme_ratio_panel_aspect_preserved():
+    """Margins must not distort the panel's bp-per-inch parity."""
+    plotter = _extreme_pair_plotter()
+    fig = plotter.plot(
+        query_names=['tiny_query_contig'],
+        target_names=['very_long_target_chromosome'],
+        title='a title',
+    )
+    fig.canvas.draw()
+    ax = fig.axes[0]
+    bbox = ax.get_window_extent(fig.canvas.get_renderer())
+    x_bp_per_px = 3_000_000 / bbox.width
+    y_bp_per_px = 30_000 / bbox.height
+    assert abs(x_bp_per_px - y_bp_per_px) / x_bp_per_px < 0.01
+    plt.close(fig)
+
+
+def test_focused_thin_axis_single_end_tick():
+    """An ultra-thin axis shows one end tick (the sequence length)."""
+    plotter = _extreme_pair_plotter()
+    fig = plotter.plot(
+        query_names=['tiny_query_contig'],
+        target_names=['very_long_target_chromosome'],
+    )
+    fig.canvas.draw()
+    ax = fig.axes[0]
+    texts = [t.get_text() for t in ax.get_yticklabels() if t.get_text()]
+    assert texts == ['30']
+    plt.close(fig)

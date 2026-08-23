@@ -20,6 +20,7 @@ from core.align import (
     AVAILABLE_METHODS,
     BIOWASM_TOOLS,
     METHOD_LABELS,
+    MINIMAP2_PRESET_DEFAULTS,
     MINIMAP2_PRESETS,
     alignment_from_tool_output,
     build_tool_args,
@@ -356,37 +357,38 @@ app_ui = ui.page_sidebar(
                     choices={p: p for p in MINIMAP2_PRESETS},
                     selected='asm20',
                 ),
+                # k/w/m are pre-filled with the selected preset's actual
+                # values (asm20 defaults) and refreshed by _sync_mm2_defaults
+                # whenever the preset changes.
                 ui.input_numeric(
                     'mm2_k',
                     _lbl(
-                        'k-mer size (-k, 0 = preset default)',
+                        'k-mer size (-k)',
                         'Minimizer k-mer length; smaller values increase '
-                        'sensitivity for diverged repeats. The asm presets '
-                        'default to k=19.',
+                        'sensitivity for diverged repeats.',
                     ),
-                    0,
-                    min=0,
+                    MINIMAP2_PRESET_DEFAULTS['asm20']['k'],
+                    min=1,
                     max=28,
                 ),
                 ui.input_numeric(
                     'mm2_w',
                     _lbl(
-                        'Minimizer window (-w, 0 = preset default)',
-                        'Minimizer window size; smaller windows increase '
-                        'seed density. The asm presets default to w=19.',
+                        'Minimizer window (-w)',
+                        'Minimizer window size; smaller windows increase seed density.',
                     ),
-                    0,
-                    min=0,
+                    MINIMAP2_PRESET_DEFAULTS['asm20']['w'],
+                    min=1,
                 ),
                 ui.input_numeric(
                     'mm2_m',
                     _lbl(
-                        'Min chaining score (-m, 0 = default)',
+                        'Min chaining score (-m)',
                         'Discard chains scoring below this; raise (e.g. 200) '
                         'to filter weak or noisy repeat matches.',
                     ),
-                    0,
-                    min=0,
+                    MINIMAP2_PRESET_DEFAULTS['asm20']['m'],
+                    min=1,
                 ),
                 ui.input_checkbox(
                     'mm2_p',
@@ -767,6 +769,19 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         info = aligner_pending()
         if info is not None and info['method'] != input.method():
             await _cancel_pending('method changed')
+
+    @reactive.effect
+    @reactive.event(input.mm2_preset, ignore_init=True)
+    def _sync_mm2_defaults():
+        # Selecting a preset means adopting its parameters: refresh the
+        # k/w/m inputs to the preset's actual values so what is shown is
+        # always what runs.
+        defaults = MINIMAP2_PRESET_DEFAULTS.get(input.mm2_preset())
+        if defaults is None:
+            return
+        ui.update_numeric('mm2_k', value=defaults['k'])
+        ui.update_numeric('mm2_w', value=defaults['w'])
+        ui.update_numeric('mm2_m', value=defaults['m'])
 
     def _tool_params(method: str) -> dict:
         if method == 'minimap2':
