@@ -1425,15 +1425,44 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     def _back_to_overview():
         focus.set(None)
 
-    def _record_for_segment(obj, q: str, t: str, idx: int):
-        """Return the PAF record behind identity-layer payload row *idx*."""
+    def _pair_records(obj, q: str, t: str) -> list:
+        """Return the PAF records for one pair, building the index lazily."""
         if not paf_pair_index:
             for rec in obj.records:
                 paf_pair_index.setdefault((rec.query_name, rec.target_name), []).append(
                     rec
                 )
-        recs = paf_pair_index.get((q, t), [])
+        return paf_pair_index.get((q, t), [])
+
+    def _record_for_segment(obj, q: str, t: str, idx: int):
+        """Return the PAF record behind identity-layer payload row *idx*."""
+        recs = _pair_records(obj, q, t)
         return recs[idx] if 0 <= idx < len(recs) else None
+
+    def _genomic_coords(info: dict, q: str, lay, qlen: int):
+        """Map a clicked segment's payload coords to genomic values.
+
+        The payload's query side is mirrored on reverse-oriented contigs;
+        the target side is always genomic.
+
+        Returns
+        -------
+        tuple or None
+            ``(q_start, q_end, t_start, t_end, strand)`` or ``None`` when
+            the message lacks usable coordinates.
+        """
+        try:
+            gqs, gqe = int(info['qs']), int(info['qe'])
+            ts_, te_ = int(info['ts']), int(info['te'])
+        except (KeyError, TypeError, ValueError):
+            return None
+        strand = info.get('strand', '+')
+        if strand not in ('+', '-'):
+            strand = '+'
+        if q in lay['reverse']:
+            gqs, gqe = qlen - gqe, qlen - gqs
+            strand = '-' if strand == '+' else '+'
+        return gqs, gqe, ts_, te_, strand
 
     def _sequence_for(meta: dict, name: str, side: str):
         """Look up a full sequence by name, preferring *side*'s FASTA.
@@ -1501,6 +1530,26 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 rec = None
         qseq = _sequence_for(meta, q, 'query')
         tseq = _sequence_for(meta, t, 'target')
+        # Strand-coloured (fwd/rev) layers have no stable index->record
+        # mapping (blocks may be chained), but an unchained block's coords
+        # match its record exactly — recover the CIGAR that way so runs
+        # with -c get the gapped view without identity colouring on.
+        if rec is None and kind == 'paf' and qseq is not None:
+            g = _genomic_coords(info, q, lay, len(qseq))
+            if g is not None:
+                gqs0, gqe0, ts0, te0, gstrand0 = g
+                rec = next(
+                    (
+                        r
+                        for r in _pair_records(obj, q, t)
+                        if r.query_start == gqs0
+                        and r.query_end == gqe0
+                        and r.target_start == ts0
+                        and r.target_end == te0
+                        and r.strand == gstrand0
+                    ),
+                    None,
+                )
         if qseq is None or tseq is None:
             reply['error'] = 'no-sequences'
         elif rec is not None and rec.cigar is not None:
@@ -1527,17 +1576,12 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 ts_, te_ = rec.target_start, rec.target_end
                 strand = rec.strand
             else:
-                try:
-                    gqs, gqe = int(info['qs']), int(info['qe'])
-                    ts_, te_ = int(info['ts']), int(info['te'])
-                except (KeyError, TypeError, ValueError):
+                g = _genomic_coords(info, q, lay, len(qseq))
+                if g is None:
                     reply['error'] = 'no-sequences'
                     await session.send_custom_message('rd_match_seq', reply)
                     return
-                strand = info.get('strand', '+')
-                if q in lay['reverse']:
-                    gqs, gqe = len(qseq) - gqe, len(qseq) - gqs
-                    strand = '-' if strand == '+' else '+'
+                gqs, gqe, ts_, te_, strand = g
             q_slice = qseq[gqs:gqe]
             if strand == '-':
                 q_slice = revcomp(q_slice)
