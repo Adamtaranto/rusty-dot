@@ -8,6 +8,35 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added (identity & aligned sequences)
+
+- Browser app: minimap2 gained a **Base-level alignment (`-c`)** option that
+  adds `cg:Z` CIGAR, `NM:i` and `de:f` tags to the PAF output. (`-L` was
+  evaluated and is unnecessary: it only affects SAM/BAM CIGAR storage, not
+  PAF stdout.)
+- Browser app: clicking an identity-coloured match now fetches and displays
+  the gapped query/match/target alignment in the detail bar, built
+  server-side from the record's CIGAR and the uploaded assemblies (sequences
+  are sliced on demand — nothing is pre-extracted or embedded in the
+  report). Requires a minimap2 run with `-c` (or an uploaded PAF with `cg`
+  tags) plus the source FASTAs.
+- `PafRecord.identity`: fraction identity choosing the most accurate
+  available metric — `1 - de` (gap-compressed, from `-c`/`--cs` output),
+  else gap-compressed identity derived from the CIGAR, else the BLAST-style
+  `residue_matches / alignment_block_len` estimate from the required PAF
+  columns.
+- `rusty_dot.alignment_view.aligned_text()`: render a gapped pairwise
+  alignment view (query / match line / target) from a PAF record's CIGAR.
+
+### Changed (identity & PAF round-trip)
+
+- Identity colouring (`color_by_identity=True`) now uses
+  `PafRecord.identity`, preferring the gap-compressed `de` tag over the PAF
+  column 10/11 estimate when base-level alignment output is available.
+- `PafRecord.to_line()` now preserves optional SAM-style tags (with their
+  original type characters), so exported and cached PAF retains
+  `cg`/`NM`/`de` instead of being truncated to the 12 required columns.
+
 ### Fixed (focused-view canvas)
 
 - Focused single-pair (drill-down) views with extreme sequence-length

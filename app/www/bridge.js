@@ -9,6 +9,9 @@
  *   'rd-report-ready'               — the report finished wiring; reply with
  *       the current display options (the iframe element is replaced on every
  *       re-render, so state must be re-sent each time).
+ *   'rd-match-select' {row, col, layer, idx} — a clicked identity-layer
+ *       match wants its aligned sequences; forwarded to Shiny as the
+ *       'match_select' input.
  *
  * parent -> child
  *   'rd-display-opts' {dot_size, min_length} — display-only options applied
@@ -17,6 +20,9 @@
  *       Values arrive from the server via the 'rd_display_opts' custom
  *       message. The child has an opaque origin (sandbox without
  *       allow-same-origin), so targetOrigin must be '*'.
+ *   'rd-seq-response' {row, col, layer, idx, text?, error?} — the aligned
+ *       sequences (or an error code) for a prior 'rd-match-select'; arrives
+ *       from the server via the 'rd_match_seq' custom message.
  */
 (function () {
   'use strict';
@@ -54,6 +60,31 @@
       }
       return;
     }
+    if (msg.type === 'rd-match-select') {
+      var frame2 = reportFrame();
+      if (!frame2 || ev.source !== frame2.contentWindow) {
+        return;
+      }
+      var mrow = Number(msg.row);
+      var mcol = Number(msg.col);
+      var midx = Number(msg.idx);
+      if (
+        !Number.isInteger(mrow) || mrow < 0 ||
+        !Number.isInteger(mcol) || mcol < 0 ||
+        !Number.isInteger(midx) || midx < 0 ||
+        typeof msg.layer !== 'string'
+      ) {
+        return;
+      }
+      if (window.Shiny && typeof window.Shiny.setInputValue === 'function') {
+        window.Shiny.setInputValue(
+          'match_select',
+          { row: mrow, col: mcol, layer: msg.layer, idx: midx },
+          { priority: 'event' }
+        );
+      }
+      return;
+    }
     if (msg.type !== 'rd-panel-dblclick') {
       return;
     }
@@ -84,6 +115,15 @@
           lastOpts.min_length = opts.min_length;
         }
         pushOptsToReport();
+      });
+      window.Shiny.addCustomMessageHandler('rd_match_seq', function (msg) {
+        var frame = reportFrame();
+        if (frame && frame.contentWindow && msg) {
+          frame.contentWindow.postMessage(
+            Object.assign({ type: 'rd-seq-response' }, msg),
+            '*'
+          );
+        }
       });
     } else {
       setTimeout(register, 100);

@@ -135,6 +135,14 @@ g[id^='rd-matches-'] * { pointer-events: stroke; cursor: pointer; }
   border-radius: 4px;
 }
 
+/* Gapped query/match/target blocks: keep columns aligned (no soft wrap)
+   and scroll instead. */
+#rd-detail-seq.rd-aligned {
+  white-space: pre;
+  word-break: normal;
+  max-height: 12rem;
+}
+
 #rd-detail-close {
   position: absolute;
   top: 0.35rem;

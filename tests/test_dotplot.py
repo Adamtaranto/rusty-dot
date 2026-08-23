@@ -478,6 +478,41 @@ def test_plot_color_by_identity_lines_drawn(dotplot_index):
     assert len(_panel_segments(ax)) == 2
 
 
+def test_plot_color_by_identity_uses_de_tag(dotplot_index):
+    """Records with equal cols-10/11 identity but different de tags differ."""
+    import dataclasses
+
+    import matplotlib
+
+    from rusty_dot.paf_io import PafAlignment
+
+    matplotlib.use('Agg')
+
+    base = _make_paf_alignment(query_name='seq1', target_name='seq2').records[0]
+    identical = dataclasses.replace(base)
+    diverged = dataclasses.replace(
+        base,
+        query_start=12,
+        query_end=20,
+        target_start=12,
+        target_end=20,
+        tags={'de': 0.4},
+    )
+    paf = PafAlignment([identical, diverged])
+    plotter = DotPlotter(dotplot_index, paf_alignment=paf)
+
+    fig, ax = plt.subplots()
+    plotter._plot_panel(ax, 'seq1', 'seq2', color_by_identity=True)
+    colors = [
+        coll.get_colors() for coll in ax.collections if len(coll.get_segments()) == 2
+    ][0]
+    plt.close(fig)
+
+    # Same 9/10 blast identity, but the de tag overrides for the second
+    # record (identity 0.6) so the two segments get different colours.
+    assert not (colors[0] == colors[1]).all()
+
+
 def test_plot_color_by_identity_custom_palette(dotplot_index, tmp_path):
     """identity_palette parameter is accepted without error."""
     import matplotlib

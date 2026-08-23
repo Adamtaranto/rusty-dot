@@ -379,6 +379,9 @@
   var detailCoords = document.getElementById('rd-detail-coords');
   var detailSeq = document.getElementById('rd-detail-seq');
   var selectedMatch = null;
+  // Key ("row:col:layer:idx") of the aligned-sequence request in flight;
+  // guards against stale 'rd-seq-response' messages after another click.
+  var pendingSeqKey = null;
 
   function hideDetail() {
     detail.hidden = true;
@@ -421,9 +424,32 @@
       payload.has_sequences && panel.seqs && panel.seqs[layer]
         ? panel.seqs[layer][idx]
         : null;
+    detailSeq.classList.remove('rd-aligned');
     if (seq) {
       detailSeq.textContent = seq;
       detailSeq.hidden = false;
+    } else if (
+      layer === 'identity' &&
+      window.parent &&
+      window.parent !== window
+    ) {
+      // Embedded identity layer: ask the embedding app for the aligned
+      // sequences of this record (built server-side from the CIGAR).
+      var pm = panelGid.match(/^rd-panel-(\d+)-(\d+)$/);
+      if (pm) {
+        var row = parseInt(pm[1], 10);
+        var col = parseInt(pm[2], 10);
+        pendingSeqKey = row + ':' + col + ':' + layer + ':' + idx;
+        detailSeq.textContent = 'Fetching aligned sequences…';
+        detailSeq.hidden = false;
+        window.parent.postMessage(
+          { type: 'rd-match-select', row: row, col: col, layer: layer, idx: idx },
+          '*'
+        );
+      } else {
+        detailSeq.textContent = '';
+        detailSeq.hidden = true;
+      }
     } else {
       detailSeq.textContent = '';
       detailSeq.hidden = true;
@@ -587,8 +613,31 @@
 
   window.addEventListener('message', function (ev) {
     var msg = ev && ev.data;
-    if (!msg || msg.type !== 'rd-display-opts') return;
-    applyDisplayOpts(msg);
+    if (!msg) return;
+    if (msg.type === 'rd-display-opts') {
+      applyDisplayOpts(msg);
+      return;
+    }
+    if (msg.type === 'rd-seq-response') {
+      // Aligned sequences for the last clicked identity segment; ignore
+      // responses for anything but the request currently in flight.
+      var key = msg.row + ':' + msg.col + ':' + msg.layer + ':' + msg.idx;
+      if (key !== pendingSeqKey) return;
+      pendingSeqKey = null;
+      if (typeof msg.text === 'string' && msg.text) {
+        detailSeq.textContent = msg.text;
+        detailSeq.classList.add('rd-aligned');
+        detailSeq.hidden = false;
+      } else if (msg.error === 'no-cigar') {
+        detailSeq.textContent =
+          'No CIGAR for this match — run minimap2 with base-level ' +
+          'alignment (-c) to enable aligned-sequence display.';
+        detailSeq.hidden = false;
+      } else {
+        detailSeq.textContent = '';
+        detailSeq.hidden = true;
+      }
+    }
   });
 
   // Tell the embedding app the report is wired (the iframe element is

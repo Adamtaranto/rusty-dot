@@ -1682,11 +1682,7 @@ class DotPlotter:
         for rec in records:
             if min_length > 0 and rec.query_aligned_len < min_length:
                 continue
-            identity = (
-                rec.residue_matches / rec.alignment_block_len
-                if rec.alignment_block_len > 0
-                else 1.0
-            )
+            identity = rec.identity
             color = cmap(norm(identity))
             if rec.strand == '-':
                 xs = (rec.target_end, rec.target_start)

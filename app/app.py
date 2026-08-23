@@ -391,6 +391,17 @@ app_ui = ui.page_sidebar(
                     min=1,
                 ),
                 ui.input_checkbox(
+                    'mm2_c',
+                    _lbl(
+                        'Base-level alignment (-c)',
+                        'Compute exact CIGARs and identity tags (cg/NM/de): '
+                        'enables gap-compressed identity colouring and '
+                        'aligned-sequence display, but is slower on large '
+                        'assemblies.',
+                    ),
+                    False,
+                ),
+                ui.input_checkbox(
                     'mm2_p',
                     _lbl(
                         'Retain all chains (-P)',
@@ -790,6 +801,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 'k': int(input.mm2_k() or 0),
                 'w': int(input.mm2_w() or 0),
                 'm': int(input.mm2_m() or 0),
+                'c': bool(input.mm2_c()),
                 'P': bool(input.mm2_p()),
                 # -D only applies when a sequence can meet itself; storing
                 # the effective value keeps the cache key honest when the
@@ -1134,6 +1146,11 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     # copies the full record list).  Both are invalidated with the result.
     order_cache: dict = {}
     figure_ctx_cache: dict = {}
+    # (query_name, target_name) -> [PafRecord], filled lazily from the
+    # current result's records for aligned-sequence lookups.  The grouping
+    # mirrors DotPlotter._records_for_pair, so a payload segment index maps
+    # straight onto the per-pair list.
+    paf_pair_index: dict = {}
 
     @reactive.effect
     def _reset_focus_on_new_result():
@@ -1141,6 +1158,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         focus.set(None)
         order_cache.clear()
         figure_ctx_cache.clear()
+        paf_pair_index.clear()
 
     @reactive.calc
     def ordering_config() -> tuple[str, bool]:
@@ -1406,6 +1424,86 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     @reactive.event(input.back_overview)
     def _back_to_overview():
         focus.set(None)
+
+    def _record_for_segment(obj, q: str, t: str, idx: int):
+        """Return the PAF record behind identity-layer payload row *idx*."""
+        if not paf_pair_index:
+            for rec in obj.records:
+                paf_pair_index.setdefault((rec.query_name, rec.target_name), []).append(
+                    rec
+                )
+        recs = paf_pair_index.get((q, t), [])
+        return recs[idx] if 0 <= idx < len(recs) else None
+
+    def _sequence_for(meta: dict, name: str, side: str):
+        """Look up a full sequence by name, preferring *side*'s FASTA.
+
+        Falls back to the other assembly so self-align mode (one file) and
+        PAF uploads with a single FASTA still resolve.
+        """
+        order = ('query', 'target') if side == 'query' else ('target', 'query')
+        for key in order:
+            fasta = meta.get(key)
+            if fasta is not None:
+                seq = next((s for n, s in fasta.records if n == name), None)
+                if seq is not None:
+                    return seq
+        return None
+
+    @reactive.effect
+    @reactive.event(input.match_select)
+    async def _on_match_select():
+        """Serve aligned sequences for a clicked identity-layer match.
+
+        The report posts 'rd-match-select'; the reply travels back through
+        bridge.js as an 'rd-seq-response' echoing row/col/layer/idx so the
+        report can discard stale responses.
+        """
+        from rusty_dot.alignment_view import aligned_text
+
+        info = input.match_select()
+        res = result()
+        if not info or res is None:
+            return
+        kind, obj, meta = res
+        reply = {k: info.get(k) for k in ('row', 'col', 'layer', 'idx')}
+        rec = None
+        if kind == 'paf' and info.get('layer') == 'identity':
+            pair = focus()
+            if pair is not None:
+                q, t = pair
+            else:
+                try:
+                    lay = layout()
+                    q, t = panel_pair(
+                        lay['query_names'],
+                        lay['target_names'],
+                        int(info['row']),
+                        int(info['col']),
+                    )
+                except (KeyError, TypeError, ValueError, IndexError):
+                    q = t = None
+            if q is not None:
+                try:
+                    rec = _record_for_segment(obj, q, t, int(info['idx']))
+                except (TypeError, ValueError):
+                    rec = None
+        if rec is None or rec.cigar is None:
+            reply['error'] = 'no-cigar'
+        else:
+            qseq = _sequence_for(meta, rec.query_name, 'query')
+            tseq = _sequence_for(meta, rec.target_name, 'target')
+            if qseq is None or tseq is None:
+                reply['error'] = 'no-sequences'
+            else:
+                view = aligned_text(rec, qseq, tseq)
+                reply['text'] = (
+                    f'{rec.query_name}:{rec.query_start:,}-{rec.query_end:,} '
+                    f'({rec.strand}) vs '
+                    f'{rec.target_name}:{rec.target_start:,}-{rec.target_end:,}'
+                    f'\n\n{view["text"]}'
+                )
+        await session.send_custom_message('rd_match_seq', reply)
 
     # --- end W2 --------------------------------------------------------------
 
