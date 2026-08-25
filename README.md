@@ -21,7 +21,7 @@ In-browser computation is memory limited (~2GB), larger genomes should use
 minimap2 instead of k-mer based plotting. Alternatively, generate plots using
 the python API localy or on google colab.
 
-See [docs/webapp.md](docs/webapp.md) for capabilities and limits, and
+See [docs/webapp.md](https://adamtaranto.github.io/rusty-dot/webapp/) for capabilities and limits, and
 [Python library tutorials](https://adamtaranto.github.io/rusty-dot/tutorials/quickstart/) to run analysis locally.
 
 ## Installation
