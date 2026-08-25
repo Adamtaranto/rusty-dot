@@ -92,13 +92,20 @@ def merge_annotations(
         when there is nothing to merge.  A single non-``None`` input is
         returned as-is rather than copied.
     """
-    from rusty_dot.annotation import GffAnnotation  # noqa: PLC0415
-
+    # Imported only on the path that actually constructs one.  Under
+    # Shinylive the app boots before the wasm wheel finishes installing, and
+    # a startup read that imports rusty_dot would raise -- poisoning the
+    # reactive.calc that made the read, since a cached error is re-raised
+    # until the calc's dependencies change.  With no annotations there is
+    # nothing to merge, so the common boot-time call needs no import at all.
     present = [a for a in annotations if a is not None]
     if not present:
         return None
     if len(present) == 1:
         return present[0]
+
+    from rusty_dot.annotation import GffAnnotation  # noqa: PLC0415
+
     colors: dict[str, str] = {}
     records: list = []
     for ann in present:

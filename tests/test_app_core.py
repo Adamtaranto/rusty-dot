@@ -539,6 +539,34 @@ def test_merge_annotations_concatenates_and_keeps_colours():
     assert merge_annotations([a, None]) is a  # single input passes through
 
 
+def test_merge_annotations_needs_no_rusty_dot_when_there_is_nothing_to_merge():
+    """The empty case must not import rusty_dot.
+
+    Under Shinylive the app boots while the wasm wheel is still installing,
+    and the annotation controls are primed at startup with no uploads yet.
+    An import there raised ModuleNotFoundError, which a ``reactive.calc``
+    caches and re-raises until its dependencies change -- so a transient
+    startup failure disabled annotations for the whole session.
+    """
+    import builtins
+
+    from core.annotation_state import merge_annotations
+
+    real_import = builtins.__import__
+
+    def blocked(name, *args, **kwargs):
+        if name.startswith('rusty_dot'):
+            raise ModuleNotFoundError("No module named 'rusty_dot'")
+        return real_import(name, *args, **kwargs)
+
+    builtins.__import__ = blocked
+    try:
+        assert merge_annotations([]) is None
+        assert merge_annotations([None, None]) is None
+    finally:
+        builtins.__import__ = real_import
+
+
 # ------------------------------------------------- per-feature overrides
 
 FEATURE_GFF = (
