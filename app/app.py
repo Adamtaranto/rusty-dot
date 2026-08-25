@@ -179,6 +179,25 @@ _PANEL_DBLCLICK_JS = """
 """
 
 
+#: Columns of the drill-down annotations table, with how each one sorts.
+#: 'check' reads the checkbox, 'color' the picker's value, 'num' strips the
+#: thousands separators the cells are formatted with, 'text' compares
+#: case-insensitively.
+_FEATURE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ('Show', 'check'),
+    ('Colour', 'color'),
+    ('Axis', 'text'),
+    ('Type', 'text'),
+    ('Name', 'text'),
+    ('Start', 'num'),
+    ('End', 'num'),
+    ('Length', 'num'),
+    ('Strand', 'text'),
+    ('Source', 'text'),
+    ('Attributes', 'text'),
+)
+
+
 def inject_panel_bridge(html: str) -> str:
     """Insert the panel double-click bridge script into a report document.
 
@@ -2066,12 +2085,13 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             return shared.get(normalise_type(ft), '#888888')
 
         body = []
-        for r in rows:
+        for idx, r in enumerate(rows):
             checked = '' if r['uid'] in hidden else ' checked'
             color = overrides.get(r['uid']) or type_color(r['type'])
             meta = ' · '.join(f'{k}={v}' for k, v in list(r['attributes'].items())[:6])
             body.append(
-                '<tr data-uid="{uid}" data-type="{type}" data-source="{src}">'
+                '<tr data-uid="{uid}" data-idx="{idx}" data-type="{type}" '
+                'data-source="{src}">'
                 '<td><input type="checkbox" data-uid="{uid}" data-kind="vis"{ck}></td>'
                 '<td><input type="color" data-uid="{uid}" data-kind="color" '
                 'value="{color}" data-type-color="{type_color}" '
@@ -2087,6 +2107,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 '<td class="rd-ft-attrs" title="{meta}">{meta}</td>'
                 '</tr>'.format(
                     uid=_esc(r['uid']),
+                    idx=idx,
                     ck=checked,
                     color=_esc(color),
                     type_color=_esc(type_color(r['type'])),
@@ -2101,10 +2122,18 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                     meta=_esc(meta),
                 )
             )
+        # Each header carries how its column compares, so the client can
+        # sort without a round trip -- the table deliberately does not
+        # re-render, and re-rendering would drop the pending edits.
         header = (
-            '<thead><tr><th>Show</th><th>Colour</th><th>Axis</th><th>Type</th>'
-            '<th>Name</th><th>Start</th><th>End</th><th>Length</th>'
-            '<th>Strand</th><th>Source</th><th>Attributes</th></tr></thead>'
+            '<thead><tr>'
+            + ''.join(
+                f'<th data-sort="{kind}" role="columnheader" '
+                f'aria-sort="none" tabindex="0" '
+                f'title="Sort by {label.lower()}">{label}</th>'
+                for label, kind in _FEATURE_COLUMNS
+            )
+            + '</tr></thead>'
         )
         return ui.div(
             ui.div(

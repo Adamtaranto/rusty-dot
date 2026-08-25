@@ -492,3 +492,37 @@ html.shiny-busy .rd-busy-pill {
   font-size: 0.78rem;
   color: var(--rd-muted);
 }
+
+/* Sortable annotation-table headers. */
+#rd-feature-table thead th[data-sort] {
+  cursor: pointer;
+  user-select: none;
+  padding-right: 1rem;
+  position: sticky;
+}
+
+#rd-feature-table thead th[data-sort]:hover {
+  color: var(--rd-fg);
+}
+
+#rd-feature-table thead th[data-sort]:focus-visible {
+  outline: 2px solid var(--rd-accent);
+  outline-offset: -2px;
+}
+
+/* Direction marker, drawn in the padding reserved above so the header
+   text never shifts when the sort changes. */
+#rd-feature-table thead th.rd-sort-asc::after,
+#rd-feature-table thead th.rd-sort-desc::after {
+  position: absolute;
+  right: 0.3rem;
+  color: var(--rd-accent);
+}
+
+#rd-feature-table thead th.rd-sort-asc::after {
+  content: '▲';
+}
+
+#rd-feature-table thead th.rd-sort-desc::after {
+  content: '▼';
+}

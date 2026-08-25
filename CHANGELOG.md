@@ -14,6 +14,10 @@ and this project adheres to
   click. The per-type controls are read through a value that settles after
   two seconds, so a run of changes costs one render instead of one each —
   unticking six types in a row now redraws once.
+- The drill-down Annotations table sorts by any column: click a header for
+  ascending, again for descending, a third time to return to file order.
+  Sorting happens in the browser, so it costs no redraw and carries
+  unapplied edits along with their rows; it composes with the filter.
 - The drill-down Annotations tab gained an **Apply changes** button. Its
   per-feature show/hide and colour edits are held until you press it, so
   working down a list of several hundred features costs one redraw rather

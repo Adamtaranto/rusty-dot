@@ -1038,3 +1038,52 @@ def test_annotation_table_does_not_rerender_on_every_edit():
     js = (APP_DIR / 'www' / 'feature-table.js').read_text()
     reset = js.split("action === 'reset'")[1]
     assert 'dataset.typeColor' in reset
+
+
+# ------------------------------------------------ annotations table sorting
+
+
+def test_feature_table_headers_declare_how_they_sort():
+    """The client sorts, so every column has to say how it compares."""
+    # Read the constant out of the source: importing app.py needs shiny,
+    # which the test environment deliberately does not carry.
+    import ast
+
+    tree = ast.parse((APP_DIR / 'app.py').read_text())
+    spec = next(
+        node.value
+        for node in tree.body
+        if isinstance(node, ast.AnnAssign)
+        and getattr(node.target, 'id', None) == '_FEATURE_COLUMNS'
+    )
+    kinds = dict(ast.literal_eval(spec))
+    assert kinds['Start'] == kinds['End'] == kinds['Length'] == 'num'
+    assert kinds['Show'] == 'check'
+    assert kinds['Colour'] == 'color'
+    assert kinds['Type'] == kinds['Name'] == 'text'
+
+    app_py = (APP_DIR / 'app.py').read_text()
+    body = app_py.split('def annotation_table')[1].split('\n    @')[0]
+    assert 'data-sort=' in body and 'aria-sort=' in body
+    # Rows remember their file position so the sort can be undone.
+    assert 'data-idx=' in body
+
+
+def test_feature_table_sorts_on_the_client():
+    """Sorting must not go through the server.
+
+    Re-rendering hundreds of rows is the cost this table is built to
+    avoid, and it would discard edits that have not been applied yet.
+    """
+    js = (APP_DIR / 'www' / 'feature-table.js').read_text()
+    sort = js.split('// --- column sorting')[1].split('// --- client-side filter')[0]
+
+    assert 'setInputValue' not in sort, 'sorting must stay client-side'
+    # Rows are moved, not rebuilt, so their inputs keep their state.
+    assert 'appendChild' in sort and 'createDocumentFragment' in sort
+    # Numeric columns are formatted with thousands separators.
+    assert "replace(/,/g, '')" in sort
+    # asc -> desc -> file order, and ties keep file order so repeated
+    # sorts do not depend on the previous one.
+    assert 'data-idx' in sort
+    assert 'aria-sort' in sort
