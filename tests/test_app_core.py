@@ -817,3 +817,94 @@ def test_annotation_toggles_are_static_so_a_rerun_cannot_reset_them():
     # first report, and `undefined !== ''` would flash the controls.
     assert "output.gff_mode === 'self'" in before
     assert 'output.gff_mode !==' not in before
+
+
+def test_panel_click_is_delegated_so_any_click_can_reset():
+    """Focus must be escapable by clicking anywhere, not only the same panel.
+
+    Per-panel listeners each called stopPropagation, so no click outside the
+    focused panel could ever reach a reset.
+    """
+    import rusty_dot._html as html_pkg
+
+    js = (Path(html_pkg.__file__).parent / 'report.js').read_text()
+    block = js.split('if (panelGroups.length > 1)')[1].split('// ---')[0]
+    assert "svg.addEventListener('click'" in block
+    assert 'panelGroups.forEach' not in block, 'still one listener per panel'
+    assert 'selectedPanel !== null' in block, 'no click-anywhere reset branch'
+    assert 'closestPanel(evt.target)' in block
+
+
+# ----------------------------------------------- annotation name validation
+
+
+def test_annotation_names_all_present_is_silent():
+    from core.validate import validate_annotation_names
+
+    assert validate_annotation_names(['c1', 'c2'], ['c1'], 'query') == []
+    # Nothing to say when either side is empty.
+    assert validate_annotation_names([], ['c1'], 'query') == []
+    assert validate_annotation_names(['c1'], [], 'query') == []
+
+
+def test_annotation_names_partial_mismatch_lists_the_missing():
+    from core.validate import validate_annotation_names
+
+    (msg,) = validate_annotation_names(['c1', 'c2'], ['c1', 'c9'], 'query')
+    assert 'c9' in msg and 'query' in msg
+    assert 'c1' not in msg  # only the offenders are named
+
+
+def test_annotation_names_total_mismatch_suggests_the_likely_cause():
+    """Wrong file or wrong role is the usual reason nothing lines up."""
+    from core.validate import validate_annotation_names
+
+    (msg,) = validate_annotation_names(['c1', 'c2'], ['zz', 'yy'], 'target')
+    assert 'None of the target GFF' in msg
+    assert 'right role' in msg
+
+
+def test_annotation_names_preview_is_capped():
+    from core.validate import validate_annotation_names
+
+    missing = [f'x{i}' for i in range(12)]
+    (msg,) = validate_annotation_names(['c1'], ['c1'] + missing, 'query')
+    assert '12 sequence name(s)' in msg
+    assert msg.count(',') <= 5  # 5 names shown then an ellipsis
+    assert '…' in msg
+
+
+def test_clear_annotations_resets_the_widget_not_just_the_server():
+    """Shiny's file-input binding has a no-op setValue.
+
+    Without the custom message the filename would linger after clearing,
+    and re-picking the same file would fire no change event, so it could
+    never be reloaded.
+    """
+    app_py = (APP_DIR / 'app.py').read_text()
+    bridge = (APP_DIR / 'www' / 'bridge.js').read_text()
+
+    assert "'clear_gff'" in app_py
+    assert "send_custom_message(\n            'rd_clear_file_inputs'" in app_py
+    assert "addCustomMessageHandler(\n        'rd_clear_file_inputs'" in bridge
+    # The three pieces of DOM the binding writes and we must undo.
+    for reset in ("el.value = ''", "text.value = ''", 'progress-bar'):
+        assert reset in bridge
+
+
+def test_sidebar_scroll_is_captured_before_the_picker_opens():
+    """The jump happens during the picker interaction, not the re-render.
+
+    By the time `change` fires the container is already at the top, so
+    capturing there would restore 0.  The position has to be taken when
+    the input is clicked.
+    """
+    js = (APP_DIR / 'www' / 'sidebar-scroll.js').read_text()
+    click_block = js.split("'click'")[1].split('document.addEventListener')[0]
+    assert 'mark = {' in click_block, 'position not captured on click'
+    change_block = js.split("'change'")[1]
+    assert 'mark && mark.el === scroller' in change_block, (
+        'change handler must prefer the pre-picker position'
+    )
+    # A real gesture has to be able to cancel the hold.
+    assert "'wheel'" in js and 'release' in js

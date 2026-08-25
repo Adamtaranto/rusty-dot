@@ -87,3 +87,58 @@ def validate_query_names(
             'ambiguous and reordering/orientation may be wrong.'
         )
     return warnings
+
+
+def validate_annotation_names(
+    assembly_names: Iterable[str],
+    annotation_names: Iterable[str],
+    role: str,
+) -> list[str]:
+    """Check a GFF's sequence names against the assembly it annotates.
+
+    A GFF whose ``seqname`` column does not match the FASTA headers is the
+    single most common annotation mistake — a different assembly version,
+    or names rewritten by an intermediate tool.  Nothing errors: the
+    features simply never appear, which is easy to misread as "the plot is
+    broken".
+
+    Parameters
+    ----------
+    assembly_names : Iterable[str]
+        Contig names from the assembly FASTA for this role.
+    annotation_names : Iterable[str]
+        Distinct ``seqname`` values from the parsed GFF.
+    role : str
+        ``'query'`` or ``'target'``, used in the message.
+
+    Returns
+    -------
+    list[str]
+        Human-readable warnings, empty when every GFF sequence is present.
+    """
+    assembly = set(assembly_names)
+    annotated = set(annotation_names)
+    if not assembly or not annotated:
+        return []
+
+    def _preview(names: set[str], limit: int = 5) -> str:
+        shown = ', '.join(sorted(names)[:limit])
+        return shown + (', …' if len(names) > limit else '')
+
+    missing = annotated - assembly
+    if not missing:
+        return []
+    if missing == annotated:
+        # Nothing lines up at all: almost always the wrong file or the
+        # wrong role, so say so rather than listing every name.
+        return [
+            f'None of the {role} GFF sequence names match the {role} '
+            f'assembly ({_preview(annotated)}); no features will be drawn. '
+            'Check the GFF belongs to this assembly and is assigned to the '
+            'right role.'
+        ]
+    return [
+        f'{len(missing)} sequence name(s) in the {role} GFF are not in the '
+        f'{role} assembly ({_preview(missing)}); features on them will not '
+        'be drawn.'
+    ]

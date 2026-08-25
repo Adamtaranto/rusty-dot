@@ -1911,3 +1911,82 @@ def test_focused_thin_axis_single_end_tick():
     texts = [t.get_text() for t in ax.get_yticklabels() if t.get_text()]
     assert texts == ['30']
     plt.close(fig)
+
+
+# ----------------------------------------------- multi-row contig labels
+
+
+def _grid_plotter(lengths, prefix='query_contig_with_a_long_name_'):
+    import random
+
+    from rusty_dot import SequenceIndex
+
+    rng = random.Random(7)
+    idx = SequenceIndex(k=11)
+    names = []
+    for i, length in enumerate(lengths, 1):
+        name = f'{prefix}{i:03d}'
+        names.append(name)
+        idx.add_sequence(name, ''.join(rng.choice('ACGT') for _ in range(length)))
+    idx.add_sequence('target_contig', ''.join(rng.choice('ACGT') for _ in range(3000)))
+    return DotPlotter(idx), names
+
+
+def test_multi_row_contig_labels_are_angled():
+    """Vertical row labels collide when contigs differ in length.
+
+    A 90-degree label is as tall as the name is long, so a short contig's
+    row cannot contain it and neighbouring labels smear together.
+    """
+    pl, names = _grid_plotter([3000, 2500, 2000])
+    fig = pl.plot(query_names=names, target_names=['target_contig'])
+    left_col = [ax for ax in fig.axes if ax.get_ylabel()]
+    assert len(left_col) == 3
+    for ax in left_col:
+        rot = ax.yaxis.label.get_rotation()
+        assert 0 < rot < 90, f'row label should be angled, got {rot}'
+    plt.close(fig)
+
+
+def test_single_row_keeps_the_conventional_vertical_label():
+    """One row cannot collide with anything, so leave it alone."""
+    pl, names = _grid_plotter([3000])
+    fig = pl.plot(query_names=names, target_names=['target_contig'])
+    ax = next(ax for ax in fig.axes if ax.get_ylabel())
+    assert ax.yaxis.label.get_rotation() == 90
+    plt.close(fig)
+
+
+def test_row_labels_shrink_to_fit_a_short_row():
+    """A thin row gets a smaller label rather than one that overruns it."""
+    pl, names = _grid_plotter([30000, 900])
+    fig = pl.plot(query_names=names, target_names=['target_contig'])
+    labelled = [ax for ax in fig.axes if ax.get_ylabel()]
+    tall, short = labelled[0], labelled[1]
+    assert short.yaxis.label.get_fontsize() < tall.yaxis.label.get_fontsize(), (
+        'the short row should use a smaller label'
+    )
+    plt.close(fig)
+
+
+def test_row_label_never_exceeds_its_row_height():
+    """The guarantee the rotation exists to provide: no overlap."""
+    import math
+
+    pl, names = _grid_plotter([30000, 1200, 900, 800])
+    fig = pl.plot(query_names=names, target_names=['target_contig'])
+    fig_h = fig.get_size_inches()[1]
+    for ax in [ax for ax in fig.axes if ax.get_ylabel()]:
+        label = ax.yaxis.label
+        extent_in = (
+            len(ax.get_ylabel())
+            * label.get_fontsize()
+            * 0.62
+            / 72.0
+            * math.sin(math.radians(label.get_rotation()))
+        )
+        row_in = ax.get_position().height * fig_h
+        assert extent_in <= row_in * 1.05, (
+            f'label {ax.get_ylabel()!r} spans {extent_in:.2f}in of a {row_in:.2f}in row'
+        )
+    plt.close(fig)

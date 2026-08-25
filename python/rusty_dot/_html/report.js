@@ -11,7 +11,8 @@
  *
  * Behaviours:
  *  1. Click a panel        -> zoom the SVG viewBox to that panel and dim the
- *                             others; click again (or Esc) resets.
+ *                             others; any subsequent click in the figure
+ *                             (or Esc) returns to the full view.
  *  2. Wheel over the SVG   -> vertical pan; Shift+wheel -> horizontal pan;
  *                             Cmd/Ctrl+wheel (incl. trackpad pinch, which
  *                             browsers report as ctrl+wheel) -> uniform
@@ -171,10 +172,9 @@
   }
 
   function selectPanel(panel) {
-    if (selectedPanel === panel) {
-      resetView();
-      return;
-    }
+    // No same-panel toggle here: while a panel is selected the delegated
+    // handler below resets on any click, so this is only ever reached from
+    // the unfocused state.
     selectedPanel = panel;
     var box = bboxInRootSpace(panel);
     var pad = Math.max(box.w, box.h) * 0.03;
@@ -211,24 +211,35 @@
 
   /* Click-to-focus only makes sense with several panels to choose from:
    * in a single-panel report (the drill-down view) it would just recentre
-   * the one visible plot, so leave clicks alone there. */
+   * the one visible plot, so leave clicks alone there.
+   *
+   * One delegated listener on the SVG rather than one per panel, so that
+   * while a panel is focused a click *anywhere* in the figure returns to
+   * the full view — having to find and re-click the panel you zoomed into
+   * is a poor way out of a zoom.  Clicks the match / annotation / track
+   * handlers claim stop propagation and never reach here, so inspecting a
+   * match inside a focused panel still shows its details instead of
+   * throwing the zoom away. */
   if (panelGroups.length > 1) {
-    panelGroups.forEach(function (panel) {
-      panel.addEventListener('click', function (evt) {
-        // A completed drag-zoom releases a click too; swallow that one.
-        if (consumeDragClick()) return;
-        // Match clicks are handled (and stopped) by the match handler below.
-        evt.stopPropagation();
-        if (!window.RD_DBLCLICK_DRILLDOWN) {
-          selectPanel(panel);
-          return;
-        }
+    svg.addEventListener('click', function (evt) {
+      // A completed drag-zoom releases a click too; swallow that one.
+      if (consumeDragClick()) return;
+      if (selectedPanel !== null) {
         cancelPendingPanelClick();
-        pendingPanelTimer = setTimeout(function () {
-          pendingPanelTimer = null;
-          selectPanel(panel);
-        }, DBLCLICK_GRACE_MS);
-      });
+        resetView();
+        return;
+      }
+      var panel = closestPanel(evt.target);
+      if (!panel) return; // click landed on figure margin, not a panel
+      if (!window.RD_DBLCLICK_DRILLDOWN) {
+        selectPanel(panel);
+        return;
+      }
+      cancelPendingPanelClick();
+      pendingPanelTimer = setTimeout(function () {
+        pendingPanelTimer = null;
+        selectPanel(panel);
+      }, DBLCLICK_GRACE_MS);
     });
   }
 

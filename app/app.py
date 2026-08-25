@@ -50,7 +50,7 @@ from core.fasta import FastaInput, content_digest, parse_fasta_bytes
 from core.genbank import parse_genbank_bytes
 from core.panels import has_self_pair, nav_tips, panel_pair, resolve_orders
 from core.state import ORDER_CHOICES, PlotConfig
-from core.validate import validate_query_names
+from core.validate import validate_annotation_names, validate_query_names
 from core.wheels import pick_wasm_wheel, runtime_platform_tag
 import matplotlib  # noqa: F401  (ensures shinylive bundles the pyodide package)
 import numpy  # noqa: F401
@@ -298,6 +298,35 @@ app_ui = ui.page_sidebar(
         # upload widgets differ between FASTA and GenBank.
         ui.panel_conditional(
             "input.input_mode !== 'paf'",
+            # Target/reference first: it is the axis everything else is read
+            # against (x axis, column titles), so it reads more naturally as
+            # the thing you choose first.
+            ui.panel_conditional(
+                "!input.self_align && input.input_mode === 'fasta'",
+                ui.input_file(
+                    'target_fasta',
+                    'Target / reference assembly (FASTA / .gz)',
+                    accept=['.fa', '.fasta', '.fna', '.gz'],
+                ),
+            ),
+            ui.panel_conditional(
+                "!input.self_align && input.input_mode === 'genbank'",
+                ui.input_file(
+                    'target_gbk',
+                    'Target / reference assembly (GenBank / .gz)',
+                    accept=['.gb', '.gbk', '.gbff', '.genbank', '.gz'],
+                ),
+            ),
+            ui.input_checkbox(
+                'self_align',
+                _lbl(
+                    'Align assembly to itself',
+                    'Compare one assembly against itself to reveal repeats '
+                    'and segmental duplications — no second upload needed. '
+                    'Only the query assembly is used.',
+                ),
+                False,
+            ),
             ui.panel_conditional(
                 "input.input_mode === 'fasta'",
                 ui.input_file(
@@ -315,31 +344,6 @@ app_ui = ui.page_sidebar(
                         'Sequences and annotations are read from the same '
                         'file; any GFF uploaded below is merged with them.',
                     ),
-                    accept=['.gb', '.gbk', '.gbff', '.genbank', '.gz'],
-                ),
-            ),
-            ui.input_checkbox(
-                'self_align',
-                _lbl(
-                    'Align assembly to itself',
-                    'Compare one assembly against itself to reveal repeats '
-                    'and segmental duplications — no second upload needed.',
-                ),
-                False,
-            ),
-            ui.panel_conditional(
-                "!input.self_align && input.input_mode === 'fasta'",
-                ui.input_file(
-                    'target_fasta',
-                    'Target / reference assembly (FASTA / .gz)',
-                    accept=['.fa', '.fasta', '.fna', '.gz'],
-                ),
-            ),
-            ui.panel_conditional(
-                "!input.self_align && input.input_mode === 'genbank'",
-                ui.input_file(
-                    'target_gbk',
-                    'Target / reference assembly (GenBank / .gz)',
                     accept=['.gb', '.gbk', '.gbff', '.genbank', '.gz'],
                 ),
             ),
@@ -620,15 +624,24 @@ app_ui = ui.page_sidebar(
         ui.hr(),
         # --- GFF annotations -------------------------------------------------
         ui.h5('Annotations (GFF3)'),
+        # Same target-then-query order as the assembly uploads above.
+        ui.input_file(
+            'target_gff',
+            'Target annotations (.gff / .gff3 / .gz)',
+            accept=['.gff', '.gff3', '.gz'],
+        ),
         ui.input_file(
             'query_gff',
             'Query annotations (.gff / .gff3 / .gz)',
             accept=['.gff', '.gff3', '.gz'],
         ),
-        ui.input_file(
-            'target_gff',
-            'Target annotations (.gff / .gff3 / .gz)',
-            accept=['.gff', '.gff3', '.gz'],
+        ui.panel_conditional(
+            "output.gff_mode === 'plain' || output.gff_mode === 'self'",
+            ui.input_action_button(
+                'clear_gff',
+                'Clear annotations',
+                class_='btn-outline-secondary btn-sm',
+            ),
         ),
         # Static, so pressing Run never destroys them.  Only their visibility
         # is reactive (output.gff_mode); panel_conditional toggles CSS display
@@ -671,6 +684,8 @@ app_ui = ui.page_sidebar(
         # Delegated events for the drill-down Annotations table (one
         # listener instead of ~1200 Shiny-bound inputs).
         ui.include_js(APP_DIR / 'www' / 'feature-table.js', method='inline'),
+        # Hold the sidebar's scroll position across dynamic-UI re-renders.
+        ui.include_js(APP_DIR / 'www' / 'sidebar-scroll.js', method='inline'),
     ),
     # W1: biowasm aligner bridge (Aioli loaded lazily from the CDN on use).
     ui.head_content(ui.include_js(APP_DIR / 'www' / 'aligners.js', method='inline')),
@@ -1258,6 +1273,49 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     def _on_target_gff():
         req(ready())
         _parse_gff_upload(input.target_gff, 'target')
+
+    @reactive.effect
+    def _warn_on_annotation_name_mismatch():
+        """Warn when a GFF annotates contigs the assembly does not have.
+
+        Keyed on both the result and the annotation sources, so it fires
+        whichever order the user supplies them in — a GFF can be uploaded
+        long before the first run, and a new assembly can be run against an
+        already-loaded GFF.  The plotter only logs about this, which the
+        browser user never sees.
+        """
+        res = result()
+        if res is None:
+            return
+        _kind, _obj, meta = res
+        for role in ANNOTATION_ROLES:
+            ann = gff_raw_for(role)
+            fasta = meta.get(role)
+            if ann is None or not isinstance(fasta, FastaInput):
+                continue
+            for warning in validate_annotation_names(
+                fasta.names, ann.sequence_names(), role
+            ):
+                ui.notification_show(warning, type='warning', duration=12)
+
+    @reactive.effect
+    @reactive.event(input.clear_gff, ignore_init=True)
+    async def _on_clear_gff():
+        """Drop every uploaded GFF and reset the file inputs.
+
+        Shiny's file-input binding has a no-op ``setValue``, so the widget
+        cannot be cleared from the server: without the custom message the
+        filename would linger, and re-selecting the same file would fire no
+        change event and so never reload.
+        """
+        for role in ANNOTATION_ROLES:
+            _set_ann_source(role, 'gff', '', None)
+        await session.send_custom_message(
+            'rd_clear_file_inputs', {'ids': ['query_gff', 'target_gff']}
+        )
+        ui.notification_show(
+            'Cleared uploaded annotations.', type='message', duration=4
+        )
 
     def _read_dynamic(input_id: str, default):
         """Read a dynamically rendered input, tolerating its absence."""

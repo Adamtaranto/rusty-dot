@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Union
 
@@ -72,6 +73,17 @@ def _resolve_rasterized(
 # room for the tick labels drawn on the track's outer edge so position
 # (length) tick text cannot touch the contig-name label.
 _TICK_LABEL_PAD_PTS = 30.0
+
+# Rotation (degrees) for the per-row contig labels of a multi-row grid,
+# matching the column titles.  Vertical labels are as tall as the name is
+# long, so short contigs' labels overrun their panel and collide with their
+# neighbours'; angling trades that vertical extent for horizontal.
+_ROW_LABEL_ROTATION = 45.0
+
+# Row-label type sizes (points): the nominal size, and the floor below which
+# shrinking stops being legible and the name is elided instead.
+_ROW_LABEL_SIZE_PT = 8.0
+_ROW_LABEL_MIN_SIZE_PT = 5.0
 
 # Absolute margins (inches) reserved around the focused single-pair panel so
 # the title and axis labels always have room, however thin the proportional
@@ -1004,6 +1016,19 @@ class DotPlotter:
                     reverse_query=self._strip_group_prefix(q_name) in reverse_set,
                 )
 
+                # Row label rotation: a vertical (90 deg) contig name is as
+                # tall as it is long, so on a grid of unequal contigs the
+                # short rows' labels overflow their panels and smear over
+                # each other.  Angling them to match the column titles cuts
+                # the vertical extent and keeps them legible.  Only needed
+                # when there is more than one row to collide with.
+                if col_idx == 0 and nrows > 1:
+                    label = ax.yaxis.label
+                    label.set_rotation(_ROW_LABEL_ROTATION)
+                    label.set_ha('right')
+                    label.set_va('center')
+                    label.set_rotation_mode('anchor')
+
                 # Column label at top of each column (top row only), rotated.
                 # Use the display name (strip group prefix for CrossIndex).
                 # Focused single-pair views label the axes instead (below).
@@ -1286,11 +1311,35 @@ class DotPlotter:
         elif hide_internal_axes:
             # tight_layout() would reinsert inter-panel gaps; keep the panels
             # flush and just leave margins for the outer labels and titles.
+            left_frac = 0.1
+            if nrows > 1 and query_names:
+                # Angled row labels stick out to the left by
+                # len * cos(rotation); the fixed 10% is a fraction of figure
+                # width, so a wide grid has room to spare and a narrow one
+                # clips.  Size it from the longest name instead, plus space
+                # for the tick labels and the shared 'Position' label.
+                longest = max(len(self._strip_group_prefix(n)) for n in query_names)
+                text_in = longest * 8.0 * 0.62 / 72.0
+                needed_in = text_in * math.cos(math.radians(_ROW_LABEL_ROTATION))
+                fig_w = fig.get_size_inches()[0]
+                # Cap at 40% so a pathological name can never squeeze the
+                # panels out of existence.
+                left_frac = min(0.4, max(left_frac, (needed_in + 0.6) / fig_w))
             fig.subplots_adjust(
-                left=0.1, right=0.98, bottom=0.06, top=0.92, wspace=0.0, hspace=0.0
+                left=left_frac,
+                right=0.98,
+                bottom=0.06,
+                top=0.92,
+                wspace=0.0,
+                hspace=0.0,
             )
         else:
             plt.tight_layout()
+        if nrows > 1:
+            # Panel geometry is only final once the margins are set, so the
+            # row labels are fitted to their rows here rather than in the
+            # drawing loop above.
+            self._fit_row_labels(fig, axes, nrows)
         if color_by_identity and identity_colorbar:
             # After the layout pass: fig.colorbar steals its own space from
             # the panel axes, which tight_layout would otherwise fight.
@@ -1305,6 +1354,50 @@ class DotPlotter:
         if output_path is not None:
             self._save_figure(fig, output_path, dpi=dpi, format=format, title=title)
         return fig
+
+    @staticmethod
+    def _fit_row_labels(fig, axes, nrows: int) -> None:
+        """Shrink or elide angled row labels so they stay inside their row.
+
+        Rotation alone bounds the vertical extent of a contig name at
+        ``length * sin(rotation)``, which is still far more than a thin row
+        offers when an assembly mixes one large chromosome with small
+        contigs — the short rows' labels then overrun into their
+        neighbours'.  Font size is reduced first (names stay complete
+        wherever possible) and only then is the text elided.
+
+        Parameters
+        ----------
+        fig : matplotlib.figure.Figure
+            The laid-out figure; margins must already be applied, since the
+            row height is read from the axes position.
+        axes : list[list[matplotlib.axes.Axes]]
+            The panel grid, row-major.
+        nrows : int
+            Number of rows in the grid.
+        """
+        fig_h = fig.get_size_inches()[1]
+        sin_rot = math.sin(math.radians(_ROW_LABEL_ROTATION)) or 1.0
+        for row_idx in range(nrows):
+            ax = axes[row_idx][0]
+            text = ax.get_ylabel()
+            if not text:
+                continue
+            row_in = ax.get_position().height * fig_h
+            size = _ROW_LABEL_SIZE_PT
+            # Widest the text may be along its own baseline before its
+            # vertical projection exceeds the row.
+            while size > _ROW_LABEL_MIN_SIZE_PT:
+                if len(text) * size * 0.62 / 72.0 * sin_rot <= row_in:
+                    break
+                size -= 0.5
+            max_chars = int(row_in / (sin_rot * size * 0.62 / 72.0))
+            if max_chars < len(text):
+                # Keep the tail: contig names differ in their suffix far
+                # more often than in their shared prefix.
+                text = '…' + text[-(max_chars - 1) :] if max_chars > 1 else '…'
+                ax.set_ylabel(text)
+            ax.yaxis.label.set_fontsize(size)
 
     def _plot_panel(
         self,

@@ -8,6 +8,45 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed (sidebar layout and plot navigation)
+
+- The target/reference assembly is now the first upload in the sidebar,
+  ahead of the query, matching the order of the annotation uploads below
+  it. The target is the x axis everything else is read against, so it is
+  the more natural thing to choose first.
+- Multi-panel plots: clicking a panel centres it as before, but **any**
+  subsequent click in the figure returns to the full view. Previously the
+  second click had to land on the same panel — every listener was attached
+  per panel and stopped propagation, so no click elsewhere could reset.
+  Clicks that a match, annotation or side-track claims still show their
+  details rather than throwing the zoom away.
+
+### Added (annotation handling)
+
+- A **Clear annotations** button in the GFF section drops every uploaded
+  annotation and resets the file inputs. Shiny cannot clear a file input
+  from the server, so this also resets the widget itself — without which
+  the filename would linger and re-picking the same file would never
+  reload it.
+- Uploading a GFF whose sequence names are absent from the corresponding
+  assembly now warns, naming the offending contigs (or, when nothing
+  matches at all, suggesting the likely cause: wrong file, or assigned to
+  the wrong role). Previously the features simply never appeared, which
+  reads as a broken plot — the library logged a warning the browser user
+  never saw.
+
+### Fixed (sidebar and multi-panel labels)
+
+- Choosing a GFF file no longer scrolls the sidebar back to the top. The
+  jump happens during the file-picker interaction, before any re-render,
+  so the position is captured when the picker is opened and re-asserted
+  once the panel settles; a real scroll gesture cancels it.
+- Multi-panel plots: per-row contig labels are angled rather than
+  vertical, and shrink to fit their row. A vertical label is as tall as
+  the contig name is long, so an assembly mixing one large chromosome with
+  small contigs had the short rows' labels overrun into their neighbours'
+  and smear together.
+
 ### Fixed (single-panel plots and annotation controls)
 
 - Clicking a dot plot no longer dims the panel it just selected. The axes
