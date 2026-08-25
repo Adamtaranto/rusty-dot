@@ -1297,6 +1297,35 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         req(ready())
         _parse_gff_upload(input.target_gff, 'target')
 
+    @reactive.effect
+    async def _drop_target_annotations_when_self_aligning():
+        """Empty the target annotations when self-aligning.
+
+        A self-alignment puts the query assembly on both axes, so a target
+        annotation set has nothing of its own to annotate: left loaded it
+        either mismatches every contig or draws the query's own features a
+        second time.  Its upload is hidden in this mode, so hiding alone
+        would leave it in the merged set with no visible control to remove
+        it.
+
+        PAF input is exempt: it has both roles and no self-alignment, and
+        ``self_align`` keeps its last value while its panel is hidden.
+        """
+        if input.input_mode() == 'paf' or not input.self_align():
+            return
+        if not ann_sources['target']():
+            return  # nothing loaded; also stops this re-firing on its own write
+        for kind in ('gff', 'genbank'):
+            _set_ann_source('target', kind, '', None)
+        await session.send_custom_message(
+            'rd_clear_file_inputs', {'ids': ['target_gff']}
+        )
+        ui.notification_show(
+            'Self-alignment uses one assembly, so the target annotations were cleared.',
+            type='message',
+            duration=6,
+        )
+
     _MIN_LEN_NOTIF_ID = 'rd_min_contig_len'
 
     @reactive.effect

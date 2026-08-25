@@ -20,10 +20,11 @@ and this project adheres to
 
 ### Changed (sidebar layout and plot navigation)
 
-- Ticking **Align assembly to itself** now hides the target annotation
-  upload as well as the target assembly: both axes are the query assembly,
-  so there is no target to annotate. PAF input keeps the upload, having
-  both roles but no self-align notion.
+- Ticking **Align assembly to itself** now clears the target annotations
+  and hides their upload, alongside the target assembly: both axes are the
+  query assembly, so there is nothing for a target GFF to annotate, and
+  leaving it loaded would draw the query's own features twice. PAF input
+  keeps the upload, having both roles but no self-align notion.
 - Multi-panel plots: clicking a panel centres it as before, but **any**
   subsequent click in the figure returns to the full view. Previously the
   second click had to land on the same panel — every listener was attached

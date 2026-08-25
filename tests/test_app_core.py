@@ -908,3 +908,32 @@ def test_sidebar_scroll_is_captured_before_the_picker_opens():
     )
     # A real gesture has to be able to cancel the hold.
     assert "'wheel'" in js and 'release' in js
+
+
+def test_self_align_drops_target_annotations_but_spares_paf():
+    """Self-alignment puts the query assembly on both axes.
+
+    A target annotation set then has nothing of its own to annotate, and
+    its upload is hidden, so leaving it loaded would keep it in the merged
+    set with no visible control to remove it.  PAF input is exempt: it has
+    both roles and no self-alignment, and `self_align` keeps its last value
+    while its panel is hidden.
+    """
+    app_py = (APP_DIR / 'app.py').read_text()
+    body = app_py.split('def _drop_target_annotations_when_self_aligning')[1]
+    body = body.split('\n    _MIN_LEN_NOTIF_ID')[0]
+
+    assert "input.input_mode() == 'paf'" in body, 'PAF must be exempt'
+    assert 'not input.self_align()' in body
+    # Both source kinds go, and the widget is reset too -- Shiny cannot
+    # clear a file input, so the filename would otherwise linger.
+    assert "_set_ann_source('target', kind, '', None)" in body
+    assert "'rd_clear_file_inputs'" in body
+    assert "'target_gff'" in body
+    # The query role is never touched.
+    assert "'query'" not in body
+
+    # The upload is hidden on the matching condition.
+    assert '"input.input_mode === \'paf\' || !input.self_align"' in app_py, (
+        'target_gff visibility must match the drop condition'
+    )
