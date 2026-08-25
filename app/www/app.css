@@ -329,6 +329,17 @@ html.shiny-busy .rd-busy-pill {
   margin-bottom: 0.15rem;
 }
 
+/* Q / T badges: which upload(s) a shared feature type came from. */
+.rd-gff-type-row .rd-gff-role {
+  margin-left: auto;
+  padding: 0 0.28rem;
+  border: 1px solid var(--rd-border-soft);
+  border-radius: 3px;
+  font-size: 0.62rem;
+  line-height: 1.25;
+  color: var(--rd-muted);
+}
+
 .rd-color-input {
   width: 2rem;
   height: 1.4rem;

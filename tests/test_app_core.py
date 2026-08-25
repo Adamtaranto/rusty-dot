@@ -391,6 +391,84 @@ def test_slugify_and_type_slug_map():
     assert len(set(mapping.values())) == 3
 
 
+# --------------------------------------------------------------- colours
+
+
+def test_normalise_type_folds_case_and_aliases():
+    from core.annotation_colors import normalise_type
+
+    assert normalise_type('CDS') == normalise_type('cds') == 'cds'
+    assert normalise_type('  mRNA ') == 'mrna'
+    assert normalise_type('transcript') == 'mrna'
+    for alias in ('repeat_region', 'TE', 'LTR', 'tandem_repeat'):
+        assert normalise_type(alias) == 'repeat'
+    # Unknown types fold case only, they are not invented into aliases.
+    assert normalise_type('Effector') == 'effector'
+
+
+def test_reserved_types_get_their_conventional_colors():
+    from core.annotation_colors import RESERVED, assign_shared_colors
+
+    shared = assign_shared_colors(
+        {'query': ['gene', 'CDS', 'mRNA', 'exon', 'repeat_region']}
+    )
+    assert shared['gene'] == RESERVED['gene']
+    assert shared['cds'] == RESERVED['cds']
+    assert shared['mrna'] == RESERVED['mrna']
+    assert shared['exon'] == RESERVED['exon']
+    assert shared['repeat'] == RESERVED['repeat']
+
+
+def test_same_type_gets_one_colour_across_roles():
+    """The whole point: query and target must agree, whatever the spelling.
+
+    GffAnnotation._assign_colors indexes into each upload's own sorted type
+    list, so 'gene' would otherwise land on a different palette entry per
+    file -- and 'CDS' vs 'cds' on different entries entirely.
+    """
+    from core.annotation_colors import assign_shared_colors, color_map_for
+
+    q_types = ['CDS', 'Effector', 'TE', 'gene']
+    t_types = ['cds', 'Starship', 'intron', 'gene', 'repeat_region']
+    shared = assign_shared_colors({'query': q_types, 'target': t_types})
+
+    q_map = color_map_for(q_types, shared)
+    t_map = color_map_for(t_types, shared)
+    assert q_map['gene'] == t_map['gene']
+    assert q_map['CDS'] == t_map['cds']  # case-insensitive
+    assert q_map['TE'] == t_map['repeat_region']  # aliased
+
+
+def test_shared_colors_are_order_independent_and_deterministic():
+    from core.annotation_colors import assign_shared_colors
+
+    a = assign_shared_colors({'query': ['b', 'a'], 'target': ['c']})
+    b = assign_shared_colors({'target': ['c', 'a'], 'query': ['b']})
+    assert a == b == assign_shared_colors({'query': ['a', 'b', 'c']})
+
+
+def test_many_types_never_repeat_a_colour():
+    from core.annotation_colors import PALETTE, assign_shared_colors
+
+    types = [f'type_{i:02d}' for i in range(len(PALETTE) + 16)]
+    shared = assign_shared_colors({'query': types})
+    assert len(shared) == len(types)
+    assert len(set(shared.values())) == len(types)
+
+
+def test_color_map_for_omits_unknown_types():
+    from core.annotation_colors import color_map_for
+
+    assert color_map_for(['gene', 'ghost'], {'gene': '#111111'}) == {'gene': '#111111'}
+
+
+def test_display_name_prefers_the_common_spelling():
+    from core.annotation_colors import display_name
+
+    assert display_name(['CDS', 'CDS', 'cds']) == 'CDS'
+    assert display_name(['cds', 'CDS']) == 'CDS'  # tie -> alphabetical
+
+
 def test_apply_annotation_config_filters_and_recolours():
     from core.annotation_state import apply_annotation_config
 

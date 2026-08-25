@@ -28,6 +28,12 @@ from core.align import (
     paf_alignment_from_text,
     paf_text_from_alignment,
 )
+from core.annotation_colors import (
+    assign_shared_colors,
+    color_map_for,
+    display_name,
+    normalise_type,
+)
 from core.annotation_state import (
     ANNOTATION_ROLES,
     apply_annotation_config,
@@ -1102,61 +1108,105 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         try:
             return input[input_id]()
         except Exception:  # noqa: BLE001 - silent until the control renders
+            # Expected before gff_controls() has rendered; a genuine id typo
+            # looks identical, so leave a breadcrumb rather than a silent
+            # fallback to the default for every type.
+            logger.debug('dynamic input %r not available; using default', input_id)
             return default
+
+    @reactive.calc
+    def gff_type_index():
+        """Union of feature types across roles, with shared colours.
+
+        Returns ``(rows, slugs, shared)`` where *rows* is one entry per
+        normalised type -- ``{'key', 'label', 'roles', 'color'}`` -- and
+        *slugs* maps normalised key to input-id fragment.  Colours are
+        assigned over the union so the same type never gets two colours on
+        the two axes (see core/annotation_colors.py).
+        """
+        types_by_role = {
+            role: list(ann.feature_types())
+            for role in ANNOTATION_ROLES
+            if (ann := gff_raw[role]()) is not None
+        }
+        if not types_by_role:
+            return [], {}, {}
+        shared = assign_shared_colors(types_by_role)
+        spellings: dict[str, list[str]] = {}
+        roles_with: dict[str, list[str]] = {}
+        for role, fts in types_by_role.items():
+            for ft in fts:
+                key = normalise_type(ft)
+                spellings.setdefault(key, []).append(ft)
+                if role not in roles_with.setdefault(key, []):
+                    roles_with[key].append(role)
+        slugs = type_slug_map(sorted(spellings))
+        rows = [
+            {
+                'key': key,
+                'label': display_name(spellings[key]),
+                'roles': roles_with[key],
+                'color': shared[key],
+            }
+            for key in sorted(spellings)
+        ]
+        return rows, slugs, shared
 
     @render.ui
     def gff_controls():
-        sections = []
-        for role in ANNOTATION_ROLES:
-            ann = gff_raw[role]()
-            if ann is None:
-                continue
-            rows = []
-            for ft, slug in type_slug_map(ann.feature_types()).items():
-                rows.append(
-                    ui.div(
-                        ui.input_checkbox(f'gtyp_{role}_{slug}', ft, True),
-                        ui.HTML(
-                            f'<input type="color" class="rd-color-input" '
-                            f'id="gcol_{role}_{slug}" '
-                            f'value="{ann.get_color(ft)}">'
-                        ),
-                        class_='rd-gff-type-row',
-                    )
-                )
-            sections.append(
+        rows, slugs, _shared = gff_type_index()
+        if not rows:
+            return None
+        controls = []
+        for row in rows:
+            badges = ''.join(
+                f'<span class="rd-gff-role" title="{r} annotations">'
+                f'{r[0].upper()}</span>'
+                for r in row['roles']
+            )
+            controls.append(
                 ui.div(
-                    ui.h6(f'{role.capitalize()} feature types'),
-                    *rows,
-                    class_='rd-gff-section',
+                    ui.input_checkbox(f'gtyp_{slugs[row["key"]]}', row['label'], True),
+                    ui.HTML(badges),
+                    ui.HTML(
+                        f'<input type="color" class="rd-color-input" '
+                        f'id="gcol_{slugs[row["key"]]}" value="{row["color"]}">'
+                    ),
+                    class_='rd-gff-type-row',
                 )
             )
-        if not sections:
-            return None
         return ui.div(
             ui.input_checkbox('gff_diagonal', 'Shade features on diagonal', True),
             ui.input_checkbox('gff_tracks', 'Side tracks in focused pair view', True),
-            *sections,
+            ui.div(
+                ui.h6('Feature types'),
+                *controls,
+                class_='rd-gff-section',
+            ),
         )
 
     @reactive.calc
     def annotations():
         """Return (query_ann, target_ann) with the user's type/colour choices."""
+        rows, slugs, shared = gff_type_index()
+        # One control per *normalised* type, shared by both roles.
+        chosen = {
+            row['key']: (
+                bool(_read_dynamic(f'gtyp_{slugs[row["key"]]}', True)),
+                str(_read_dynamic(f'gcol_{slugs[row["key"]]}', '') or ''),
+            )
+            for row in rows
+        }
         result = {}
         for role in ANNOTATION_ROLES:
             ann = gff_raw[role]()
             if ann is None:
                 result[role] = None
                 continue
-            slugs = type_slug_map(ann.feature_types())
-            enabled = {
-                ft: bool(_read_dynamic(f'gtyp_{role}_{slug}', True))
-                for ft, slug in slugs.items()
-            }
-            colors = {
-                ft: str(_read_dynamic(f'gcol_{role}_{slug}', '') or '')
-                for ft, slug in slugs.items()
-            }
+            fts = list(ann.feature_types())
+            enabled = {ft: chosen.get(normalise_type(ft), (True, ''))[0] for ft in fts}
+            picked = {key: color for key, (_on, color) in chosen.items() if color}
+            colors = color_map_for(fts, {**shared, **picked})
             result[role] = apply_annotation_config(ann, enabled, colors)
         return result['query'], result['target']
 
