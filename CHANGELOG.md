@@ -11,9 +11,14 @@ and this project adheres to
 ### Fixed (annotation controls and short-contig labels)
 
 - Toggling annotation feature types no longer rebuilds the figure once per
-  click. The per-type controls are read through a debounced value, so a
-  run of changes costs one render instead of one each — unticking six
-  types in a row now redraws once.
+  click. The per-type controls are read through a value that settles after
+  two seconds, so a run of changes costs one render instead of one each —
+  unticking six types in a row now redraws once.
+- The drill-down Annotations tab gained an **Apply changes** button. Its
+  per-feature show/hide and colour edits are held until you press it, so
+  working down a list of several hundred features costs one redraw rather
+  than one per click. The button reports how many features are pending and
+  is disabled when there is nothing to apply.
 - A short contig's row label is no longer reduced to an ellipsis. Shrinking
   and truncating to fit could leave nothing but `…` where a row is very
   thin — a bacterial chromosome beside its 114 kb plasmid, for instance.

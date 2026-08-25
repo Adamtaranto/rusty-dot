@@ -82,6 +82,15 @@
     } else if (action === 'reset') {
       // Empty value means "drop the override and fall back to the type
       // colour" -- otherwise there is no way back from a per-feature pick.
+      // Repaint the swatches here too: edits are held until Apply, so the
+      // table does not re-render on this and the server cannot put them
+      // back.  Each input carries its type colour for exactly this.
+      rows.forEach(function (r) {
+        var picker = r.querySelector('input[data-kind="color"]');
+        if (picker && picker.dataset.typeColor) {
+          picker.value = picker.dataset.typeColor;
+        }
+      });
       send({ kind: 'color', uids: uids, value: '' });
     }
   });

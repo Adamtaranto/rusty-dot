@@ -955,3 +955,86 @@ def test_feature_type_toggles_are_debounced():
     assert 'gff_type_choices()' in body
     for raw in ('gtyp_', 'gcol_'):
         assert raw not in body, f'annotations() still reads {raw}* directly'
+
+
+# ------------------------------------------------ pending feature overrides
+
+
+def test_count_pending_overrides_counts_distinct_features():
+    """The button says how many features change, not how many edits."""
+    from core.annotation_state import count_pending_overrides
+
+    # One feature both hidden and recoloured still counts once.
+    assert (
+        count_pending_overrides(
+            frozenset({'query:0'}), {'query:0': '#fff'}, frozenset(), {}
+        )
+        == 1
+    )
+    assert (
+        count_pending_overrides(
+            frozenset({'query:0'}), {'query:1': '#fff'}, frozenset(), {}
+        )
+        == 2
+    )
+
+
+def test_count_pending_overrides_is_zero_when_settled():
+    from core.annotation_state import count_pending_overrides
+
+    hidden, colors = frozenset({'query:3'}), {'query:4': '#abc'}
+    assert count_pending_overrides(hidden, colors, hidden, dict(colors)) == 0
+    assert count_pending_overrides(frozenset(), {}, frozenset(), {}) == 0
+
+
+def test_count_pending_overrides_sees_reverted_and_changed_edits():
+    from core.annotation_state import count_pending_overrides
+
+    # Un-hiding something that is currently hidden is a pending change.
+    assert count_pending_overrides(frozenset(), {}, frozenset({'q:1'}), {}) == 1
+    # So is dropping a colour override, or changing one.
+    assert count_pending_overrides(frozenset(), {}, frozenset(), {'q:1': '#a'}) == 1
+    assert (
+        count_pending_overrides(frozenset(), {'q:1': '#b'}, frozenset(), {'q:1': '#a'})
+        == 1
+    )
+
+
+def test_feature_edits_are_held_until_apply():
+    """Per-feature edits must not redraw the figure on every click.
+
+    ~600 rows per sequence, and each toggle previously re-rendered both the
+    figure and the whole table.
+    """
+    app_py = (APP_DIR / 'app.py').read_text()
+
+    handler = app_py.split('def _on_feature_table_change')[1]
+    handler = handler.split('@reactive.effect')[0]
+    assert 'feature_hidden_pending.set' in handler
+    assert 'feature_colors_pending.set' in handler
+    assert 'feature_hidden.set' not in handler, 'handler must not commit'
+
+    apply_fn = app_py.split('def _apply_feature_overrides_now')[1]
+    apply_fn = apply_fn.split('@reactive.effect')[0]
+    assert 'feature_hidden.set(feature_hidden_pending())' in apply_fn
+    # Equal-but-new objects would still invalidate and cost a render.
+    assert 'return' in apply_fn
+
+    # annotations() draws from the committed values only.
+    ann = app_py.split('def annotations')[1].split('# --- end GFF')[0]
+    assert 'feature_hidden()' in ann and '_pending' not in ann
+
+
+def test_annotation_table_does_not_rerender_on_every_edit():
+    """It reads the pending values under isolate() for exactly this reason."""
+    app_py = (APP_DIR / 'app.py').read_text()
+    body = app_py.split('def annotation_table')[1].split('\n    @')[0]
+    assert 'with reactive.isolate():' in body
+    assert 'feature_hidden_pending()' in body
+
+    # With no re-render, the reset button has to repaint the swatches, so
+    # each one carries the type colour it falls back to.
+    assert 'data-type-color=' in body
+    js = (APP_DIR / 'www' / 'feature-table.js').read_text()
+    reset = js.split("action === 'reset'")[1]
+    assert 'dataset.typeColor' in reset

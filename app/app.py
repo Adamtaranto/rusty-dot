@@ -40,6 +40,7 @@ from core.annotation_state import (
     apply_annotation_config,
     apply_feature_overrides,
     build_feature_rows,
+    count_pending_overrides,
     merge_annotations,
     replace_source,
     type_slug_map,
@@ -1278,10 +1279,19 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     # Per-feature state from the drill-down Annotations tab, keyed by the
     # positional uids build_feature_rows hands out.  Cleared whenever a
     # role's sources change, since re-uploading renumbers those uids.
+    # Edits accumulate in the *pending* values and only reach the applied
+    # ones when the user presses "Apply changes".  Rebuilding the figure on
+    # every checkbox would make working through a long feature list
+    # unusable, and a debounce cannot help someone who wants to review a
+    # set of changes before committing them.
+    feature_hidden_pending = reactive.value(frozenset())
+    feature_colors_pending = reactive.value({})
     feature_hidden = reactive.value(frozenset())
     feature_colors = reactive.value({})
 
     def _reset_feature_overrides() -> None:
+        feature_hidden_pending.set(frozenset())
+        feature_colors_pending.set({})
         feature_hidden.set(frozenset())
         feature_colors.set({})
 
@@ -1491,9 +1501,9 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     # Each toggle re-runs the whole figure, so unticking several types in a
     # row rebuilds several times over and the later clicks land on a UI
     # still drawing the earlier ones.  Waiting for a quiet period lets a
-    # set of changes be made for the price of one render.  Long enough to
-    # click through a list without racing, short enough not to feel stuck.
-    _GFF_TYPE_DEBOUNCE_S = 0.8
+    # set of changes be made for the price of one render, with room to
+    # read the list and think between clicks.
+    _GFF_TYPE_DEBOUNCE_S = 2.0
 
     @debounce(_GFF_TYPE_DEBOUNCE_S)
     @reactive.calc
@@ -1944,7 +1954,23 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             ui.div(*toolbar, class_='rd-plot-toolbar') if toolbar else None,
             ui.navset_tab(
                 ui.nav_panel('Plot', body, hint),
-                ui.nav_panel('Annotations', ui.output_ui('annotation_table')),
+                ui.nav_panel(
+                    'Annotations',
+                    ui.div(
+                        ui.input_action_button(
+                            'apply_features',
+                            'Apply changes',
+                            class_='btn-primary btn-sm',
+                            disabled=True,
+                        ),
+                        ui.span(
+                            'Show/hide and colour edits are held until you apply them.',
+                            class_='rd-ft-apply-note',
+                        ),
+                        class_='rd-ft-apply',
+                    ),
+                    ui.output_ui('annotation_table'),
+                ),
                 id='drill_tabs',
             ),
             class_='rd-plot-area',
@@ -1981,18 +2007,46 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             return
         if kind in ('vis', 'bulk'):
             visible = bool(ev.get('value'))
-            hidden = set(feature_hidden())
+            hidden = set(feature_hidden_pending())
             hidden.difference_update(uids) if visible else hidden.update(uids)
-            feature_hidden.set(frozenset(hidden))
+            feature_hidden_pending.set(frozenset(hidden))
         elif kind == 'color':
-            colors = dict(feature_colors())
+            colors = dict(feature_colors_pending())
             value = ev.get('value') or ''
             for uid in uids:
                 if value:
                     colors[uid] = value
                 else:
                     colors.pop(uid, None)  # reset to the type colour
-            feature_colors.set(colors)
+            feature_colors_pending.set(colors)
+
+    @reactive.effect
+    @reactive.event(input.apply_features, ignore_init=True)
+    def _apply_feature_overrides_now():
+        """Commit the pending per-feature edits, redrawing once."""
+        # reactive.event isolates the body, so these reads add no
+        # dependencies -- this runs on the button press and nothing else.
+        if feature_hidden_pending() == feature_hidden() and (
+            feature_colors_pending() == feature_colors()
+        ):
+            return  # equal-but-new objects would still invalidate
+        feature_hidden.set(feature_hidden_pending())
+        feature_colors.set(dict(feature_colors_pending()))
+
+    @reactive.effect
+    def _sync_apply_features_button():
+        """Say whether there is anything to apply, and how much."""
+        pending = count_pending_overrides(
+            feature_hidden_pending(),
+            feature_colors_pending(),
+            feature_hidden(),
+            feature_colors(),
+        )
+        ui.update_action_button(
+            'apply_features',
+            label=f'Apply changes ({pending})' if pending else 'Apply changes',
+            disabled=not pending,
+        )
 
     @render.ui
     def annotation_table():
@@ -2000,8 +2054,12 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         pair = focus()
         if not rows or pair is None:
             return None
-        hidden = feature_hidden()
-        overrides = feature_colors()
+        # Isolated: the table shows the pending edits whenever it *does*
+        # render, but must not re-render on every toggle -- ~600 rows per
+        # sequence rebuilt per click is the freeze this design avoids.
+        with reactive.isolate():
+            hidden = feature_hidden_pending()
+            overrides = feature_colors_pending()
         _type_rows, _slugs, shared = gff_type_index()
 
         def type_color(ft: str) -> str:
@@ -2016,7 +2074,8 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 '<tr data-uid="{uid}" data-type="{type}" data-source="{src}">'
                 '<td><input type="checkbox" data-uid="{uid}" data-kind="vis"{ck}></td>'
                 '<td><input type="color" data-uid="{uid}" data-kind="color" '
-                'value="{color}" class="rd-color-input"></td>'
+                'value="{color}" data-type-color="{type_color}" '
+                'class="rd-color-input"></td>'
                 '<td class="rd-ft-role">{role}</td>'
                 '<td class="rd-ft-type">{type}</td>'
                 '<td class="rd-ft-name">{name}</td>'
@@ -2030,6 +2089,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                     uid=_esc(r['uid']),
                     ck=checked,
                     color=_esc(color),
+                    type_color=_esc(type_color(r['type'])),
                     role=_esc(r['role']),
                     type=_esc(r['type']),
                     name=_esc(r['name'] or ''),

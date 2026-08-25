@@ -478,3 +478,17 @@ html.shiny-busy .rd-busy-pill {
   width: 1.6rem;
   height: 1.1rem;
 }
+
+/* Apply-changes bar above the drill-down annotations table. */
+.rd-ft-apply {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.2rem 0;
+  flex-wrap: wrap;
+}
+
+.rd-ft-apply .rd-ft-apply-note {
+  font-size: 0.78rem;
+  color: var(--rd-muted);
+}

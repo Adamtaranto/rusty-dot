@@ -10,7 +10,7 @@ Python so it can be unit-tested without a Shiny session.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Mapping
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from rusty_dot.annotation import GffAnnotation
@@ -322,3 +322,34 @@ def replace_source(
             }
         ]
     )
+
+
+def count_pending_overrides(
+    hidden_pending: frozenset[str],
+    colors_pending: Mapping[str, str],
+    hidden_applied: frozenset[str],
+    colors_applied: Mapping[str, str],
+) -> int:
+    """Count features whose pending state differs from what is applied.
+
+    Drives the "Apply changes" button: the drill-down's per-feature edits
+    are held back until the user commits them, so the button has to say
+    whether there is anything to commit.
+
+    Parameters
+    ----------
+    hidden_pending, hidden_applied : frozenset[str]
+        Hidden feature uids, edited and committed respectively.
+    colors_pending, colors_applied : Mapping[str, str]
+        ``uid -> colour`` overrides, edited and committed respectively.
+
+    Returns
+    -------
+    int
+        Number of distinct features that would change on apply.
+    """
+    changed = set(hidden_pending) ^ set(hidden_applied)
+    for uid in set(colors_pending) | set(colors_applied):
+        if colors_pending.get(uid) != colors_applied.get(uid):
+            changed.add(uid)
+    return len(changed)
