@@ -181,6 +181,25 @@ g[id^='rd-matches-'] * { pointer-events: stroke; cursor: pointer; }
   cursor: pointer;
 }
 
+/* Side-track features are clickable too (behaviour 5). */
+.rd-track-feature {
+  cursor: pointer;
+}
+
+.rd-track-feature.rd-track-active {
+  stroke: #222;
+  stroke-width: 0.6;
+}
+
+/* Highlight band behind the matches.  Kept translucent so overlapping
+   bands remain readable and the dots stay visible through them; document
+   order (inserted right after the panel background) puts it behind the
+   match strokes without needing a z-index. */
+.rd-band {
+  fill-opacity: 0.22;
+  pointer-events: none;
+}
+
 /* Segments hidden by the embedded min-match-length filter (behaviour 6). */
 .rd-len-hidden {
   display: none;

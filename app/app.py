@@ -7,6 +7,7 @@ run natively (``shiny run app/app.py``) it uses the installed rusty-dot.
 
 from __future__ import annotations
 
+from html import escape as _esc
 import importlib.util
 import io
 import logging
@@ -28,15 +29,25 @@ from core.align import (
     paf_alignment_from_text,
     paf_text_from_alignment,
 )
+from core.annotation_colors import (
+    assign_shared_colors,
+    color_map_for,
+    display_name,
+    normalise_type,
+)
 from core.annotation_state import (
     ANNOTATION_ROLES,
     apply_annotation_config,
+    apply_feature_overrides,
+    build_feature_rows,
+    merge_annotations,
     type_slug_map,
 )
 from core.cache import QUERY_GROUP, TARGET_GROUP, SessionCache
 from core.export import reordered_fasta_text
 from core.fasta import FastaInput, parse_fasta_bytes
-from core.panels import panel_pair, resolve_orders
+from core.genbank import parse_genbank_bytes
+from core.panels import has_self_pair, panel_pair, resolve_orders
 from core.state import ORDER_CHOICES, PlotConfig
 from core.validate import validate_query_names
 from core.wheels import pick_wasm_wheel, runtime_platform_tag
@@ -267,16 +278,38 @@ app_ui = ui.page_sidebar(
         ui.input_radio_buttons(
             'input_mode',
             None,
-            {'fasta': 'Assemblies (FASTA)', 'paf': 'Alignment (PAF)'},
+            {
+                'fasta': 'Assemblies (FASTA)',
+                'genbank': 'Assemblies (GenBank)',
+                'paf': 'Alignment (PAF)',
+            },
             selected='fasta',
             inline=True,
         ),
+        # Everything except the PAF branch shares the self-align checkbox,
+        # the method selector and the per-method parameter panels; only the
+        # upload widgets differ between FASTA and GenBank.
         ui.panel_conditional(
-            "input.input_mode === 'fasta'",
-            ui.input_file(
-                'query_fasta',
-                'Query assembly (FASTA / .gz)',
-                accept=['.fa', '.fasta', '.fna', '.gz'],
+            "input.input_mode !== 'paf'",
+            ui.panel_conditional(
+                "input.input_mode === 'fasta'",
+                ui.input_file(
+                    'query_fasta',
+                    'Query assembly (FASTA / .gz)',
+                    accept=['.fa', '.fasta', '.fna', '.gz'],
+                ),
+            ),
+            ui.panel_conditional(
+                "input.input_mode === 'genbank'",
+                ui.input_file(
+                    'query_gbk',
+                    _lbl(
+                        'Query assembly (GenBank / .gz)',
+                        'Sequences and annotations are read from the same '
+                        'file; any GFF uploaded below is merged with them.',
+                    ),
+                    accept=['.gb', '.gbk', '.gbff', '.genbank', '.gz'],
+                ),
             ),
             ui.input_checkbox(
                 'self_align',
@@ -288,11 +321,19 @@ app_ui = ui.page_sidebar(
                 False,
             ),
             ui.panel_conditional(
-                '!input.self_align',
+                "!input.self_align && input.input_mode === 'fasta'",
                 ui.input_file(
                     'target_fasta',
                     'Target / reference assembly (FASTA / .gz)',
                     accept=['.fa', '.fasta', '.fna', '.gz'],
+                ),
+            ),
+            ui.panel_conditional(
+                "!input.self_align && input.input_mode === 'genbank'",
+                ui.input_file(
+                    'target_gbk',
+                    'Target / reference assembly (GenBank / .gz)',
+                    accept=['.gb', '.gbk', '.gbff', '.genbank', '.gz'],
                 ),
             ),
             ui.input_select(
@@ -604,6 +645,9 @@ app_ui = ui.page_sidebar(
         ui.include_js(APP_DIR / 'www' / 'bridge.js'),
         # Custom Shiny binding for native <input type="color"> pickers.
         ui.include_js(APP_DIR / 'www' / 'color-input.js', method='inline'),
+        # Delegated events for the drill-down Annotations table (one
+        # listener instead of ~1200 Shiny-bound inputs).
+        ui.include_js(APP_DIR / 'www' / 'feature-table.js', method='inline'),
     ),
     # W1: biowasm aligner bridge (Aioli loaded lazily from the CDN on use).
     ui.head_content(ui.include_js(APP_DIR / 'www' / 'aligners.js', method='inline')),
@@ -635,16 +679,35 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         raw = Path(files[0]['datapath']).read_bytes()
         return parse_fasta_bytes(raw)
 
+    def _parse_seq_upload(role: str) -> FastaInput:
+        """Parse one assembly upload for the current input mode.
+
+        GenBank carries its annotations in the same file, so parsing also
+        registers them as an annotation source for *role* — merged with
+        any GFF the user uploads separately.
+        """
+        if input.input_mode() != 'genbank':
+            fasta_input = input.query_fasta if role == 'query' else input.target_fasta
+            return _parse_upload(fasta_input, role)
+
+        gbk_input = input.query_gbk if role == 'query' else input.target_gbk
+        files = gbk_input()
+        if not files:
+            raise ValueError(f'Please upload a {role} assembly.')
+        parsed = parse_genbank_bytes(Path(files[0]['datapath']).read_bytes())
+        _set_ann_source(role, 'genbank', files[0]['name'], parsed.gff_text)
+        return parsed.fasta
+
     def _parse_inputs(progress=None) -> tuple[FastaInput, FastaInput]:
         """Parse the query (and target, or reuse query when self-aligning)."""
         if progress is not None:
             progress.set(0, message='Parsing query assembly…')
-        query = _parse_upload(input.query_fasta, 'query')
+        query = _parse_seq_upload('query')
         if input.self_align():
             return query, query
         if progress is not None:
             progress.set(1, message='Parsing target assembly…')
-        return query, _parse_upload(input.target_fasta, 'target')
+        return query, _parse_seq_upload('target')
 
     # The canonical CSR k-mer index costs ~13-16 bytes/bp (both strands);
     # a real 74 Mb pair completes in the browser (verified), so the guard
@@ -742,6 +805,8 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     # All biowasm tools share one 2 GB wasm heap cap; warn above ~200 MB.
     _BIOWASM_SIZE_WARN = 200 * 1024 * 1024
     _NOTIF_ID = 'rd_aligner_progress'
+    # Extra budget granted each time the user chooses to keep waiting.
+    _TIMEOUT_EXTEND_MS = 300_000
     # In-flight request: {'request_id', 'method', 'params', 'query', 'target'}
     aligner_pending = reactive.value(None)
     # Rolling log of completed tool runs: [{'tool', 'cmd', 'stderr', 'error'}]
@@ -764,6 +829,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         if info is None:
             return
         aligner_pending.set(None)
+        ui.modal_remove()
         ui.notification_remove(_NOTIF_ID)
         await session.send_custom_message(
             'rd_cancel_aligner', {'request_id': info['request_id']}
@@ -834,7 +900,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         # instead of burning CPU ahead of the run the user wants.
         if aligner_pending() is not None:
             await _cancel_pending('superseded by a new run')
-        if input.input_mode() != 'fasta':
+        if input.input_mode() not in ('fasta', 'genbank'):
             return
         method = input.method()
         if method not in BIOWASM_TOOLS:
@@ -903,6 +969,9 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         if not info or res.get('request_id') != info['request_id']:
             return  # stale or unsolicited result
         aligner_pending.set(None)
+        # A result can land while the "still running?" modal is open — the
+        # run finished on its own.  Take the modal down with it.
+        ui.modal_remove()
         ui.notification_remove(_NOTIF_ID)
         method = info['method']
         _log_run(
@@ -964,6 +1033,71 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         if msg:
             ui.notification_show(msg, id=_NOTIF_ID, duration=None)
 
+    @reactive.effect
+    @reactive.event(input.aligner_timeout)
+    def _on_aligner_timeout():
+        """Offer to keep waiting when a run outlives its watchdog budget.
+
+        The tool has not failed and has not been stopped — aligners.js only
+        notifies — so the choice really is "wait longer" vs "give up", and
+        it can be offered again each time the extended budget expires.
+        """
+        ev = input.aligner_timeout()
+        info = aligner_pending()
+        if not ev or not info or ev.get('request_id') != info['request_id']:
+            return  # stale: this run already finished or was superseded
+        minutes = max(1, round((ev.get('total_ms') or 0) / 60000))
+        label = METHOD_LABELS[info['method']]
+        ui.modal_show(
+            ui.modal(
+                ui.p(
+                    f'{label} has been running for about {minutes} minute'
+                    f'{"s" if minutes != 1 else ""} and has not finished yet.'
+                ),
+                ui.p(
+                    'It is still working in the background — nothing has been '
+                    'lost. Large genomes (especially minimap2 with base-level '
+                    'alignment) can take a while in the browser.',
+                    class_='text-muted',
+                ),
+                title='Still aligning',
+                easy_close=False,
+                footer=ui.TagList(
+                    ui.input_action_button(
+                        'aligner_give_up', 'Cancel run', class_='btn-outline-secondary'
+                    ),
+                    ui.input_action_button(
+                        'aligner_wait',
+                        f'Wait another {_TIMEOUT_EXTEND_MS // 60000} minutes',
+                        class_='btn-primary',
+                    ),
+                ),
+            )
+        )
+
+    @reactive.effect
+    @reactive.event(input.aligner_wait, ignore_init=True)
+    async def _on_aligner_wait():
+        info = aligner_pending()
+        ui.modal_remove()
+        if info is None:
+            return  # finished while the modal was up
+        await session.send_custom_message(
+            'rd_extend_aligner',
+            {'request_id': info['request_id'], 'ms': _TIMEOUT_EXTEND_MS},
+        )
+        ui.notification_show(
+            f'Still running {METHOD_LABELS[info["method"]]} — waiting another '
+            f'{_TIMEOUT_EXTEND_MS // 60000} minutes…',
+            id=_NOTIF_ID,
+            duration=None,
+        )
+
+    @reactive.effect
+    @reactive.event(input.aligner_give_up, ignore_init=True)
+    async def _on_aligner_give_up():
+        await _cancel_pending('timed out')
+
     # --- end W1: biowasm aligners ---
 
     # Numeric spinner arrows fire one input event per 0.1 step; without a
@@ -980,39 +1114,86 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         return int(input.min_length() or 0)
 
     # --- GFF annotations -----------------------------------------------------
-    # Parsed uploads (upload-derived state, deliberately outside PlotConfig).
-    gff_raw = {role: reactive.value(None) for role in ANNOTATION_ROLES}
+    # Annotation sources per role (upload-derived state, deliberately outside
+    # PlotConfig).  A role can hold both a GenBank-derived set and a GFF
+    # upload; they are merged, tagged by the file they came from.  Each entry
+    # is {'kind': 'gff'|'genbank', 'filename': str, 'annotation': GffAnnotation}.
+    ann_sources = {role: reactive.value(()) for role in ANNOTATION_ROLES}
+
+    def _set_ann_source(role: str, kind: str, filename: str, ann) -> None:
+        """Add or replace one annotation source for *role*.
+
+        *ann* may be a parsed GffAnnotation or GFF3 text.  Every record is
+        tagged with *filename* so the drill-down can say where a feature
+        came from once several sources are merged.
+        """
+        from rusty_dot.annotation import GffAnnotation  # noqa: PLC0415
+
+        if isinstance(ann, str):
+            ann = GffAnnotation.from_text(ann) if ann.strip() else None
+        entries = [e for e in ann_sources[role]() if e['kind'] != kind]
+        if ann is not None and len(ann):
+            for rec in ann.records:
+                rec.source_file = filename
+            entries.append({'kind': kind, 'filename': filename, 'annotation': ann})
+        ann_sources[role].set(tuple(entries))
+        _reset_feature_overrides()
 
     def _parse_gff_upload(file_input, role: str) -> None:
-        from rusty_dot.annotation import GffAnnotation
+        from rusty_dot.annotation import GffAnnotation  # noqa: PLC0415
 
         files = file_input()
         if not files:
-            gff_raw[role].set(None)
+            _set_ann_source(role, 'gff', '', None)
             return
         try:
             ann = GffAnnotation.from_bytes(Path(files[0]['datapath']).read_bytes())
         except ValueError as exc:
-            gff_raw[role].set(None)
+            _set_ann_source(role, 'gff', '', None)
             ui.notification_show(
                 f'Could not parse {role} GFF: {exc}', type='error', duration=10
             )
             return
         if len(ann) == 0:
-            gff_raw[role].set(None)
+            _set_ann_source(role, 'gff', '', None)
             ui.notification_show(
                 f'No features found in the {role} GFF file.',
                 type='warning',
                 duration=8,
             )
             return
-        gff_raw[role].set(ann)
+        _set_ann_source(role, 'gff', files[0]['name'], ann)
+        kinds = {e['kind'] for e in ann_sources[role]()}
+        if 'genbank' in kinds:
+            # Overlapping duplicates are likely, but silently deduping would
+            # discard features the user deliberately supplied.  Say so and
+            # let them toggle sources off instead.
+            ui.notification_show(
+                f'{role.capitalize()} now has annotations from both a GenBank '
+                'file and a GFF; features present in both will be drawn twice.',
+                type='warning',
+                duration=10,
+            )
         ui.notification_show(
             f'{role.capitalize()} annotations: {len(ann)} feature(s), '
             f'{len(ann.feature_types())} type(s).',
             type='message',
             duration=5,
         )
+
+    def gff_raw_for(role: str):
+        """Return the merged annotation for *role* across all its sources."""
+        return merge_annotations([e['annotation'] for e in ann_sources[role]()])
+
+    # Per-feature state from the drill-down Annotations tab, keyed by the
+    # positional uids build_feature_rows hands out.  Cleared whenever a
+    # role's sources change, since re-uploading renumbers those uids.
+    feature_hidden = reactive.value(frozenset())
+    feature_colors = reactive.value({})
+
+    def _reset_feature_overrides() -> None:
+        feature_hidden.set(frozenset())
+        feature_colors.set({})
 
     @reactive.effect
     @reactive.event(input.query_gff)
@@ -1031,61 +1212,129 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         try:
             return input[input_id]()
         except Exception:  # noqa: BLE001 - silent until the control renders
+            # Expected before gff_controls() has rendered; a genuine id typo
+            # looks identical, so leave a breadcrumb rather than a silent
+            # fallback to the default for every type.
+            logger.debug('dynamic input %r not available; using default', input_id)
             return default
+
+    @reactive.calc
+    def gff_type_index():
+        """Union of feature types across roles, with shared colours.
+
+        Returns ``(rows, slugs, shared)`` where *rows* is one entry per
+        normalised type -- ``{'key', 'label', 'roles', 'color'}`` -- and
+        *slugs* maps normalised key to input-id fragment.  Colours are
+        assigned over the union so the same type never gets two colours on
+        the two axes (see core/annotation_colors.py).
+        """
+        types_by_role = {
+            role: list(ann.feature_types())
+            for role in ANNOTATION_ROLES
+            if (ann := gff_raw_for(role)) is not None
+        }
+        if not types_by_role:
+            return [], {}, {}
+        shared = assign_shared_colors(types_by_role)
+        spellings: dict[str, list[str]] = {}
+        roles_with: dict[str, list[str]] = {}
+        for role, fts in types_by_role.items():
+            for ft in fts:
+                key = normalise_type(ft)
+                spellings.setdefault(key, []).append(ft)
+                if role not in roles_with.setdefault(key, []):
+                    roles_with[key].append(role)
+        slugs = type_slug_map(sorted(spellings))
+        rows = [
+            {
+                'key': key,
+                'label': display_name(spellings[key]),
+                'roles': roles_with[key],
+                'color': shared[key],
+            }
+            for key in sorted(spellings)
+        ]
+        return rows, slugs, shared
 
     @render.ui
     def gff_controls():
-        sections = []
-        for role in ANNOTATION_ROLES:
-            ann = gff_raw[role]()
-            if ann is None:
-                continue
-            rows = []
-            for ft, slug in type_slug_map(ann.feature_types()).items():
-                rows.append(
-                    ui.div(
-                        ui.input_checkbox(f'gtyp_{role}_{slug}', ft, True),
-                        ui.HTML(
-                            f'<input type="color" class="rd-color-input" '
-                            f'id="gcol_{role}_{slug}" '
-                            f'value="{ann.get_color(ft)}">'
-                        ),
-                        class_='rd-gff-type-row',
-                    )
-                )
-            sections.append(
+        rows, slugs, _shared = gff_type_index()
+        if not rows:
+            return None
+        controls = []
+        for row in rows:
+            badges = ''.join(
+                f'<span class="rd-gff-role" title="{r} annotations">'
+                f'{r[0].upper()}</span>'
+                for r in row['roles']
+            )
+            controls.append(
                 ui.div(
-                    ui.h6(f'{role.capitalize()} feature types'),
-                    *rows,
-                    class_='rd-gff-section',
+                    ui.input_checkbox(f'gtyp_{slugs[row["key"]]}', row['label'], True),
+                    ui.HTML(badges),
+                    ui.HTML(
+                        f'<input type="color" class="rd-color-input" '
+                        f'id="gcol_{slugs[row["key"]]}" value="{row["color"]}">'
+                    ),
+                    class_='rd-gff-type-row',
                 )
             )
-        if not sections:
-            return None
+        toggles = []
+        # Diagonal shading only draws where a contig meets itself; offering
+        # it on a plain cross-assembly comparison promises something that
+        # cannot happen.
+        if self_panels():
+            toggles.append(
+                ui.tooltip(
+                    ui.input_checkbox(
+                        'gff_diagonal', 'Shade features on diagonal', True
+                    ),
+                    'Draws each feature as a square on the diagonal of '
+                    'self-comparison panels.',
+                )
+            )
         return ui.div(
-            ui.input_checkbox('gff_diagonal', 'Shade features on diagonal', True),
+            *toggles,
             ui.input_checkbox('gff_tracks', 'Side tracks in focused pair view', True),
-            *sections,
+            ui.div(
+                ui.h6('Feature types'),
+                *controls,
+                class_='rd-gff-section',
+            ),
         )
 
     @reactive.calc
     def annotations():
         """Return (query_ann, target_ann) with the user's type/colour choices."""
+        rows, slugs, shared = gff_type_index()
+        # One control per *normalised* type, shared by both roles.
+        chosen = {
+            row['key']: (
+                bool(_read_dynamic(f'gtyp_{slugs[row["key"]]}', True)),
+                str(_read_dynamic(f'gcol_{slugs[row["key"]]}', '') or ''),
+            )
+            for row in rows
+        }
+        hidden = feature_hidden()
+        feat_colors = feature_colors()
         result = {}
         for role in ANNOTATION_ROLES:
-            ann = gff_raw[role]()
+            ann = gff_raw_for(role)
             if ann is None:
                 result[role] = None
                 continue
-            slugs = type_slug_map(ann.feature_types())
-            enabled = {
-                ft: bool(_read_dynamic(f'gtyp_{role}_{slug}', True))
-                for ft, slug in slugs.items()
-            }
-            colors = {
-                ft: str(_read_dynamic(f'gcol_{role}_{slug}', '') or '')
-                for ft, slug in slugs.items()
-            }
+            # Per-feature choices first: their uids are positions in the
+            # *unfiltered* record list, so filtering by type first would
+            # renumber them.  The type filter runs second and therefore
+            # wins — a type switched off hides its features regardless.
+            ann = apply_feature_overrides(ann, hidden, feat_colors, role)
+            if ann is None:
+                result[role] = None
+                continue
+            fts = list(ann.feature_types())
+            enabled = {ft: chosen.get(normalise_type(ft), (True, ''))[0] for ft in fts}
+            picked = {key: color for key, (_on, color) in chosen.items() if color}
+            colors = color_map_for(fts, {**shared, **picked})
             result[role] = apply_annotation_config(ann, enabled, colors)
         return result['query'], result['target']
 
@@ -1173,6 +1422,24 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         return input.contig_order(), input.auto_reverse()
 
     @reactive.calc
+    def self_panels() -> bool:
+        """Whether the panel grid contains a self-comparison panel.
+
+        Gates the diagonal-shading control, which can only ever draw on
+        such a panel.  Judged on the whole grid rather than the focused
+        pair, so the control does not appear and vanish as the user drills
+        in and out.  Returns ``False`` rather than blocking before the
+        first run, so the feature-type list stays visible while a plot is
+        being set up.
+        """
+        if input.input_mode() != 'paf' and input.self_align():
+            return True
+        if result() is None:
+            return False
+        lay = layout()
+        return has_self_pair(lay['query_names'], lay['target_names'])
+
+    @reactive.calc
     def layout():
         """Explicit plotted axis orders for the current result + config.
 
@@ -1239,8 +1506,12 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         # without touching layout()'s dependencies.
         ann_q, ann_t = annotations()
         if ann_q is not None or ann_t is not None:
-            if bool(_read_dynamic('gff_diagonal', True)):
-                kwargs['annotation'] = ann_q if ann_q is not None else ann_t
+            if self_panels() and bool(_read_dynamic('gff_diagonal', True)):
+                # On a self-comparison both roles describe the same
+                # sequences, so merge them: a user who uploaded the
+                # annotation under either role — or split it across two
+                # files — gets everything shaded.
+                kwargs['annotation'] = merge_annotations([ann_q, ann_t])
             kwargs['annotation_query'] = ann_q
             kwargs['annotation_target'] = ann_t
             kwargs['annotation_tracks'] = bool(_read_dynamic('gff_tracks', True))
@@ -1323,8 +1594,14 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             class_='rd-log-accordion',
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def report_frame():
+        # suspend_when_hidden=False: switching to the drill-down's
+        # Annotations tab hides this output, and Shiny would re-render it
+        # on the way back — a seconds-long matplotlib pass under Pyodide
+        # for a view that has not changed.
+        #
         # Rendering the report re-runs layout (contig ordering) and the
         # matplotlib figure — seconds-long on real assemblies, so show what
         # is happening rather than freezing silently.
@@ -1392,11 +1669,145 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             body = ui.output_ui('report_frame')
         else:
             body = ui.output_plot('dotplot', height='72vh')
+        hint = _nav_hint(pair is not None) if input.interactive() else None
+        if pair is None or not feature_rows():
+            return ui.div(
+                ui.div(*toolbar, class_='rd-plot-toolbar') if toolbar else None,
+                body,
+                hint,
+                class_='rd-plot-area',
+            )
+        # Tabs only in the drill-down, so the overview path is untouched.
         return ui.div(
             ui.div(*toolbar, class_='rd-plot-toolbar') if toolbar else None,
-            body,
-            _nav_hint(pair is not None) if input.interactive() else None,
+            ui.navset_tab(
+                ui.nav_panel('Plot', body, hint),
+                ui.nav_panel('Annotations', ui.output_ui('annotation_table')),
+                id='drill_tabs',
+            ),
             class_='rd-plot-area',
+        )
+
+    @reactive.calc
+    def feature_rows() -> list[dict]:
+        """Every feature on the focused pair's sequences, as table rows."""
+        pair = focus()
+        if pair is None:
+            return []
+        # Both roles are always listed: on a self panel the two axes carry
+        # the same sequence but may still hold different uploads.
+        return build_feature_rows(
+            gff_raw_for('query'), pair[0], 'query'
+        ) + build_feature_rows(gff_raw_for('target'), pair[1], 'target')
+
+    @reactive.effect
+    @reactive.event(input.feature_table_change)
+    def _on_feature_table_change():
+        """Fold one delta from the annotations table into the override state.
+
+        The table ships raw HTML inputs and posts deltas through
+        www/feature-table.js rather than binding one Shiny input per
+        feature: the real GFFs here run to ~600 features per sequence, and
+        ~1200 bound inputs visibly freezes Pyodide.
+        """
+        ev = input.feature_table_change()
+        if not ev:
+            return
+        kind = ev.get('kind')
+        uids = ev.get('uids') or ([ev['uid']] if ev.get('uid') else [])
+        if not uids:
+            return
+        if kind in ('vis', 'bulk'):
+            visible = bool(ev.get('value'))
+            hidden = set(feature_hidden())
+            hidden.difference_update(uids) if visible else hidden.update(uids)
+            feature_hidden.set(frozenset(hidden))
+        elif kind == 'color':
+            colors = dict(feature_colors())
+            value = ev.get('value') or ''
+            for uid in uids:
+                if value:
+                    colors[uid] = value
+                else:
+                    colors.pop(uid, None)  # reset to the type colour
+            feature_colors.set(colors)
+
+    @render.ui
+    def annotation_table():
+        rows = feature_rows()
+        pair = focus()
+        if not rows or pair is None:
+            return None
+        hidden = feature_hidden()
+        overrides = feature_colors()
+        _type_rows, _slugs, shared = gff_type_index()
+
+        def type_color(ft: str) -> str:
+            return shared.get(normalise_type(ft), '#888888')
+
+        body = []
+        for r in rows:
+            checked = '' if r['uid'] in hidden else ' checked'
+            color = overrides.get(r['uid']) or type_color(r['type'])
+            meta = ' · '.join(f'{k}={v}' for k, v in list(r['attributes'].items())[:6])
+            body.append(
+                '<tr data-uid="{uid}" data-type="{type}" data-source="{src}">'
+                '<td><input type="checkbox" data-uid="{uid}" data-kind="vis"{ck}></td>'
+                '<td><input type="color" data-uid="{uid}" data-kind="color" '
+                'value="{color}" class="rd-color-input"></td>'
+                '<td class="rd-ft-role">{role}</td>'
+                '<td class="rd-ft-type">{type}</td>'
+                '<td class="rd-ft-name">{name}</td>'
+                '<td class="rd-ft-num">{start:,}</td>'
+                '<td class="rd-ft-num">{end:,}</td>'
+                '<td class="rd-ft-num">{length:,}</td>'
+                '<td>{strand}</td>'
+                '<td class="rd-ft-src">{src}</td>'
+                '<td class="rd-ft-attrs" title="{meta}">{meta}</td>'
+                '</tr>'.format(
+                    uid=_esc(r['uid']),
+                    ck=checked,
+                    color=_esc(color),
+                    role=_esc(r['role']),
+                    type=_esc(r['type']),
+                    name=_esc(r['name'] or ''),
+                    start=r['start'],
+                    end=r['end'],
+                    length=r['length'],
+                    strand=_esc(r['strand']),
+                    src=_esc(r['source_file'] or r['source'] or ''),
+                    meta=_esc(meta),
+                )
+            )
+        header = (
+            '<thead><tr><th>Show</th><th>Colour</th><th>Axis</th><th>Type</th>'
+            '<th>Name</th><th>Start</th><th>End</th><th>Length</th>'
+            '<th>Strand</th><th>Source</th><th>Attributes</th></tr></thead>'
+        )
+        return ui.div(
+            ui.div(
+                ui.HTML(
+                    f'<b>{len(rows)}</b> feature(s) on '
+                    f'<b>{_esc(pair[0])}</b> and <b>{_esc(pair[1])}</b>. '
+                    'Coordinates are 1-based inclusive, as in the source file.'
+                ),
+                class_='rd-ft-caption',
+            ),
+            ui.div(
+                ui.HTML(
+                    '<input type="search" id="rd-ft-filter" '
+                    'placeholder="Filter by type, name or source…">'
+                    '<button type="button" data-bulk="show">Show all</button>'
+                    '<button type="button" data-bulk="hide">Hide all</button>'
+                    '<button type="button" data-bulk="reset">Reset colours</button>'
+                ),
+                class_='rd-ft-tools',
+            ),
+            ui.HTML(
+                f'<div class="rd-ft-scroll"><table id="rd-feature-table">'
+                f'{header}<tbody>{"".join(body)}</tbody></table></div>'
+            ),
+            class_='rd-ft-panel',
         )
 
     @reactive.effect

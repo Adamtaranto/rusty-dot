@@ -8,6 +8,84 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added (GenBank input)
+
+- Browser app: **Assemblies (GenBank)** input mode reads sequences *and*
+  annotations from the same upload, so annotated GenBank assemblies no
+  longer have to be split into FASTA + GFF by hand. `app/core/genbank.py`
+  is a pure-Python flat-file parser (Biopython is far too large for the
+  Pyodide bundle) handling gzip, multi-record files, CRLF, multi-line
+  qualifiers, and the location grammar — `join`/`order`/`complement`
+  including nesting, `<a..>b` fuzzy bounds, `a^b` sites, bare positions,
+  and remote `ACC:1..10` references (skipped with a warning rather than
+  failing the upload). `/translation` is dropped and the whole-record
+  `source` feature is skipped by default.
+- A role's annotations are now a list of sources tagged by filename and
+  kind, so a GenBank file and a GFF upload coexist and are merged.
+  Overlaps are not silently deduped — that would discard features the user
+  deliberately supplied — so the app warns instead.
+
+### Added (drill-down annotations)
+
+- Browser app: an **Annotations** tab in the focused-pair view lists every
+  feature on the two sequences with its type, name, coordinates (1-based
+  inclusive, as in the source file), strand, source file and remaining
+  attributes, plus a per-feature show/hide toggle and colour override, a
+  client-side filter, and bulk show/hide/reset actions.
+- Interactive report: clicking a side-track feature bands the matching
+  column (x track) or row (y track) behind the matches, and shows the
+  feature in the detail bar. Bands toggle, several can be active at once,
+  `Shift`+click bands every part of a multi-part feature (a spliced CDS),
+  and `Esc` clears them. The detail bar now also reports the source file.
+- Aligner runs that outlive their time budget now prompt instead of
+  failing: a **Still aligning** dialog offers "Wait another 5 minutes"
+  (re-arming the watchdog, and offerable again) or "Cancel run". The
+  budget became a watchdog that only notifies, so `minimap2 -c` on large
+  genomes is no longer killed mid-run.
+- `GffFeature` gained `color` (per-feature colour override, honoured by the
+  side tracks and the diagonal squares) and `source_file` (provenance for
+  merged uploads). Both default to unset, so existing callers are
+  unaffected.
+- HTML report payload gained an optional top-level `tracks` key describing
+  every drawn side-track part, with its SVG gid and a `group` shared by the
+  parts of one feature.
+
+### Changed (annotation colours)
+
+- Browser app: feature-type colours are now assigned once across *both*
+  uploads instead of per file. `GffAnnotation` colours types by their index
+  into that file's own sorted type list, so the same type landed on
+  different palette entries in the query and target — `gene` green on one
+  track and blue on the other — and `CDS` vs `cds` were unrelated keys.
+- Types are matched case-insensitively with a small alias table, so
+  `repeat_region` / `TE` / `LTR` share one colour. `gene`, `CDS`, `mRNA`,
+  `exon` and `repeat` get reserved conventional colours (green / yellow /
+  maroon / grey / red); the rest walk a 24-entry palette and then
+  deterministic hash-derived colours, so nothing silently repeats.
+- The two per-role colour pickers collapse into one **Feature types** list
+  with `Q`/`T` badges — once the colour is shared, two controls for one
+  value would need a feedback-breaking two-way sync.
+- **Shade features on diagonal** is only offered when the panel grid
+  actually contains a self-comparison panel; it could never draw anything
+  on a plain cross-assembly comparison. On a self-alignment the query and
+  target annotations are now merged for shading, instead of the target's
+  being ignored whenever a query GFF existed.
+- Interactive report: the sequence copy buttons say what the next press
+  will do — **Fetch query seq** / **Fetch target seq** until the sequence
+  has been fetched from the app, **Copy …** afterwards — replacing the
+  mystery "Press again to copy" state.
+
+### Fixed (annotation tracks)
+
+- Unstranded features (`repeat_region`, `TE`, `TIR`, `TRF_SSR`, `flank`,
+  `Pseudogene`, …) rendered as full-height blocks covering the entire
+  y-axis annotation band. `FancyBboxPatch` applies `rounding_size` on x and
+  `rounding_size × mutation_aspect` on y, but the y-orientation branch
+  passed the along-sequence radius (in bases) as `rounding_size` even
+  though that axis is measured in lane units, then inverted the aspect on
+  top — on a 236 kb contig, a ~1200-lane corner radius in x and ~10⁷ bp in
+  y. The radius is now expressed per axis. The x track is unchanged.
+
 ### Changed (documentation build)
 
 - The docs site is now built with [Zensical](https://zensical.org) instead of
@@ -65,9 +143,10 @@ and this project adheres to
 - Browser app: matches without a CIGAR (minimap2 without `-c`, nucmer,
   k-mer) show the raw query and target sequences as two unaligned lines in
   the detail bar instead of nothing, each truncated at 20,000 bases.
-- Browser app: **Copy query seq** / **Copy target seq** buttons in the
-  match detail bar copy the full (untruncated) sequence of the selected
-  match to the clipboard.
+- Browser app: sequence copy buttons in the match detail bar copy the full
+  (untruncated) sequence of the selected match to the clipboard. They are
+  labelled **Fetch …** until the sequence has been retrieved and **Copy …**
+  afterwards (see *Changed (annotation colours)*).
 
 ### Performance (match detail)
 

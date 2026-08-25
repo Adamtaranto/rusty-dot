@@ -14,6 +14,9 @@
 //       terminate the tool's WebWorker so the wasm computation actually
 //       stops (falling back to ignore-the-result if the worker handle is
 //       not reachable through Aioli's public surface).
+//   'rd_extend_aligner' {request_id, ms}
+//       Re-arm the run watchdog for that id, giving the tool another
+//       `ms` milliseconds before the app is prompted again.
 //
 // Results return via
 //   Shiny.setInputValue('aligner_result',
@@ -22,6 +25,12 @@
 // On failure `output` is null and `error` carries a human-readable message.
 // `stderr` (the tool's log) and `cmd` (the exact command line) are always
 // included so the app can show a run log.
+//
+// A long run notifies rather than fails:
+//   Shiny.setInputValue('aligner_timeout',
+//       {request_id, tool, waited_ms, total_ms}, {priority: 'event'})
+// The run keeps going; the app decides whether to extend the watchdog
+// ('rd_extend_aligner') or cancel it ('rd_cancel_aligner').
 //
 // Aioli runs in its own WebWorker, so it never contends with the Pyodide
 // runtime that executes the Shiny app itself.
@@ -60,14 +69,63 @@
   var cancelResolvers = {}; // request_id -> resolve fn unblocking the queue
   var currentRun = null; // {requestId, tool} while a tool is executing
 
-  // A hung init/exec (bad CDN asset, wedged WebWorker) must reject rather
-  // than block the run queue forever.  Real assemblies can keep nucmer
-  // busy for many minutes in wasm, so runs get per-tool budgets.
+  // A hung init (bad CDN asset, unreachable biowasm) must reject rather
+  // than block the run queue forever -- there is no useful "wait longer"
+  // story for a fetch that is never going to arrive.
   var INIT_TIMEOUT_MS = 180000;
+
+  // Runs are different: real assemblies can legitimately keep a wasm
+  // aligner busy for many minutes (minimap2 -c especially), and the
+  // WebWorker keeps computing regardless of what this side does with the
+  // promise.  So the per-tool budget is a *watchdog*: when it expires the
+  // app is told, the run continues, and the app either extends the budget
+  // or cancels for real.
   var RUN_TIMEOUT_MS = {
     minimap2: 300000,
     nucmer: 600000,
   };
+
+  // request_id -> {timer, tool, startedAt, waited}
+  var watchdogs = {};
+
+  function armWatchdog(requestId, tool, ms) {
+    if (!requestId) return; // pre-warm runs are not watched
+    var w = watchdogs[requestId];
+    if (!w) {
+      w = watchdogs[requestId] = { timer: null, tool: tool, startedAt: Date.now() };
+    }
+    clearTimeout(w.timer);
+    w.timer = setTimeout(function () {
+      // Notify only.  The entry is kept so 'rd_extend_aligner' can re-arm
+      // it; the run itself is untouched and still racing to finish.
+      w.timer = null;
+      if (!window.Shiny || !window.Shiny.setInputValue) return;
+      window.Shiny.setInputValue(
+        'aligner_timeout',
+        {
+          request_id: requestId,
+          tool: w.tool,
+          waited_ms: ms,
+          total_ms: Date.now() - w.startedAt,
+        },
+        { priority: 'event' }
+      );
+    }, ms);
+  }
+
+  function extendWatchdog(msg) {
+    if (!msg || !msg.request_id) return;
+    var w = watchdogs[msg.request_id];
+    if (!w) return; // already finished or cancelled
+    armWatchdog(msg.request_id, w.tool, msg.ms || RUN_TIMEOUT_MS[w.tool] || 300000);
+  }
+
+  function clearWatchdog(requestId) {
+    var w = watchdogs[requestId];
+    if (!w) return;
+    clearTimeout(w.timer);
+    delete watchdogs[requestId];
+  }
 
   function withTimeout(promise, what, ms) {
     return Promise.race([
@@ -211,13 +269,15 @@
     sendProgress(msg.request_id, msg.tool, 'aligning');
     var res;
     currentRun = { requestId: msg.request_id, tool: msg.tool };
+    armWatchdog(msg.request_id, msg.tool, RUN_TIMEOUT_MS[msg.tool] || 300000);
     try {
-      res = await withTimeout(
-        CLI.exec(cmd),
-        msg.tool + ' run',
-        RUN_TIMEOUT_MS[msg.tool] || 300000
-      );
+      // Deliberately not raced against a timer: the run ends only by
+      // completing, erroring, or being cancelled.  Rejecting here would
+      // report a failure while the worker kept burning CPU on a run that
+      // was about to succeed.
+      res = await CLI.exec(cmd);
     } finally {
+      clearWatchdog(msg.request_id);
       currentRun = null;
     }
     sendProgress(msg.request_id, msg.tool, 'reading-output');
@@ -271,6 +331,7 @@
   function handleCancel(msg) {
     if (!msg || !msg.request_id) return;
     cancelledIds[msg.request_id] = true;
+    clearWatchdog(msg.request_id);
     if (currentRun && currentRun.requestId === msg.request_id) {
       // The tool is executing right now: kill its worker so the CPU work
       // actually stops (best-effort; see teardownTool).
@@ -353,6 +414,7 @@
       window.Shiny.addCustomMessageHandler('rd_mount_fasta', handleMount);
       window.Shiny.addCustomMessageHandler('rd_run_aligner', handleMessage);
       window.Shiny.addCustomMessageHandler('rd_cancel_aligner', handleCancel);
+      window.Shiny.addCustomMessageHandler('rd_extend_aligner', extendWatchdog);
     } else {
       setTimeout(register, 100);
     }

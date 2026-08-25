@@ -206,6 +206,40 @@ def test_draw_track_unstranded_rounded_and_connectors():
     assert list(xs) == sorted(xs)  # midpoints in ascending order
 
 
+@pytest.mark.parametrize('seq_len', [1_000, 1_000_000])
+@pytest.mark.parametrize('short', [True, False])
+@pytest.mark.parametrize('orientation', ['x', 'y'])
+def test_draw_track_unstranded_patch_stays_inside_track(seq_len, short, orientation):
+    """Rounded rectangles must not spill outside their lane or feature span.
+
+    Regression guard: the y-orientation branch used to pass a
+    ``rounding_size`` measured in bases to an across-track axis measured in
+    lane units, blowing the patch up by orders of magnitude.
+    """
+    length = 50 if short else seq_len // 2
+    start = seq_len // 4
+    ann = GffAnnotation.from_text(
+        f'c1\tt\trepeat_region\t{start + 1}\t{start + length}\t.\t.\t.\tID=r1'
+    )
+    _fig, ax = plt.subplots()
+    if orientation == 'x':
+        ax.set_xlim(0, seq_len)
+    else:
+        ax.set_ylim(0, seq_len)
+    n_lanes = draw_track(ax, ann, 'c1', seq_len, orientation=orientation)
+
+    patch = [p for p in ax.patches if isinstance(p, FancyBboxPatch)][0]
+    bbox = patch.get_path().get_extents(patch.get_patch_transform())
+    r_along = min(0.25 * length, 0.005 * seq_len)
+    along_lo, along_hi = start - r_along, start + length + r_along
+    if orientation == 'x':
+        (along_min, across_min), (along_max, across_max) = bbox.min, bbox.max
+    else:
+        (across_min, along_min), (across_max, along_max) = bbox.min, bbox.max
+    assert along_lo <= along_min and along_max <= along_hi
+    assert -0.01 <= across_min and across_max <= n_lanes + 0.01
+
+
 def test_draw_track_empty_sequence_hides_axis():
     ann = GffAnnotation.from_text('c1\tt\tgene\t1\t10\t.\t+\t.\tID=a')
     ax = _track_ax()
@@ -491,3 +525,154 @@ def test_html_payload_keeps_genomic_coords_on_reversed_panel(tmp_path):
     # Original genomic locus and strand, even though the patch is mirrored.
     assert annot['start'] == 100 and annot['end'] == 300
     assert annot['strand'] == '+'
+
+
+# ------------------------------------------------ per-feature colour override
+
+
+def test_feature_color_override_beats_type_colour_on_tracks():
+    """GffFeature.color wins over the annotation's per-type colour.
+
+    Backs the drill-down's per-feature colour control; features without an
+    override (color=None) keep taking the type colour.
+    """
+    ann = GffAnnotation.from_text(
+        'c1\tt\tgene\t101\t500\t.\t+\t.\tID=a\n'
+        'c1\tt\trepeat_region\t1001\t1500\t.\t.\t.\tID=r\n'
+    )
+    override = next(r for r in ann.records if r.feature_type == 'gene')
+    override.color = '#123456'
+
+    for orientation in ('x', 'y'):
+        _fig, ax = plt.subplots()
+        (ax.set_xlim if orientation == 'x' else ax.set_ylim)(0, 2000)
+        draw_track(ax, ann, 'c1', 2000, orientation=orientation)
+        arrow = [p for p in ax.patches if isinstance(p, Polygon)][0]
+        assert matplotlib.colors.to_hex(arrow.get_facecolor()) == '#123456'
+        box = [p for p in ax.patches if isinstance(p, FancyBboxPatch)][0]
+        assert matplotlib.colors.to_hex(box.get_facecolor()) == ann.get_color(
+            'repeat_region'
+        )
+
+
+def test_feature_color_override_applies_to_diagonal_squares():
+    from matplotlib.collections import PatchCollection
+
+    pl = _plotter()
+    ann = GffAnnotation.from_text('c1\tt\tgene\t101\t500\t.\t+\t.\tID=a')
+    ann.records[0].color = '#abcdef'
+    fig = pl.plot(query_names=['c1'], target_names=['c1'], annotation=ann)
+    cols = [
+        c for a in fig.axes for c in a.collections if isinstance(c, PatchCollection)
+    ]
+    hexes = {matplotlib.colors.to_hex(fc) for c in cols for fc in c.get_facecolor()}
+    assert '#abcdef' in hexes
+
+
+def test_multipart_connector_uses_the_group_colour():
+    """Recolouring one exon must not drag the connector line with it."""
+    ann = GffAnnotation.from_text(
+        'c1\tt\tCDS\t101\t300\t.\t+\t0\tID=c;Parent=m\n'
+        'c1\tt\tCDS\t801\t1000\t.\t+\t0\tID=c;Parent=m\n'
+    )
+    ann.records[1].color = '#ff0000'
+    ax = _track_ax()
+    draw_track(ax, ann, 'c1', 2000, orientation='x')
+    line = ax.lines[0]
+    assert matplotlib.colors.to_hex(line.get_color()) == ann.get_color('CDS')
+
+
+# ------------------------------------------------- track gids for the report
+
+
+def test_draw_track_sets_no_gids_by_default():
+    """Static output must keep untagged artists (regression guard)."""
+    ann = GffAnnotation.from_text(GFF)
+    ax = _track_ax()
+    draw_track(ax, ann, 'c1', 2000, orientation='x')
+    assert all(p.get_gid() is None for p in ax.patches)
+
+
+def test_draw_track_gid_prefix_tags_every_drawn_part():
+    ann = GffAnnotation.from_text(GFF)
+    ax = _track_ax()
+    recorded: list = []
+    draw_track(
+        ax,
+        ann,
+        'c1',
+        2000,
+        orientation='x',
+        gid_prefix='rd-xtrack',
+        record_into=recorded,
+    )
+    gids = [p.get_gid() for p in ax.patches]
+    assert gids == [f'rd-xtrack-{i}' for i in range(len(ax.patches))]
+    # One record per drawn patch, in draw order.
+    assert [n for n, _g, _f in recorded] == list(range(len(ax.patches)))
+    # The two CDS parts share an ID/Parent, so they share a group index.
+    cds = [g for _n, g, f in recorded if f.feature_type == 'CDS']
+    assert len(cds) == 2 and len(set(cds)) == 1
+
+
+def test_draw_track_still_returns_lane_count_with_recording():
+    """The int return is the existing contract; recording is an out-param."""
+    ann = GffAnnotation.from_text(GFF)
+    ax = _track_ax()
+    recorded: list = []
+    lanes = draw_track(
+        ax, ann, 'c1', 2000, orientation='x', gid_prefix='g', record_into=recorded
+    )
+    assert isinstance(lanes, int) and lanes > 0
+
+
+def test_html_report_emits_track_gids_and_panel_background(tmp_path):
+    pl = _plotter()
+    ann = GffAnnotation.from_text(GFF)
+    out = tmp_path / 'tracks.html'
+    fig = pl.to_html(
+        out,
+        query_names=['c1'],
+        target_names=['c1'],
+        annotation_query=ann,
+        annotation_target=ann,
+        annotation_tracks=True,
+    )
+    plt.close(fig)
+    html = out.read_text()
+
+    payload = json.loads(
+        re.search(
+            r'<script type="application/json" id="rd-data">(.*?)</script>',
+            html,
+            re.S,
+        ).group(1)
+    )
+    assert 'tracks' in payload
+    # Every payload entry must be addressable in the SVG, and vice versa.
+    for axis in ('x', 'y'):
+        entries = payload['tracks'][axis]
+        assert entries, f'no {axis}-track entries'
+        assert html.count(f'id="rd-{axis}track-') == len(entries)
+        assert [e['gid'] for e in entries] == [
+            f'rd-{axis}track-{i}' for i in range(len(entries))
+        ]
+    # The band overlay measures against this rect.
+    assert 'rd-panel-0-0-bg' in html
+    first = payload['tracks']['x'][0]
+    assert {'gid', 'group', 'type', 'seqname', 'start', 'end', 'strand'} <= set(first)
+
+
+def test_track_payload_absent_without_tracks(tmp_path):
+    """Older/plain reports must not gain a 'tracks' key to guard against."""
+    pl = _plotter()
+    out = tmp_path / 'plain.html'
+    plt.close(pl.to_html(out, query_names=['c1'], target_names=['c2']))
+    payload = json.loads(
+        re.search(
+            r'<script type="application/json" id="rd-data">(.*?)</script>',
+            out.read_text(),
+            re.S,
+        ).group(1)
+    )
+    assert 'tracks' not in payload

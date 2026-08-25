@@ -1,0 +1,68 @@
+LOCUS       SCAF01                  1200 bp    DNA     linear   PLN 01-JAN-2020
+DEFINITION  Test scaffold one.
+ACCESSION   SCAF01
+VERSION     SCAF01.2
+KEYWORDS    .
+SOURCE      Synthetic construct
+FEATURES             Location/Qualifiers
+     source          1..1200
+                     /organism="Synthetic construct"
+     gene            complement(101..400)
+                     /gene="abcA"
+                     /locus_tag="TST_0001"
+     CDS             join(101..200,301..400)
+                     /gene="abcA"
+                     /locus_tag="TST_0001"
+                     /product="ABC transporter, ATP-binding
+                     protein subunit A"
+                     /note="first line of note
+                     second line of note"
+                     /db_xref="GO:0005524"
+                     /db_xref="GO:0016887"
+                     /codon_start=1
+                     /translation="MKKLLTAAAAV
+                     GGATLLSACS"
+     repeat_region   <501..>700
+                     /note="partial repeat; with=reserved,chars"
+     misc_feature    750^751
+                     /note="insertion point"
+     tRNA            complement(join(801..830,861..900))
+                     /product="tRNA-Ala"
+     mRNA            950
+                     /note="single base"
+     misc_binding    NC_999999.1:10..20
+                     /note="remote reference, skipped"
+     gene            complement(complement(1001..1100))
+                     /gene="dblComp"
+                     /pseudo
+ORIGIN
+        1 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+       61 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      121 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      181 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      241 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      301 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      361 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      421 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      481 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      541 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      601 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      661 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      721 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      781 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      841 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      901 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+      961 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+     1021 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+     1081 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+     1141 acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt acgtacgtac gtacgtacgt
+//
+LOCUS       SCAF02                    60 bp    DNA     linear   PLN 01-JAN-2020
+DEFINITION  Test scaffold two, no VERSION line.
+ACCESSION   SCAF02
+FEATURES             Location/Qualifiers
+     gene            1..60
+                     /gene="solo"
+ORIGIN
+        1 ttttggggcc ccaaaatttt ggggccccaa aattttgggg ccccaaaatt ttggggcccc
+//
