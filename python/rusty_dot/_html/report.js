@@ -390,25 +390,43 @@
   // matches); they are fetched from the embedding app on the first copy
   // press and cached here, so repeat copies are instant.
   var copyState = {
-    query: { avail: false, seq: null },
-    target: { avail: false, seq: null },
+    query: { avail: false, seq: null, pending: false },
+    target: { avail: false, seq: null, pending: false },
   };
   // Segment identity of the current selection, echoed in copy requests.
   var currentSeg = null;
 
+  var SIDE_LABELS = { query: 'query seq', target: 'target seq' };
+
+  function copyBtn(side) {
+    return side === 'target' ? copyTargetBtn : copyQueryBtn;
+  }
+
+  // The button says what the *next* press will do: before the sequence has
+  // been fetched from the embedding app a press only fetches it.
+  function labelFor(side) {
+    return (copyState[side].seq ? 'Copy ' : 'Fetch ') + SIDE_LABELS[side];
+  }
+
   function setCopyState(qAvail, tAvail, qSeq, tSeq) {
-    copyState.query = { avail: !!qAvail, seq: qSeq || null };
-    copyState.target = { avail: !!tAvail, seq: tSeq || null };
-    copyQueryBtn.hidden = !copyState.query.avail;
-    copyTargetBtn.hidden = !copyState.target.avail;
+    copyState.query = { avail: !!qAvail, seq: qSeq || null, pending: false };
+    copyState.target = { avail: !!tAvail, seq: tSeq || null, pending: false };
+    ['query', 'target'].forEach(function (side) {
+      var btn = copyBtn(side);
+      btn.hidden = !copyState[side].avail;
+      btn.disabled = false;
+      btn.textContent = labelFor(side);
+    });
     detailActions.hidden = !(copyState.query.avail || copyState.target.avail);
   }
 
-  function copyText(text, btn, label) {
+  function copyText(text, btn, side) {
     var done = function (ok) {
       btn.textContent = ok ? 'Copied!' : 'Copy failed';
       setTimeout(function () {
-        btn.textContent = label;
+        // Recomputed at revert time: the state may have gained a cached
+        // sequence since the press, flipping 'Fetch' to 'Copy'.
+        btn.textContent = labelFor(side);
       }, 1200);
     };
     // execCommand works on user activation even in a sandboxed
@@ -440,15 +458,17 @@
     }
   }
 
-  function wireCopy(btn, side, label) {
+  function wireCopy(btn, side) {
     btn.addEventListener('click', function () {
       var st = copyState[side];
-      if (!st.avail) return;
+      if (!st.avail || st.pending) return;
       if (st.seq) {
-        copyText(st.seq, btn, label);
+        copyText(st.seq, btn, side);
         return;
       }
       if (!currentSeg || window.parent === window) return;
+      st.pending = true;
+      btn.disabled = true;
       btn.textContent = 'Fetching…';
       window.parent.postMessage(
         Object.assign({ type: 'rd-copy-request', side: side }, currentSeg),
@@ -457,8 +477,8 @@
     });
   }
 
-  wireCopy(copyQueryBtn, 'query', 'Copy query seq');
-  wireCopy(copyTargetBtn, 'target', 'Copy target seq');
+  wireCopy(copyQueryBtn, 'query');
+  wireCopy(copyTargetBtn, 'target');
 
   function segKey(seg) {
     return seg ? seg.row + ':' + seg.col + ':' + seg.layer + ':' + seg.idx : null;
@@ -466,36 +486,39 @@
 
   function handleCopyResponse(msg) {
     var side = msg.side === 'target' ? 'target' : 'query';
-    var btn = side === 'target' ? copyTargetBtn : copyQueryBtn;
-    var label = side === 'target' ? 'Copy target seq' : 'Copy query seq';
+    var btn = copyBtn(side);
     var key = msg.row + ':' + msg.col + ':' + msg.layer + ':' + msg.idx;
     if (key !== segKey(currentSeg)) return; // stale: selection changed
+    copyState[side].pending = false;
+    btn.disabled = false;
     if (typeof msg.seq !== 'string' || !msg.seq) {
       btn.textContent = 'Copy failed';
       setTimeout(function () {
-        btn.textContent = label;
+        btn.textContent = labelFor(side); // still 'Fetch …': nothing cached
       }, 1200);
       return;
     }
+    // Cache before touching the label, so every labelFor() below reads
+    // 'Copy …'.
     copyState[side].seq = msg.seq;
     // The fetch usually completes inside the click's transient-activation
     // window, so the async clipboard write succeeds directly; if it
     // doesn't, the sequence is now cached and the next press copies
-    // synchronously.
+    // synchronously -- which is exactly what the 'Copy …' label promises.
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(msg.seq).then(
         function () {
           btn.textContent = 'Copied!';
           setTimeout(function () {
-            btn.textContent = label;
+            btn.textContent = labelFor(side);
           }, 1200);
         },
         function () {
-          btn.textContent = 'Press again to copy';
+          btn.textContent = labelFor(side);
         }
       );
     } else {
-      btn.textContent = 'Press again to copy';
+      btn.textContent = labelFor(side);
     }
   }
 

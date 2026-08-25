@@ -120,6 +120,23 @@ def test_to_html_creates_selfcontained_file(html_index, tmp_path):
     assert '__RD_' not in html
 
 
+def test_copy_buttons_start_in_fetch_state(html_index, tmp_path):
+    """The copy buttons say what the *next* press does, not what they are for.
+
+    Sequences are fetched lazily from the embedding app, so the first press
+    only fetches; the label flips to 'Copy …' once one is cached.
+    """
+    out = tmp_path / 'report.html'
+    plt.close(DotPlotter(html_index).to_html(out))
+    html = out.read_text()
+
+    assert re.search(r'id="rd-copy-query"[^>]*>Fetch query seq<', html)
+    assert re.search(r'id="rd-copy-target"[^>]*>Fetch target seq<', html)
+    # The label is derived from state, never captured as a constant.
+    assert 'function labelFor(' in html
+    assert 'Press again to copy' not in html
+
+
 def test_plot_html_suffix_dispatch(html_index, tmp_path):
     """plot(output_path='x.html') routes to the HTML renderer."""
     out = tmp_path / 'grid.html'
