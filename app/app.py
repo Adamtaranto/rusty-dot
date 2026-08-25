@@ -1488,18 +1488,34 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             ),
         )
 
+    # Each toggle re-runs the whole figure, so unticking several types in a
+    # row rebuilds several times over and the later clicks land on a UI
+    # still drawing the earlier ones.  Waiting for a quiet period lets a
+    # set of changes be made for the price of one render.  Long enough to
+    # click through a list without racing, short enough not to feel stuck.
+    _GFF_TYPE_DEBOUNCE_S = 0.8
+
+    @debounce(_GFF_TYPE_DEBOUNCE_S)
     @reactive.calc
-    def annotations():
-        """Return (query_ann, target_ann) with the user's type/colour choices."""
-        rows, slugs, shared = gff_type_index()
-        # One control per *normalised* type, shared by both roles.
-        chosen = {
+    def gff_type_choices() -> dict:
+        """Per-type visibility and colour, settled.
+
+        One control per *normalised* type, shared by both roles.
+        """
+        rows, slugs, _shared = gff_type_index()
+        return {
             row['key']: (
                 bool(_read_dynamic(f'gtyp_{slugs[row["key"]]}', True)),
                 str(_read_dynamic(f'gcol_{slugs[row["key"]]}', '') or ''),
             )
             for row in rows
         }
+
+    @reactive.calc
+    def annotations():
+        """Return (query_ann, target_ann) with the user's type/colour choices."""
+        _rows, _slugs, shared = gff_type_index()
+        chosen = gff_type_choices()
         hidden = feature_hidden()
         feat_colors = feature_colors()
         result = {}

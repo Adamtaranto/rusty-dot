@@ -1969,11 +1969,11 @@ def test_row_labels_shrink_to_fit_a_short_row():
     plt.close(fig)
 
 
-def test_row_label_never_exceeds_its_row_height():
-    """The guarantee the rotation exists to provide: no overlap."""
+def test_row_label_fits_its_row_when_shrinking_is_enough():
+    """Where the name can be made to fit, it is."""
     import math
 
-    pl, names = _grid_plotter([30000, 1200, 900, 800])
+    pl, names = _grid_plotter([3000, 2200, 1800])
     fig = pl.plot(query_names=names, target_names=['target_contig'])
     fig_h = fig.get_size_inches()[1]
     for ax in [ax for ax in fig.axes if ax.get_ylabel()]:
@@ -1989,4 +1989,29 @@ def test_row_label_never_exceeds_its_row_height():
         assert extent_in <= row_in * 1.05, (
             f'label {ax.get_ylabel()!r} spans {extent_in:.2f}in of a {row_in:.2f}in row'
         )
+    plt.close(fig)
+
+
+def test_row_label_is_never_elided_into_uselessness():
+    """A bacterial chromosome beside its plasmid is the real case.
+
+    The plasmid's row is far too thin for its name at any legible size, and
+    truncating to a bare ellipsis loses the only thing the label is for.
+    Overhanging into a neighbour is the lesser evil.
+    """
+    from rusty_dot.dotplot import _ROW_LABEL_MIN_CHARS
+
+    pl, names = _grid_plotter([5_000_000, 114_000], prefix='CP00024')
+    fig = pl.plot(query_names=names, target_names=['target_contig'])
+    labels = [ax.get_ylabel() for ax in fig.axes if ax.get_ylabel()]
+    assert len(labels) == 2
+    for text, original in zip(labels, names):
+        if text != original:
+            # Elided labels stay long enough to identify the contig...
+            assert len(text) >= _ROW_LABEL_MIN_CHARS, text
+            assert text.startswith('…')
+        # ...and the distinguishing tail always survives.
+        assert text.lstrip('…') in original
+    # The short contig keeps its whole name rather than collapsing.
+    assert names[1] in labels
     plt.close(fig)

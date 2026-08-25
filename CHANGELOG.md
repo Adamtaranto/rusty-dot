@@ -8,6 +8,19 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed (annotation controls and short-contig labels)
+
+- Toggling annotation feature types no longer rebuilds the figure once per
+  click. The per-type controls are read through a debounced value, so a
+  run of changes costs one render instead of one each — unticking six
+  types in a row now redraws once.
+- A short contig's row label is no longer reduced to an ellipsis. Shrinking
+  and truncating to fit could leave nothing but `…` where a row is very
+  thin — a bacterial chromosome beside its 114 kb plasmid, for instance.
+  Truncation now stops while the label still identifies the contig, and
+  below that the full name is kept and allowed to overhang: a name running
+  into its neighbour is still readable, `…` is not.
+
 ### Added (contig length filter)
 
 - A **Min contig length** setting leaves contigs shorter than the given

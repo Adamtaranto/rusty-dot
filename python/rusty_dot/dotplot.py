@@ -85,6 +85,13 @@ _ROW_LABEL_ROTATION = 45.0
 _ROW_LABEL_SIZE_PT = 8.0
 _ROW_LABEL_MIN_SIZE_PT = 5.0
 
+# Shortest elided row label worth drawing.  Below this an ellipsis carries
+# no information -- a bacterial chromosome beside its plasmid leaves the
+# plasmid's row too thin for even two characters -- so the full name is
+# kept and allowed to overhang instead.  A name that runs into its
+# neighbour is still readable; '...' is not.
+_ROW_LABEL_MIN_CHARS = 6
+
 # Absolute margins (inches) reserved around the focused single-pair panel so
 # the title and axis labels always have room, however thin the proportional
 # panel gets for extreme sequence-length ratios.
@@ -1392,11 +1399,10 @@ class DotPlotter:
                     break
                 size -= 0.5
             max_chars = int(row_in / (sin_rot * size * 0.62 / 72.0))
-            if max_chars < len(text):
+            if _ROW_LABEL_MIN_CHARS <= max_chars < len(text):
                 # Keep the tail: contig names differ in their suffix far
                 # more often than in their shared prefix.
-                text = '…' + text[-(max_chars - 1) :] if max_chars > 1 else '…'
-                ax.set_ylabel(text)
+                ax.set_ylabel('…' + text[-(max_chars - 1) :])
             ax.yaxis.label.set_fontsize(size)
 
     def _plot_panel(

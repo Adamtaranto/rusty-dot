@@ -937,3 +937,21 @@ def test_self_align_drops_target_annotations_but_spares_paf():
     assert '"input.input_mode === \'paf\' || !input.self_align"' in app_py, (
         'target_gff visibility must match the drop condition'
     )
+
+
+def test_feature_type_toggles_are_debounced():
+    """Each toggle otherwise re-renders the whole figure.
+
+    Unticking six types in a row rebuilt six times over, and the later
+    clicks landed on a UI still drawing the earlier ones.
+    """
+    app_py = (APP_DIR / 'app.py').read_text()
+
+    head = app_py.split('def gff_type_choices')[0]
+    assert '@debounce(_GFF_TYPE_DEBOUNCE_S)' in head.rsplit('\n\n', 1)[-1]
+
+    # annotations() must go through the settled values, not the raw inputs.
+    body = app_py.split('def annotations')[1].split('# --- end GFF')[0]
+    assert 'gff_type_choices()' in body
+    for raw in ('gtyp_', 'gcol_'):
+        assert raw not in body, f'annotations() still reads {raw}* directly'
