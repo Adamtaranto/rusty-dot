@@ -139,3 +139,124 @@ def apply_annotation_config(
     if overrides:
         filtered.set_colors(overrides)
     return filtered
+
+
+def build_feature_rows(
+    annotation: 'GffAnnotation | None',
+    seqname: str,
+    role: str,
+) -> list[dict]:
+    """Describe every feature on one sequence for the annotations table.
+
+    Rows are positional over ``annotation.records``, so ``uid`` is stable
+    for the lifetime of an upload set and needs no hashing.  Re-uploading
+    a file renumbers them, which is why the app clears its per-feature
+    overrides whenever a role's sources change.
+
+    Parameters
+    ----------
+    annotation : GffAnnotation or None
+        The merged annotation for *role*.
+    seqname : str
+        Only features on this sequence are listed.
+    role : str
+        ``'query'`` or ``'target'``; part of the uid and shown as a column.
+
+    Returns
+    -------
+    list[dict]
+        One row per feature, in file order.  ``start``/``end`` are
+        **1-based inclusive** for display, matching the source file rather
+        than the library's internal half-open coordinates.
+    """
+    if annotation is None:
+        return []
+    rows = []
+    for i, rec in enumerate(annotation.records):
+        if rec.seqname != seqname:
+            continue
+        attrs = rec.attr_dict()
+        extra = {
+            k: v for k, v in attrs.items() if k not in ('ID', 'Parent', 'Name') and v
+        }
+        rows.append(
+            {
+                'uid': f'{role}:{i}',
+                'role': role,
+                'source_file': getattr(rec, 'source_file', '') or '',
+                'source': rec.source,
+                'type': rec.feature_type,
+                'seqname': rec.seqname,
+                'start': rec.start + 1,
+                'end': rec.end,
+                'length': rec.end - rec.start,
+                'strand': rec.strand,
+                'score': rec.score,
+                'id': rec.feature_id,
+                'parent': rec.parent,
+                'name': rec.name,
+                'attributes': extra,
+            }
+        )
+    return rows
+
+
+def apply_feature_overrides(
+    annotation: 'GffAnnotation | None',
+    hidden_uids: frozenset[str],
+    colors: dict[str, str],
+    role: str,
+) -> 'GffAnnotation | None':
+    """Apply per-feature visibility and colour choices.
+
+    Must be applied to the **unfiltered** merged annotation — the same one
+    :func:`build_feature_rows` described — because uids are positional
+    over ``records``, and filtering by type first would renumber them.
+    Run :func:`apply_annotation_config` *after* this, so a type toggled
+    off still wins over a feature toggled on; ``keep_feature_types``
+    reuses the record objects, so the colours written here survive it.
+
+    Colours are written onto the records themselves
+    (``GffFeature.color``), which the drawing code prefers over the
+    per-type colour.
+
+    Parameters
+    ----------
+    annotation : GffAnnotation or None
+        The merged, *unfiltered* annotation for *role*.
+    hidden_uids : frozenset[str]
+        ``role:index`` uids the user has switched off.
+    colors : dict[str, str]
+        ``uid -> hex colour`` overrides.
+    role : str
+        The role whose uids these are.
+
+    Returns
+    -------
+    GffAnnotation or None
+        A filtered copy, or ``None`` when nothing remains visible.  The
+        input is returned unchanged when nothing is hidden (colours are
+        applied in place either way).
+    """
+    from rusty_dot.annotation import GffAnnotation  # noqa: PLC0415
+
+    if annotation is None:
+        return None
+    kept = []
+    for i, rec in enumerate(annotation.records):
+        uid = f'{role}:{i}'
+        if uid in hidden_uids:
+            continue
+        override = colors.get(uid)
+        if override:
+            rec.color = override
+        elif rec.color is not None:
+            rec.color = None  # reset-to-type-colour
+        kept.append(rec)
+    if not kept:
+        return None
+    if len(kept) == len(annotation.records):
+        return annotation
+    return GffAnnotation(
+        kept, colors={ft: annotation.get_color(ft) for ft in annotation.feature_types()}
+    )

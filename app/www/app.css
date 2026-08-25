@@ -378,3 +378,103 @@ html.shiny-busy .rd-busy-pill {
 .rd-mem-fixed:has(.shiny-text-output:empty) {
   display: none;
 }
+
+/* --- drill-down annotations table -------------------------------------- */
+
+.rd-ft-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 0.2rem 0;
+}
+
+.rd-ft-caption {
+  font-size: 0.82rem;
+  color: var(--rd-muted);
+}
+
+.rd-ft-tools {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.rd-ft-tools input[type='search'] {
+  flex: 1 1 16rem;
+  min-width: 10rem;
+  padding: 0.22rem 0.45rem;
+  border: 1px solid var(--rd-border-soft);
+  border-radius: 4px;
+  background: var(--rd-surface);
+  color: var(--rd-fg);
+  font-size: 0.82rem;
+}
+
+.rd-ft-tools button {
+  padding: 0.22rem 0.6rem;
+  border: 1px solid var(--rd-border-soft);
+  border-radius: 4px;
+  background: none;
+  color: var(--rd-fg);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.rd-ft-tools button:hover {
+  border-color: var(--rd-accent);
+}
+
+/* The table scrolls inside its own box so the page never scrolls sideways. */
+.rd-ft-scroll {
+  max-height: 62vh;
+  overflow: auto;
+  border: 1px solid var(--rd-border-soft);
+  border-radius: 4px;
+}
+
+#rd-feature-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+#rd-feature-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.3rem 0.45rem;
+  text-align: left;
+  white-space: nowrap;
+  background: var(--rd-surface);
+  border-bottom: 1px solid var(--rd-border-soft);
+  color: var(--rd-muted);
+  font-weight: 600;
+}
+
+#rd-feature-table td {
+  padding: 0.18rem 0.45rem;
+  border-bottom: 1px solid var(--rd-border-soft);
+  white-space: nowrap;
+}
+
+#rd-feature-table tbody tr:hover {
+  background: var(--rd-accent-soft);
+}
+
+#rd-feature-table .rd-ft-num {
+  text-align: right;
+}
+
+#rd-feature-table .rd-ft-attrs {
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--rd-muted);
+}
+
+#rd-feature-table .rd-color-input {
+  width: 1.6rem;
+  height: 1.1rem;
+}

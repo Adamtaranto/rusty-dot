@@ -7,6 +7,7 @@ run natively (``shiny run app/app.py``) it uses the installed rusty-dot.
 
 from __future__ import annotations
 
+from html import escape as _esc
 import importlib.util
 import io
 import logging
@@ -37,6 +38,8 @@ from core.annotation_colors import (
 from core.annotation_state import (
     ANNOTATION_ROLES,
     apply_annotation_config,
+    apply_feature_overrides,
+    build_feature_rows,
     merge_annotations,
     type_slug_map,
 )
@@ -642,6 +645,9 @@ app_ui = ui.page_sidebar(
         ui.include_js(APP_DIR / 'www' / 'bridge.js'),
         # Custom Shiny binding for native <input type="color"> pickers.
         ui.include_js(APP_DIR / 'www' / 'color-input.js', method='inline'),
+        # Delegated events for the drill-down Annotations table (one
+        # listener instead of ~1200 Shiny-bound inputs).
+        ui.include_js(APP_DIR / 'www' / 'feature-table.js', method='inline'),
     ),
     # W1: biowasm aligner bridge (Aioli loaded lazily from the CDN on use).
     ui.head_content(ui.include_js(APP_DIR / 'www' / 'aligners.js', method='inline')),
@@ -1131,6 +1137,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 rec.source_file = filename
             entries.append({'kind': kind, 'filename': filename, 'annotation': ann})
         ann_sources[role].set(tuple(entries))
+        _reset_feature_overrides()
 
     def _parse_gff_upload(file_input, role: str) -> None:
         from rusty_dot.annotation import GffAnnotation  # noqa: PLC0415
@@ -1177,6 +1184,16 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     def gff_raw_for(role: str):
         """Return the merged annotation for *role* across all its sources."""
         return merge_annotations([e['annotation'] for e in ann_sources[role]()])
+
+    # Per-feature state from the drill-down Annotations tab, keyed by the
+    # positional uids build_feature_rows hands out.  Cleared whenever a
+    # role's sources change, since re-uploading renumbers those uids.
+    feature_hidden = reactive.value(frozenset())
+    feature_colors = reactive.value({})
+
+    def _reset_feature_overrides() -> None:
+        feature_hidden.set(frozenset())
+        feature_colors.set({})
 
     @reactive.effect
     @reactive.event(input.query_gff)
@@ -1298,9 +1315,19 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             )
             for row in rows
         }
+        hidden = feature_hidden()
+        feat_colors = feature_colors()
         result = {}
         for role in ANNOTATION_ROLES:
             ann = gff_raw_for(role)
+            if ann is None:
+                result[role] = None
+                continue
+            # Per-feature choices first: their uids are positions in the
+            # *unfiltered* record list, so filtering by type first would
+            # renumber them.  The type filter runs second and therefore
+            # wins — a type switched off hides its features regardless.
+            ann = apply_feature_overrides(ann, hidden, feat_colors, role)
             if ann is None:
                 result[role] = None
                 continue
@@ -1567,8 +1594,14 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             class_='rd-log-accordion',
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def report_frame():
+        # suspend_when_hidden=False: switching to the drill-down's
+        # Annotations tab hides this output, and Shiny would re-render it
+        # on the way back — a seconds-long matplotlib pass under Pyodide
+        # for a view that has not changed.
+        #
         # Rendering the report re-runs layout (contig ordering) and the
         # matplotlib figure — seconds-long on real assemblies, so show what
         # is happening rather than freezing silently.
@@ -1636,11 +1669,145 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             body = ui.output_ui('report_frame')
         else:
             body = ui.output_plot('dotplot', height='72vh')
+        hint = _nav_hint(pair is not None) if input.interactive() else None
+        if pair is None or not feature_rows():
+            return ui.div(
+                ui.div(*toolbar, class_='rd-plot-toolbar') if toolbar else None,
+                body,
+                hint,
+                class_='rd-plot-area',
+            )
+        # Tabs only in the drill-down, so the overview path is untouched.
         return ui.div(
             ui.div(*toolbar, class_='rd-plot-toolbar') if toolbar else None,
-            body,
-            _nav_hint(pair is not None) if input.interactive() else None,
+            ui.navset_tab(
+                ui.nav_panel('Plot', body, hint),
+                ui.nav_panel('Annotations', ui.output_ui('annotation_table')),
+                id='drill_tabs',
+            ),
             class_='rd-plot-area',
+        )
+
+    @reactive.calc
+    def feature_rows() -> list[dict]:
+        """Every feature on the focused pair's sequences, as table rows."""
+        pair = focus()
+        if pair is None:
+            return []
+        # Both roles are always listed: on a self panel the two axes carry
+        # the same sequence but may still hold different uploads.
+        return build_feature_rows(
+            gff_raw_for('query'), pair[0], 'query'
+        ) + build_feature_rows(gff_raw_for('target'), pair[1], 'target')
+
+    @reactive.effect
+    @reactive.event(input.feature_table_change)
+    def _on_feature_table_change():
+        """Fold one delta from the annotations table into the override state.
+
+        The table ships raw HTML inputs and posts deltas through
+        www/feature-table.js rather than binding one Shiny input per
+        feature: the real GFFs here run to ~600 features per sequence, and
+        ~1200 bound inputs visibly freezes Pyodide.
+        """
+        ev = input.feature_table_change()
+        if not ev:
+            return
+        kind = ev.get('kind')
+        uids = ev.get('uids') or ([ev['uid']] if ev.get('uid') else [])
+        if not uids:
+            return
+        if kind in ('vis', 'bulk'):
+            visible = bool(ev.get('value'))
+            hidden = set(feature_hidden())
+            hidden.difference_update(uids) if visible else hidden.update(uids)
+            feature_hidden.set(frozenset(hidden))
+        elif kind == 'color':
+            colors = dict(feature_colors())
+            value = ev.get('value') or ''
+            for uid in uids:
+                if value:
+                    colors[uid] = value
+                else:
+                    colors.pop(uid, None)  # reset to the type colour
+            feature_colors.set(colors)
+
+    @render.ui
+    def annotation_table():
+        rows = feature_rows()
+        pair = focus()
+        if not rows or pair is None:
+            return None
+        hidden = feature_hidden()
+        overrides = feature_colors()
+        _type_rows, _slugs, shared = gff_type_index()
+
+        def type_color(ft: str) -> str:
+            return shared.get(normalise_type(ft), '#888888')
+
+        body = []
+        for r in rows:
+            checked = '' if r['uid'] in hidden else ' checked'
+            color = overrides.get(r['uid']) or type_color(r['type'])
+            meta = ' · '.join(f'{k}={v}' for k, v in list(r['attributes'].items())[:6])
+            body.append(
+                '<tr data-uid="{uid}" data-type="{type}" data-source="{src}">'
+                '<td><input type="checkbox" data-uid="{uid}" data-kind="vis"{ck}></td>'
+                '<td><input type="color" data-uid="{uid}" data-kind="color" '
+                'value="{color}" class="rd-color-input"></td>'
+                '<td class="rd-ft-role">{role}</td>'
+                '<td class="rd-ft-type">{type}</td>'
+                '<td class="rd-ft-name">{name}</td>'
+                '<td class="rd-ft-num">{start:,}</td>'
+                '<td class="rd-ft-num">{end:,}</td>'
+                '<td class="rd-ft-num">{length:,}</td>'
+                '<td>{strand}</td>'
+                '<td class="rd-ft-src">{src}</td>'
+                '<td class="rd-ft-attrs" title="{meta}">{meta}</td>'
+                '</tr>'.format(
+                    uid=_esc(r['uid']),
+                    ck=checked,
+                    color=_esc(color),
+                    role=_esc(r['role']),
+                    type=_esc(r['type']),
+                    name=_esc(r['name'] or ''),
+                    start=r['start'],
+                    end=r['end'],
+                    length=r['length'],
+                    strand=_esc(r['strand']),
+                    src=_esc(r['source_file'] or r['source'] or ''),
+                    meta=_esc(meta),
+                )
+            )
+        header = (
+            '<thead><tr><th>Show</th><th>Colour</th><th>Axis</th><th>Type</th>'
+            '<th>Name</th><th>Start</th><th>End</th><th>Length</th>'
+            '<th>Strand</th><th>Source</th><th>Attributes</th></tr></thead>'
+        )
+        return ui.div(
+            ui.div(
+                ui.HTML(
+                    f'<b>{len(rows)}</b> feature(s) on '
+                    f'<b>{_esc(pair[0])}</b> and <b>{_esc(pair[1])}</b>. '
+                    'Coordinates are 1-based inclusive, as in the source file.'
+                ),
+                class_='rd-ft-caption',
+            ),
+            ui.div(
+                ui.HTML(
+                    '<input type="search" id="rd-ft-filter" '
+                    'placeholder="Filter by type, name or source…">'
+                    '<button type="button" data-bulk="show">Show all</button>'
+                    '<button type="button" data-bulk="hide">Hide all</button>'
+                    '<button type="button" data-bulk="reset">Reset colours</button>'
+                ),
+                class_='rd-ft-tools',
+            ),
+            ui.HTML(
+                f'<div class="rd-ft-scroll"><table id="rd-feature-table">'
+                f'{header}<tbody>{"".join(body)}</tbody></table></div>'
+            ),
+            class_='rd-ft-panel',
         )
 
     @reactive.effect

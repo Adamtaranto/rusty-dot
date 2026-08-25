@@ -537,3 +537,132 @@ def test_merge_annotations_concatenates_and_keeps_colours():
     # Degenerate inputs.
     assert merge_annotations([None, None]) is None
     assert merge_annotations([a, None]) is a  # single input passes through
+
+
+# ------------------------------------------------- per-feature overrides
+
+FEATURE_GFF = (
+    'c1\tsrcA\tgene\t1\t100\t.\t+\t.\tID=g1;Name=Alpha\n'
+    'c1\tsrcA\tCDS\t10\t50\t.\t+\t0\tID=c1;Parent=g1;product=thing\n'
+    'c2\tsrcA\tgene\t1\t80\t.\t-\t.\tID=g2\n'
+)
+
+
+def _feature_ann():
+    from rusty_dot.annotation import GffAnnotation
+
+    return GffAnnotation.from_text(FEATURE_GFF)
+
+
+def test_build_feature_rows_filters_by_sequence_and_uses_1_based_coords():
+    from core.annotation_state import build_feature_rows
+
+    rows = build_feature_rows(_feature_ann(), 'c1', 'query')
+    assert [r['type'] for r in rows] == ['gene', 'CDS']
+    gene = rows[0]
+    # Displayed 1-based inclusive, matching the source file.
+    assert (gene['start'], gene['end'], gene['length']) == (1, 100, 100)
+    assert gene['uid'] == 'query:0'
+    assert gene['name'] == 'Alpha'
+    assert gene['source'] == 'srcA'
+    # uids index the whole record list, not the filtered subset.
+    assert rows[1]['uid'] == 'query:1'
+    assert build_feature_rows(None, 'c1', 'query') == []
+
+
+def test_build_feature_rows_surfaces_extra_attributes():
+    from core.annotation_state import build_feature_rows
+
+    rows = build_feature_rows(_feature_ann(), 'c1', 'query')
+    assert rows[1]['attributes'] == {'product': 'thing'}
+    assert 'ID' not in rows[1]['attributes']  # promoted to its own column
+
+
+def test_build_feature_rows_carries_source_file():
+    from core.annotation_state import build_feature_rows
+
+    ann = _feature_ann()
+    for rec in ann.records:
+        rec.source_file = 'genes.gff'
+    assert build_feature_rows(ann, 'c1', 'query')[0]['source_file'] == 'genes.gff'
+
+
+def test_apply_feature_overrides_hides_exactly_the_named_features():
+    from core.annotation_state import apply_feature_overrides
+
+    ann = _feature_ann()
+    out = apply_feature_overrides(ann, frozenset({'query:1'}), {}, 'query')
+    assert [r.feature_id for r in out.records] == ['g1', 'g2']
+
+
+def test_apply_feature_overrides_sets_and_resets_colour():
+    from core.annotation_state import apply_feature_overrides
+
+    ann = _feature_ann()
+    out = apply_feature_overrides(ann, frozenset(), {'query:0': '#0f0f0f'}, 'query')
+    assert out.records[0].color == '#0f0f0f'
+    assert out.records[1].color is None
+    # Dropping the override must fall back to the type colour.
+    out = apply_feature_overrides(out, frozenset(), {}, 'query')
+    assert out.records[0].color is None
+
+
+def test_apply_feature_overrides_hiding_everything_returns_none():
+    from core.annotation_state import apply_feature_overrides
+
+    ann = _feature_ann()
+    uids = frozenset(f'query:{i}' for i in range(len(ann.records)))
+    assert apply_feature_overrides(ann, uids, {}, 'query') is None
+    assert apply_feature_overrides(None, frozenset(), {}, 'query') is None
+
+
+def test_type_toggle_beats_feature_toggle():
+    """apply_annotation_config runs last, so a type switched off wins."""
+    from core.annotation_state import apply_annotation_config, apply_feature_overrides
+
+    ann = _feature_ann()
+    kept = apply_feature_overrides(ann, frozenset(), {}, 'query')
+    out = apply_annotation_config(kept, {'gene': True, 'CDS': False}, {})
+    assert {r.feature_type for r in out.records} == {'gene'}
+
+
+def test_feature_colour_survives_the_type_filter():
+    """keep_feature_types reuses record objects, so overrides must persist."""
+    from core.annotation_state import apply_annotation_config, apply_feature_overrides
+
+    ann = _feature_ann()
+    kept = apply_feature_overrides(ann, frozenset(), {'query:0': '#abcabc'}, 'query')
+    out = apply_annotation_config(kept, {'gene': True, 'CDS': True}, {})
+    gene = next(r for r in out.records if r.feature_id == 'g1')
+    assert gene.color == '#abcabc'
+
+
+def test_feature_table_js_contract():
+    """Pin the app <-> feature-table.js bridge at the asset level.
+
+    There is no headless-browser harness, so a rename on either side would
+    otherwise silently leave the annotations table inert.
+    """
+    js = (APP_DIR / 'www' / 'feature-table.js').read_text()
+    app_py = (APP_DIR / 'app.py').read_text()
+
+    assert "setInputValue('feature_table_change'" in js
+    for kind in ("'vis'", "'color'", "'bulk'"):
+        assert kind in js
+    assert 'rd-feature-table' in js and 'rd-feature-table' in app_py
+    assert 'input.feature_table_change' in app_py
+    # The table must stay unbound: one Shiny input per feature would mean
+    # ~1200 bindings on a real GFF and a visible Pyodide freeze.
+    assert 'input_checkbox' not in app_py.split('def annotation_table')[1]
+
+
+def test_report_frame_is_not_suspended_when_hidden():
+    """Switching to the Annotations tab must not re-render the report.
+
+    Shiny suspends hidden outputs by default, so returning to the Plot tab
+    would trigger a fresh seconds-long matplotlib pass.
+    """
+    app_py = (APP_DIR / 'app.py').read_text()
+    head = app_py.split('def report_frame')[0]
+    assert head.rstrip().endswith('@render.ui')
+    assert 'suspend_when_hidden=False' in head.rsplit('@output', 1)[1]
