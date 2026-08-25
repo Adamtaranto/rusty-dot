@@ -378,3 +378,44 @@ def test_minimap2_args_with_prefilled_defaults(preset):
         TARGET_FILENAME,
         QUERY_FILENAME,
     ]
+
+
+# ---------------------------------------------------------------------------
+# Timeout watchdog protocol (app/www/aligners.js <-> app/app.py)
+#
+# The JS side has no test harness, so these pin the contract at the asset
+# level: a rename on one side of the bridge fails here instead of silently
+# leaving the "keep waiting?" prompt unwired.
+# ---------------------------------------------------------------------------
+
+ALIGNERS_JS = (APP_DIR / 'www' / 'aligners.js').read_text()
+APP_PY = (APP_DIR / 'app.py').read_text()
+
+
+def test_aligners_js_registers_extend_handler():
+    assert "addCustomMessageHandler('rd_extend_aligner'" in ALIGNERS_JS
+    assert "setInputValue(\n        'aligner_timeout'" in ALIGNERS_JS
+
+
+def test_aligners_js_run_is_not_raced_against_a_timer():
+    """A run must end only by completing, erroring, or being cancelled.
+
+    Racing `CLI.exec` against a timer reported a failure while the
+    WebWorker kept computing, losing runs that were about to succeed.
+    """
+    assert 'res = await CLI.exec(cmd);' in ALIGNERS_JS
+    assert 'withTimeout(\n        CLI.exec(cmd),' not in ALIGNERS_JS
+    # init keeps its hard timeout: a wedged CDN fetch must release the queue
+    assert 'INIT_TIMEOUT_MS' in ALIGNERS_JS
+
+
+def test_aligners_js_cancel_clears_the_watchdog():
+    cancel = ALIGNERS_JS.split('function handleCancel(')[1].split('\n  }')[0]
+    assert 'clearWatchdog(msg.request_id)' in cancel
+
+
+def test_app_wires_both_timeout_modal_buttons():
+    assert 'input.aligner_timeout' in APP_PY
+    assert 'input.aligner_wait' in APP_PY
+    assert 'input.aligner_give_up' in APP_PY
+    assert "send_custom_message(\n            'rd_extend_aligner'" in APP_PY

@@ -742,6 +742,8 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     # All biowasm tools share one 2 GB wasm heap cap; warn above ~200 MB.
     _BIOWASM_SIZE_WARN = 200 * 1024 * 1024
     _NOTIF_ID = 'rd_aligner_progress'
+    # Extra budget granted each time the user chooses to keep waiting.
+    _TIMEOUT_EXTEND_MS = 300_000
     # In-flight request: {'request_id', 'method', 'params', 'query', 'target'}
     aligner_pending = reactive.value(None)
     # Rolling log of completed tool runs: [{'tool', 'cmd', 'stderr', 'error'}]
@@ -764,6 +766,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         if info is None:
             return
         aligner_pending.set(None)
+        ui.modal_remove()
         ui.notification_remove(_NOTIF_ID)
         await session.send_custom_message(
             'rd_cancel_aligner', {'request_id': info['request_id']}
@@ -903,6 +906,9 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         if not info or res.get('request_id') != info['request_id']:
             return  # stale or unsolicited result
         aligner_pending.set(None)
+        # A result can land while the "still running?" modal is open — the
+        # run finished on its own.  Take the modal down with it.
+        ui.modal_remove()
         ui.notification_remove(_NOTIF_ID)
         method = info['method']
         _log_run(
@@ -963,6 +969,71 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         msg = stage_msgs.get(prog.get('stage'))
         if msg:
             ui.notification_show(msg, id=_NOTIF_ID, duration=None)
+
+    @reactive.effect
+    @reactive.event(input.aligner_timeout)
+    def _on_aligner_timeout():
+        """Offer to keep waiting when a run outlives its watchdog budget.
+
+        The tool has not failed and has not been stopped — aligners.js only
+        notifies — so the choice really is "wait longer" vs "give up", and
+        it can be offered again each time the extended budget expires.
+        """
+        ev = input.aligner_timeout()
+        info = aligner_pending()
+        if not ev or not info or ev.get('request_id') != info['request_id']:
+            return  # stale: this run already finished or was superseded
+        minutes = max(1, round((ev.get('total_ms') or 0) / 60000))
+        label = METHOD_LABELS[info['method']]
+        ui.modal_show(
+            ui.modal(
+                ui.p(
+                    f'{label} has been running for about {minutes} minute'
+                    f'{"s" if minutes != 1 else ""} and has not finished yet.'
+                ),
+                ui.p(
+                    'It is still working in the background — nothing has been '
+                    'lost. Large genomes (especially minimap2 with base-level '
+                    'alignment) can take a while in the browser.',
+                    class_='text-muted',
+                ),
+                title='Still aligning',
+                easy_close=False,
+                footer=ui.TagList(
+                    ui.input_action_button(
+                        'aligner_give_up', 'Cancel run', class_='btn-outline-secondary'
+                    ),
+                    ui.input_action_button(
+                        'aligner_wait',
+                        f'Wait another {_TIMEOUT_EXTEND_MS // 60000} minutes',
+                        class_='btn-primary',
+                    ),
+                ),
+            )
+        )
+
+    @reactive.effect
+    @reactive.event(input.aligner_wait, ignore_init=True)
+    async def _on_aligner_wait():
+        info = aligner_pending()
+        ui.modal_remove()
+        if info is None:
+            return  # finished while the modal was up
+        await session.send_custom_message(
+            'rd_extend_aligner',
+            {'request_id': info['request_id'], 'ms': _TIMEOUT_EXTEND_MS},
+        )
+        ui.notification_show(
+            f'Still running {METHOD_LABELS[info["method"]]} — waiting another '
+            f'{_TIMEOUT_EXTEND_MS // 60000} minutes…',
+            id=_NOTIF_ID,
+            duration=None,
+        )
+
+    @reactive.effect
+    @reactive.event(input.aligner_give_up, ignore_init=True)
+    async def _on_aligner_give_up():
+        await _cancel_pending('timed out')
 
     # --- end W1: biowasm aligners ---
 
