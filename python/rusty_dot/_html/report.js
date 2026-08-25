@@ -23,6 +23,11 @@
  *                             under 5px count as plain clicks; Esc cancels).
  *  4. Click a match line   -> show coords/strand/identity (and sequence when
  *                             embedded) in the fixed bottom detail bar.
+ *  5. Click a side-track   -> band the matching column (x track) or row (y
+ *     feature                 track) behind the matches, and show the
+ *                             feature in the detail bar.  Shift+click bands
+ *                             every part of a multi-part feature.  Bands
+ *                             toggle, stack, and clear on Esc.
  */
 (function () {
   'use strict';
@@ -368,6 +373,7 @@
       cancelDrag();
       resetView();
       hideDetail();
+      clearBands();
     }
   });
 
@@ -673,7 +679,12 @@
   function showAnnotationDetail(panelGid, idx, el) {
     var panel = payload.panels[panelGid];
     if (!panel || !panel.annotations) return;
-    var feat = panel.annotations[idx];
+    showFeatureDetail(panel.annotations[idx], el);
+  }
+
+  /* Render one GFF feature into the detail bar.  Shared by the diagonal
+   * squares and the side tracks, which carry the same field set. */
+  function showFeatureDetail(feat, el) {
     if (!feat) return;
 
     var label = feat.name || feat.id || feat.type;
@@ -689,6 +700,9 @@
     }
     if (feat.source && feat.source !== '.') {
       html += ' &middot; source ' + escapeHtml(feat.source);
+    }
+    if (feat.source_file) {
+      html += ' &middot; file ' + escapeHtml(feat.source_file);
     }
     detailCoords.innerHTML = html;
     detailSeq.textContent = '';
@@ -726,6 +740,144 @@
       });
     });
   });
+
+  // ---------------------------------------------------------------------
+  // 5b. Side-track feature click -> highlight band across the plot
+  // ---------------------------------------------------------------------
+  //
+  // Clicking a feature in the x track paints a translucent column behind
+  // the matches; the y track paints a row.  A multi-part feature (a
+  // spliced CDS) is drawn as one patch per part, so Shift+click on any
+  // part bands every segment of the group.  Bands toggle, several can be
+  // active at once, and Escape clears them.
+  //
+  // No bp->pixel arithmetic is involved: the track axes are created with
+  // sharex/sharey against the main panel, so a clicked feature's own
+  // bounding box already gives the band's extent along the sequence axis,
+  // and the panel background rect gives the other one.  That also keeps
+  // this correct under bbox_inches='tight', which shifts everything a
+  // Python-side computation would have had to predict.
+
+  var trackData = payload.tracks || null;
+  var activeBands = {}; // gid -> <rect>
+  var bandLayer = null;
+
+  function panelBackground() {
+    return svg.querySelector('[id="rd-panel-0-0-bg"]');
+  }
+
+  /* Lazily create the band group, inserted directly after the panel
+   * background so document order puts bands behind the match strokes. */
+  function ensureBandLayer() {
+    if (bandLayer && bandLayer.parentNode) return bandLayer;
+    var bg = panelBackground();
+    if (!bg) return null;
+    var host = bg.parentNode;
+    bandLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    bandLayer.setAttribute('id', 'rd-bands');
+    host.insertBefore(bandLayer, bg.nextSibling);
+    return bandLayer;
+  }
+
+  function clearBands() {
+    Object.keys(activeBands).forEach(function (gid) {
+      var rect = activeBands[gid];
+      if (rect && rect.parentNode) rect.parentNode.removeChild(rect);
+      var el = document.getElementById(gid);
+      if (el) el.classList.remove('rd-track-active');
+    });
+    activeBands = {};
+  }
+
+  /* Colour a track patch is actually painted with.  A gid-tagged artist is
+   * wrapped in a <g> by matplotlib's SVG backend and the fill sits on the
+   * child <path>'s style, so the group's own computed fill is the useless
+   * default black. */
+  function patchFill(el) {
+    var kid = el.querySelector('path, use, rect, polygon') || el;
+    var fill =
+      kid.getAttribute('fill') || window.getComputedStyle(kid).fill || '';
+    if (!fill || fill === 'none' || fill === 'rgb(0, 0, 0)') return '#888888';
+    return fill;
+  }
+
+  function addBand(gid, entry, axis) {
+    var el = document.getElementById(gid);
+    var bg = panelBackground();
+    var layer = ensureBandLayer();
+    if (!el || !bg || !layer) return;
+    var feat = bboxInRootSpace(el);
+    var panel = bboxInRootSpace(bg);
+    var rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    if (axis === 'x') {
+      rect.setAttribute('x', feat.x);
+      rect.setAttribute('width', feat.w);
+      rect.setAttribute('y', panel.y);
+      rect.setAttribute('height', panel.h);
+    } else {
+      rect.setAttribute('x', panel.x);
+      rect.setAttribute('width', panel.w);
+      rect.setAttribute('y', feat.y);
+      rect.setAttribute('height', feat.h);
+    }
+    rect.setAttribute('fill', (entry && entry.color) || patchFill(el));
+    rect.setAttribute('class', 'rd-band');
+    layer.appendChild(rect);
+    activeBands[gid] = rect;
+    el.classList.add('rd-track-active');
+  }
+
+  function removeBand(gid) {
+    var rect = activeBands[gid];
+    if (rect && rect.parentNode) rect.parentNode.removeChild(rect);
+    delete activeBands[gid];
+    var el = document.getElementById(gid);
+    if (el) el.classList.remove('rd-track-active');
+  }
+
+  function toggleBands(gids, entries, axis) {
+    // All-on -> all-off, otherwise fill in the missing ones, so a
+    // Shift+click on a partly-banded group completes it rather than
+    // flip-flopping each segment independently.
+    var allOn = gids.every(function (g) {
+      return activeBands[g];
+    });
+    gids.forEach(function (gid, i) {
+      if (allOn) removeBand(gid);
+      else if (!activeBands[gid]) addBand(gid, entries[i], axis);
+    });
+  }
+
+  if (trackData) {
+    ['x', 'y'].forEach(function (axis) {
+      var entries = trackData[axis] || [];
+      var byGroup = {};
+      entries.forEach(function (e) {
+        (byGroup[e.group] = byGroup[e.group] || []).push(e);
+      });
+      entries.forEach(function (entry) {
+        var el = document.getElementById(entry.gid);
+        if (!el) return;
+        el.classList.add('rd-track-feature');
+        el.addEventListener('click', function (evt) {
+          if (consumeDragClick()) {
+            evt.stopPropagation();
+            return;
+          }
+          evt.stopPropagation();
+          var group = evt.shiftKey ? byGroup[entry.group] : [entry];
+          toggleBands(
+            group.map(function (e) {
+              return e.gid;
+            }),
+            group,
+            axis
+          );
+          showFeatureDetail(entry, el);
+        });
+      });
+    });
+  }
 
   // ---------------------------------------------------------------------
   // 6. Embedded display options (line width, min match length)

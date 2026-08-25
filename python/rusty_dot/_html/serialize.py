@@ -25,8 +25,22 @@ Payload contract (consumed by ``report.js``)
         },
         ...
       },
-      "has_sequences": true|false
+      "has_sequences": true|false,
+      "tracks": {                      # optional, 1x1 track layouts only
+        "x": [{"gid": "rd-xtrack-<n>", "group": <int>, "type": ...,
+               "seqname": ..., "start": ..., "end": ..., "strand": ...,
+               "id": ..., "parent": ..., "name": ..., "source": ...,
+               "source_file": ..., "color": ...}, ...],
+        "y": [...]
+      }
     }
+
+``tracks`` entries are in draw order and carry their own SVG gid, so the
+report addresses them directly rather than by index.  ``group`` is shared
+by the parts of one multi-part feature (a spliced CDS), which is what lets
+a modifier-click highlight the whole feature at once.  Side tracks only
+exist on single-pair layouts, so the key sits at the top level rather than
+under a panel.
 
 The order of entries in each ``segments`` list matches the drawing order of
 the corresponding :class:`~matplotlib.collections.LineCollection`, which in
@@ -228,4 +242,33 @@ def build_panel_payload(
                 has_sequences = True
         panels_out[gid] = entry
 
-    return {'panels': panels_out, 'has_sequences': has_sequences}
+    payload: dict[str, Any] = {
+        'panels': panels_out,
+        'has_sequences': has_sequences,
+    }
+    tracks = capture.get('tracks')
+    if tracks and (tracks.get('x') or tracks.get('y')):
+        payload['tracks'] = {
+            axis: [_track_entry(axis, n, group, feat) for n, group, feat in entries]
+            for axis, entries in tracks.items()
+        }
+    return payload
+
+
+def _track_entry(axis: str, n: int, group: int, feat: Any) -> dict[str, Any]:
+    """Describe one drawn side-track part for the report payload."""
+    return {
+        'gid': f'rd-{axis}track-{n}',
+        'group': int(group),
+        'type': feat.feature_type,
+        'seqname': feat.seqname,
+        'start': int(feat.start),
+        'end': int(feat.end),
+        'strand': feat.strand,
+        'id': feat.feature_id,
+        'parent': feat.parent,
+        'name': feat.name,
+        'source': feat.source,
+        'source_file': getattr(feat, 'source_file', '') or '',
+        'color': getattr(feat, 'color', None),
+    }

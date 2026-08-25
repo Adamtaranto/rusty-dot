@@ -1093,6 +1093,10 @@ class DotPlotter:
             main_ax = axes[0][0]
             q_name = query_names[0]
             t_name = target_names[0]
+            # Only the interactive report needs gids and a feature payload;
+            # static output keeps the untagged artists it always had.
+            capturing = self._html_capture is not None
+            track_records: dict[str, list] = {'x': [], 'y': []}
             if y_track_ax is not None:
                 lanes = draw_track(
                     y_track_ax,
@@ -1101,6 +1105,8 @@ class DotPlotter:
                     self.index.get_sequence_length(q_name),
                     orientation='y',
                     reverse=self._strip_group_prefix(q_name) in reverse_set,
+                    gid_prefix='rd-ytrack' if capturing else None,
+                    record_into=track_records['y'] if capturing else None,
                 )
                 drew_track_features = drew_track_features or lanes > 0
                 # The y track owns the left edge: move the panel's tick
@@ -1114,9 +1120,13 @@ class DotPlotter:
                     self.index.get_sequence_length(t_name),
                     orientation='x',
                     reverse=False,  # the target (x) axis always runs forward
+                    gid_prefix='rd-xtrack' if capturing else None,
+                    record_into=track_records['x'] if capturing else None,
                 )
                 drew_track_features = drew_track_features or lanes > 0
                 main_ax.tick_params(axis='x', labelbottom=False)
+            if capturing:
+                self._html_capture['tracks'] = track_records
 
         # Focused single-pair views: contig names become conventional axis
         # labels — left of the y axis, below the x axis — and ticks read in
@@ -1399,6 +1409,9 @@ class DotPlotter:
             capture['counter'] += 1
             gid = f'rd-panel-{row}-{col}'
             ax.set_gid(gid)
+            # The report measures band overlays against this rect, so it
+            # needs no bp->pixel arithmetic of its own.
+            ax.patch.set_gid(f'{gid}-bg')
             capture['current'] = gid
             capture['panels'][gid] = {
                 'query': display_q,

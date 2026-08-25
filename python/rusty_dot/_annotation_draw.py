@@ -143,6 +143,8 @@ def draw_track(
     reverse: bool = False,
     max_lanes: int = 6,
     gap_bp: int = 0,
+    gid_prefix: Optional[str] = None,
+    record_into: Optional[list] = None,
 ) -> int:
     """Draw a lane-packed annotation track on a side axis.
 
@@ -171,6 +173,16 @@ def draw_track(
         height.  Default ``6``.
     gap_bp : int, optional
         Minimum bases between lane neighbours.  Default ``0``.
+    gid_prefix : str, optional
+        When given, each drawn part gets the SVG gid ``f'{gid_prefix}-{n}'``
+        (``n`` counting drawn parts from 0), making track features
+        addressable from the interactive HTML report.  ``None`` (the
+        default) sets no gids, which is what static image output wants.
+    record_into : list, optional
+        When given, appended with one ``(n, group_index, feature)`` tuple
+        per drawn part, in draw order — the payload side of *gid_prefix*.
+        An out-parameter rather than a second return value so the existing
+        ``int`` return stays unchanged for every current caller.
 
     Returns
     -------
@@ -193,7 +205,8 @@ def draw_track(
     n_lanes = max(lanes) + 1
 
     head_cap = seq_len * _HEAD_CAP_FRAC
-    for ((_gid, _parent), parts), lane in zip(groups, lanes):
+    drawn = 0  # running index over drawn parts, used for gids
+    for group_index, (((_gid, _parent), parts), lane) in enumerate(zip(groups, lanes)):
         lane_lo = lane + _LANE_PAD
         lane_hi = lane + 1 - _LANE_PAD
         # Group colour, overridable per part: a single exon of a CDS can
@@ -208,9 +221,10 @@ def draw_track(
                 start, end = _mirror(feat.start, feat.end, seq_len)
                 strand = {'+': '-', '-': '+'}.get(strand, strand)
             mids.append((start + end) / 2.0)
+            patch: Patch
             if _is_stranded(feat):
                 head_len = min(_HEAD_FRAC * (end - start), head_cap)
-                ax.add_patch(
+                patch = ax.add_patch(
                     Polygon(
                         _arrow_points(
                             start,
@@ -240,7 +254,7 @@ def draw_track(
                 else:
                     w, h = lane_hi - lane_lo, length
                 if r_along <= 0:
-                    ax.add_patch(
+                    patch = ax.add_patch(
                         Rectangle(xy, w, h, facecolor=color, edgecolor='none', zorder=2)
                     )
                 else:
@@ -252,7 +266,7 @@ def draw_track(
                         rounding, aspect = r_along, r_across / r_along
                     else:
                         rounding, aspect = r_across, r_along / r_across
-                    ax.add_patch(
+                    patch = ax.add_patch(
                         FancyBboxPatch(
                             xy,
                             w,
@@ -264,6 +278,11 @@ def draw_track(
                             zorder=2,
                         )
                     )
+            if gid_prefix is not None:
+                patch.set_gid(f'{gid_prefix}-{drawn}')
+            if record_into is not None:
+                record_into.append((drawn, group_index, feat))
+            drawn += 1
         if len(parts) > 1:
             # Connector through the part midpoints at lane centre.  Uses the
             # group colour, not the last part's override.

@@ -580,3 +580,99 @@ def test_multipart_connector_uses_the_group_colour():
     draw_track(ax, ann, 'c1', 2000, orientation='x')
     line = ax.lines[0]
     assert matplotlib.colors.to_hex(line.get_color()) == ann.get_color('CDS')
+
+
+# ------------------------------------------------- track gids for the report
+
+
+def test_draw_track_sets_no_gids_by_default():
+    """Static output must keep untagged artists (regression guard)."""
+    ann = GffAnnotation.from_text(GFF)
+    ax = _track_ax()
+    draw_track(ax, ann, 'c1', 2000, orientation='x')
+    assert all(p.get_gid() is None for p in ax.patches)
+
+
+def test_draw_track_gid_prefix_tags_every_drawn_part():
+    ann = GffAnnotation.from_text(GFF)
+    ax = _track_ax()
+    recorded: list = []
+    draw_track(
+        ax,
+        ann,
+        'c1',
+        2000,
+        orientation='x',
+        gid_prefix='rd-xtrack',
+        record_into=recorded,
+    )
+    gids = [p.get_gid() for p in ax.patches]
+    assert gids == [f'rd-xtrack-{i}' for i in range(len(ax.patches))]
+    # One record per drawn patch, in draw order.
+    assert [n for n, _g, _f in recorded] == list(range(len(ax.patches)))
+    # The two CDS parts share an ID/Parent, so they share a group index.
+    cds = [g for _n, g, f in recorded if f.feature_type == 'CDS']
+    assert len(cds) == 2 and len(set(cds)) == 1
+
+
+def test_draw_track_still_returns_lane_count_with_recording():
+    """The int return is the existing contract; recording is an out-param."""
+    ann = GffAnnotation.from_text(GFF)
+    ax = _track_ax()
+    recorded: list = []
+    lanes = draw_track(
+        ax, ann, 'c1', 2000, orientation='x', gid_prefix='g', record_into=recorded
+    )
+    assert isinstance(lanes, int) and lanes > 0
+
+
+def test_html_report_emits_track_gids_and_panel_background(tmp_path):
+    pl = _plotter()
+    ann = GffAnnotation.from_text(GFF)
+    out = tmp_path / 'tracks.html'
+    fig = pl.to_html(
+        out,
+        query_names=['c1'],
+        target_names=['c1'],
+        annotation_query=ann,
+        annotation_target=ann,
+        annotation_tracks=True,
+    )
+    plt.close(fig)
+    html = out.read_text()
+
+    payload = json.loads(
+        re.search(
+            r'<script type="application/json" id="rd-data">(.*?)</script>',
+            html,
+            re.S,
+        ).group(1)
+    )
+    assert 'tracks' in payload
+    # Every payload entry must be addressable in the SVG, and vice versa.
+    for axis in ('x', 'y'):
+        entries = payload['tracks'][axis]
+        assert entries, f'no {axis}-track entries'
+        assert html.count(f'id="rd-{axis}track-') == len(entries)
+        assert [e['gid'] for e in entries] == [
+            f'rd-{axis}track-{i}' for i in range(len(entries))
+        ]
+    # The band overlay measures against this rect.
+    assert 'rd-panel-0-0-bg' in html
+    first = payload['tracks']['x'][0]
+    assert {'gid', 'group', 'type', 'seqname', 'start', 'end', 'strand'} <= set(first)
+
+
+def test_track_payload_absent_without_tracks(tmp_path):
+    """Older/plain reports must not gain a 'tracks' key to guard against."""
+    pl = _plotter()
+    out = tmp_path / 'plain.html'
+    plt.close(pl.to_html(out, query_names=['c1'], target_names=['c2']))
+    payload = json.loads(
+        re.search(
+            r'<script type="application/json" id="rd-data">(.*?)</script>',
+            out.read_text(),
+            re.S,
+        ).group(1)
+    )
+    assert 'tracks' not in payload
