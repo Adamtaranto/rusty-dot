@@ -8,6 +8,18 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed (Shinylive startup)
+
+- Annotations no longer break for the whole session when the app is opened
+  in the browser. The wasm wheel is installed at startup, and the
+  annotation controls are primed in the same moment; that priming read
+  imported `rusty_dot` before the freshly installed package was importable,
+  and a `reactive.calc` caches the resulting error and re-raises it until
+  its dependencies change — so one transient failure at boot disabled every
+  annotation feature until reload. The import cache is now refreshed after
+  the install, and merging annotations no longer imports anything when
+  there is nothing to merge.
+
 ### Added (highlights carry into saved figures)
 
 - A feature highlight now survives export. Clicking a feature in an

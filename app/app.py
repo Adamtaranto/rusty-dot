@@ -97,6 +97,10 @@ async def ensure_rusty_dot() -> None:
         )
         logger.info('Installing bundled wheel %s', wheel.name)
         await micropip.install(f'emfs:{wheel}')
+        # find_spec() above already cached a FileFinder for site-packages
+        # that predates the install, so without this the very next
+        # `import rusty_dot` can still raise ModuleNotFoundError.
+        importlib.invalidate_caches()
         _boot_done = True
         return
     raise RuntimeError(
