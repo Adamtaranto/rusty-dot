@@ -12,6 +12,7 @@ import importlib.util
 import io
 import logging
 from pathlib import Path
+import re
 import sys
 import tempfile
 import time
@@ -40,16 +41,24 @@ from core.annotation_state import (
     apply_annotation_config,
     apply_feature_overrides,
     build_feature_rows,
+    count_pending_overrides,
     merge_annotations,
+    replace_source,
     type_slug_map,
 )
 from core.cache import QUERY_GROUP, TARGET_GROUP, SessionCache
 from core.export import reordered_fasta_text
-from core.fasta import FastaInput, parse_fasta_bytes
+from core.fasta import FastaInput, content_digest, parse_fasta_bytes
 from core.genbank import parse_genbank_bytes
-from core.panels import has_self_pair, panel_pair, resolve_orders
+from core.panels import (
+    filter_by_min_length,
+    has_self_pair,
+    nav_tips,
+    panel_pair,
+    resolve_orders,
+)
 from core.state import ORDER_CHOICES, PlotConfig
-from core.validate import validate_query_names
+from core.validate import validate_annotation_names, validate_query_names
 from core.wheels import pick_wasm_wheel, runtime_platform_tag
 import matplotlib  # noqa: F401  (ensures shinylive bundles the pyodide package)
 import numpy  # noqa: F401
@@ -148,10 +157,16 @@ _PANEL_DBLCLICK_JS = """
   // without this, double-clicking a panel zooms in and then swaps views.
   window.RD_DBLCLICK_DRILLDOWN = true;
   document.addEventListener('dblclick', function (ev) {
-    var el = ev.target;
-    var g = el && el.closest ? el.closest('g[id^="rd-panel-"]') : null;
-    if (!g) { return; }
-    var m = /^rd-panel-(\\d+)-(\\d+)$/.exec(g.id);
+    // Walk ancestors testing the exact panel id.  closest() with a prefix
+    // selector would stop at the axes background group, whose id merely
+    // starts the same way, and the drill-down would silently never fire.
+    var node = ev.target;
+    var m = null;
+    while (node && node.nodeType === 1) {
+      m = /^rd-panel-(\\d+)-(\\d+)$/.exec(node.id || '');
+      if (m) { break; }
+      node = node.parentNode;
+    }
     if (!m) { return; }
     window.parent.postMessage(
       {type: 'rd-panel-dblclick',
@@ -163,6 +178,25 @@ _PANEL_DBLCLICK_JS = """
 })();
 </script>
 """
+
+
+#: Columns of the drill-down annotations table, with how each one sorts.
+#: 'check' reads the checkbox, 'color' the picker's value, 'num' strips the
+#: thousands separators the cells are formatted with, 'text' compares
+#: case-insensitively.
+_FEATURE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ('Show', 'check'),
+    ('Colour', 'color'),
+    ('Axis', 'text'),
+    ('Type', 'text'),
+    ('Name', 'text'),
+    ('Start', 'num'),
+    ('End', 'num'),
+    ('Length', 'num'),
+    ('Strand', 'text'),
+    ('Source', 'text'),
+    ('Attributes', 'text'),
+)
 
 
 def inject_panel_bridge(html: str) -> str:
@@ -316,7 +350,8 @@ app_ui = ui.page_sidebar(
                 _lbl(
                     'Align assembly to itself',
                     'Compare one assembly against itself to reveal repeats '
-                    'and segmental duplications — no second upload needed.',
+                    'and segmental duplications — no second upload needed. '
+                    'Only the query assembly is used.',
                 ),
                 False,
             ),
@@ -544,6 +579,19 @@ app_ui = ui.page_sidebar(
             ),
             choices=ORDER_CHOICES,
         ),
+        ui.input_numeric(
+            'min_contig_len',
+            _lbl(
+                'Min contig length (bp, 0 = keep all)',
+                'Leave contigs shorter than this out of the plot. One panel '
+                'per contig means a few chromosomes can be buried under '
+                'hundreds of short scaffolds. Excluded contigs are still '
+                'written to the reordered-FASTA download.',
+            ),
+            value=0,
+            min=0,
+            step=1000,
+        ),
         ui.input_checkbox(
             'auto_reverse',
             _lbl(
@@ -613,15 +661,46 @@ app_ui = ui.page_sidebar(
         ui.hr(),
         # --- GFF annotations -------------------------------------------------
         ui.h5('Annotations (GFF3)'),
+        # Same query-then-target order as the assembly uploads above.
         ui.input_file(
             'query_gff',
             'Query annotations (.gff / .gff3 / .gz)',
             accept=['.gff', '.gff3', '.gz'],
         ),
-        ui.input_file(
-            'target_gff',
-            'Target annotations (.gff / .gff3 / .gz)',
-            accept=['.gff', '.gff3', '.gz'],
+        # Hidden alongside the target assembly when self-aligning: both axes
+        # are then the query assembly, so there is no target to annotate.
+        # PAF input has no self-align notion but does have both roles, so it
+        # keeps the upload regardless of a stale checkbox value.
+        ui.panel_conditional(
+            "input.input_mode === 'paf' || !input.self_align",
+            ui.input_file(
+                'target_gff',
+                'Target annotations (.gff / .gff3 / .gz)',
+                accept=['.gff', '.gff3', '.gz'],
+            ),
+        ),
+        ui.panel_conditional(
+            "output.gff_mode === 'plain' || output.gff_mode === 'self'",
+            ui.input_action_button(
+                'clear_gff',
+                'Clear annotations',
+                class_='btn-outline-secondary btn-sm',
+            ),
+        ),
+        # Static, so pressing Run never destroys them.  Only their visibility
+        # is reactive (output.gff_mode); panel_conditional toggles CSS display
+        # and leaves the inputs bound, so they can be read unconditionally.
+        ui.panel_conditional(
+            "output.gff_mode === 'plain' || output.gff_mode === 'self'",
+            ui.input_checkbox('gff_tracks', 'Side tracks in focused pair view', True),
+        ),
+        ui.panel_conditional(
+            "output.gff_mode === 'self'",
+            ui.tooltip(
+                ui.input_checkbox('gff_diagonal', 'Shade features on diagonal', True),
+                'Draws each feature as a square on the diagonal of '
+                'self-comparison panels.',
+            ),
         ),
         ui.output_ui('gff_controls'),
         ui.hr(),
@@ -636,6 +715,7 @@ app_ui = ui.page_sidebar(
     # e.g. on native runs where the wasm heap does not exist).
     ui.div(ui.output_text('app_memory'), class_='rd-mem-fixed'),
     ui.div(ui.output_text('result_kind'), class_='rd-hidden'),
+    ui.div(ui.output_text('gff_mode'), class_='rd-hidden'),
     ui.output_ui('status'),
     # --- W2: interactive plot ---
     ui.output_ui('plot_area'),
@@ -648,6 +728,8 @@ app_ui = ui.page_sidebar(
         # Delegated events for the drill-down Annotations table (one
         # listener instead of ~1200 Shiny-bound inputs).
         ui.include_js(APP_DIR / 'www' / 'feature-table.js', method='inline'),
+        # Hold the sidebar's scroll position across dynamic-UI re-renders.
+        ui.include_js(APP_DIR / 'www' / 'sidebar-scroll.js', method='inline'),
     ),
     # W1: biowasm aligner bridge (Aioli loaded lazily from the CDN on use).
     ui.head_content(ui.include_js(APP_DIR / 'www' / 'aligners.js', method='inline')),
@@ -695,7 +777,15 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         if not files:
             raise ValueError(f'Please upload a {role} assembly.')
         parsed = parse_genbank_bytes(Path(files[0]['datapath']).read_bytes())
-        _set_ann_source(role, 'genbank', files[0]['name'], parsed.gff_text)
+        # digest is over the raw upload, so an unchanged file re-run keeps the
+        # existing annotation source (and the user's annotation choices).
+        _set_ann_source(
+            role,
+            'genbank',
+            files[0]['name'],
+            parsed.gff_text,
+            key=(parsed.fasta.digest, files[0]['name']),
+        )
         return parsed.fasta
 
     def _parse_inputs(progress=None) -> tuple[FastaInput, FastaInput]:
@@ -1120,23 +1210,37 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     # is {'kind': 'gff'|'genbank', 'filename': str, 'annotation': GffAnnotation}.
     ann_sources = {role: reactive.value(()) for role in ANNOTATION_ROLES}
 
-    def _set_ann_source(role: str, kind: str, filename: str, ann) -> None:
-        """Add or replace one annotation source for *role*.
+    def _set_ann_source(role: str, kind: str, filename: str, ann, key=None) -> None:
+        """Add, replace or clear one annotation source for *role*.
 
         *ann* may be a parsed GffAnnotation or GFF3 text.  Every record is
         tagged with *filename* so the drill-down can say where a feature
         came from once several sources are merged.
+
+        *key* identifies the upload — normally ``(content_digest, filename)``.
+        When it matches what is already stored this is a no-op: re-running an
+        alignment re-parses the same GenBank file every time, and blindly
+        re-setting the reactive value would rebuild the feature-type controls
+        and wipe the user's toggles, colours and per-feature overrides.
         """
         from rusty_dot.annotation import GffAnnotation  # noqa: PLC0415
 
+        entries = ann_sources[role]()
+        # Cheap identity check first, so an unchanged GenBank upload does not
+        # even pay for re-parsing its GFF text.
+        if key is not None:
+            current = next((e for e in entries if e['kind'] == kind), None)
+            if current is not None and current.get('key') == key:
+                return
         if isinstance(ann, str):
             ann = GffAnnotation.from_text(ann) if ann.strip() else None
-        entries = [e for e in ann_sources[role]() if e['kind'] != kind]
+        updated = replace_source(entries, kind, filename, ann, key)
+        if updated is None:
+            return  # nothing changed; leave the controls and overrides alone
         if ann is not None and len(ann):
             for rec in ann.records:
                 rec.source_file = filename
-            entries.append({'kind': kind, 'filename': filename, 'annotation': ann})
-        ann_sources[role].set(tuple(entries))
+        ann_sources[role].set(updated)
         _reset_feature_overrides()
 
     def _parse_gff_upload(file_input, role: str) -> None:
@@ -1146,8 +1250,9 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         if not files:
             _set_ann_source(role, 'gff', '', None)
             return
+        raw = Path(files[0]['datapath']).read_bytes()
         try:
-            ann = GffAnnotation.from_bytes(Path(files[0]['datapath']).read_bytes())
+            ann = GffAnnotation.from_bytes(raw)
         except ValueError as exc:
             _set_ann_source(role, 'gff', '', None)
             ui.notification_show(
@@ -1162,7 +1267,13 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 duration=8,
             )
             return
-        _set_ann_source(role, 'gff', files[0]['name'], ann)
+        _set_ann_source(
+            role,
+            'gff',
+            files[0]['name'],
+            ann,
+            key=(content_digest(raw), files[0]['name']),
+        )
         kinds = {e['kind'] for e in ann_sources[role]()}
         if 'genbank' in kinds:
             # Overlapping duplicates are likely, but silently deduping would
@@ -1188,10 +1299,19 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     # Per-feature state from the drill-down Annotations tab, keyed by the
     # positional uids build_feature_rows hands out.  Cleared whenever a
     # role's sources change, since re-uploading renumbers those uids.
+    # Edits accumulate in the *pending* values and only reach the applied
+    # ones when the user presses "Apply changes".  Rebuilding the figure on
+    # every checkbox would make working through a long feature list
+    # unusable, and a debounce cannot help someone who wants to review a
+    # set of changes before committing them.
+    feature_hidden_pending = reactive.value(frozenset())
+    feature_colors_pending = reactive.value({})
     feature_hidden = reactive.value(frozenset())
     feature_colors = reactive.value({})
 
     def _reset_feature_overrides() -> None:
+        feature_hidden_pending.set(frozenset())
+        feature_colors_pending.set({})
         feature_hidden.set(frozenset())
         feature_colors.set({})
 
@@ -1206,6 +1326,147 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     def _on_target_gff():
         req(ready())
         _parse_gff_upload(input.target_gff, 'target')
+
+    @reactive.effect
+    async def _drop_target_annotations_when_self_aligning():
+        """Empty the target annotations when self-aligning.
+
+        A self-alignment puts the query assembly on both axes, so a target
+        annotation set has nothing of its own to annotate: left loaded it
+        either mismatches every contig or draws the query's own features a
+        second time.  Its upload is hidden in this mode, so hiding alone
+        would leave it in the merged set with no visible control to remove
+        it.
+
+        PAF input is exempt: it has both roles and no self-alignment, and
+        ``self_align`` keeps its last value while its panel is hidden.
+        """
+        if input.input_mode() == 'paf' or not input.self_align():
+            return
+        if not ann_sources['target']():
+            return  # nothing loaded; also stops this re-firing on its own write
+        for kind in ('gff', 'genbank'):
+            _set_ann_source('target', kind, '', None)
+        await session.send_custom_message(
+            'rd_clear_file_inputs', {'ids': ['target_gff']}
+        )
+        ui.notification_show(
+            'Self-alignment uses one assembly, so the target annotations were cleared.',
+            type='message',
+            duration=6,
+        )
+
+    # Features the interactive report is currently banding.  Held so a
+    # saved figure can carry the same highlights: the report draws its
+    # bands from on-screen geometry, but an export is redrawn from
+    # coordinates and would otherwise come out plain.
+    highlight_bands = reactive.value(())
+
+    _HEX_COLOR_RE = re.compile(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$')
+
+    @reactive.effect
+    @reactive.event(input.track_bands)
+    def _on_track_bands():
+        ev = input.track_bands() or {}
+        bands = []
+        for band in ev.get('bands') or []:
+            try:
+                bands.append(
+                    {
+                        'axis': band['axis'],
+                        'seqname': band['seqname'],
+                        'start': int(band['start']),
+                        'end': int(band['end']),
+                        # Straight from a sandboxed frame into
+                        # matplotlib, which raises on anything it cannot
+                        # parse -- accept only plain hex.
+                        'color': (
+                            band.get('color')
+                            if _HEX_COLOR_RE.match(str(band.get('color') or ''))
+                            else '#888888'
+                        ),
+                    }
+                )
+            except (KeyError, TypeError, ValueError):
+                continue  # malformed entry from the frame; ignore it
+        highlight_bands.set(tuple(bands))
+
+    _MIN_LEN_NOTIF_ID = 'rd_min_contig_len'
+
+    @reactive.effect
+    def _report_excluded_contigs():
+        """Say how many contigs the length filter is hiding.
+
+        Silently dropping panels looks like missing data, so keep a
+        standing note while the filter is active.  Uses a fixed id so
+        adjusting the threshold replaces the note instead of stacking up.
+        """
+        if result() is None:
+            return
+        lay = layout()
+        dropped = len(lay['excluded_query']) + len(lay['excluded_target'])
+        min_len = max(0, int(input.min_contig_len() or 0))
+        if not min_len:
+            ui.notification_remove(_MIN_LEN_NOTIF_ID)
+            return
+        if not dropped:
+            ui.notification_show(
+                f'No contigs are shorter than {min_len:,} bp; nothing excluded.',
+                id=_MIN_LEN_NOTIF_ID,
+                type='message',
+                duration=6,
+            )
+            return
+        ui.notification_show(
+            f'Hiding {dropped} contig(s) shorter than {min_len:,} bp. '
+            'They are still included in the reordered-FASTA download.',
+            id=_MIN_LEN_NOTIF_ID,
+            type='message',
+            duration=8,
+        )
+
+    @reactive.effect
+    def _warn_on_annotation_name_mismatch():
+        """Warn when a GFF annotates contigs the assembly does not have.
+
+        Keyed on both the result and the annotation sources, so it fires
+        whichever order the user supplies them in — a GFF can be uploaded
+        long before the first run, and a new assembly can be run against an
+        already-loaded GFF.  The plotter only logs about this, which the
+        browser user never sees.
+        """
+        res = result()
+        if res is None:
+            return
+        _kind, _obj, meta = res
+        for role in ANNOTATION_ROLES:
+            ann = gff_raw_for(role)
+            fasta = meta.get(role)
+            if ann is None or not isinstance(fasta, FastaInput):
+                continue
+            for warning in validate_annotation_names(
+                fasta.names, ann.sequence_names(), role
+            ):
+                ui.notification_show(warning, type='warning', duration=12)
+
+    @reactive.effect
+    @reactive.event(input.clear_gff, ignore_init=True)
+    async def _on_clear_gff():
+        """Drop every uploaded GFF and reset the file inputs.
+
+        Shiny's file-input binding has a no-op ``setValue``, so the widget
+        cannot be cleared from the server: without the custom message the
+        filename would linger, and re-selecting the same file would fire no
+        change event and so never reload.
+        """
+        for role in ANNOTATION_ROLES:
+            _set_ann_source(role, 'gff', '', None)
+        await session.send_custom_message(
+            'rd_clear_file_inputs', {'ids': ['query_gff', 'target_gff']}
+        )
+        ui.notification_show(
+            'Cleared uploaded annotations.', type='message', duration=4
+        )
 
     def _read_dynamic(input_id: str, default):
         """Read a dynamically rendered input, tolerating its absence."""
@@ -1279,23 +1540,12 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                     class_='rd-gff-type-row',
                 )
             )
-        toggles = []
-        # Diagonal shading only draws where a contig meets itself; offering
-        # it on a plain cross-assembly comparison promises something that
-        # cannot happen.
-        if self_panels():
-            toggles.append(
-                ui.tooltip(
-                    ui.input_checkbox(
-                        'gff_diagonal', 'Shade features on diagonal', True
-                    ),
-                    'Draws each feature as a square on the diagonal of '
-                    'self-comparison panels.',
-                )
-            )
+        # Deliberately depends on gff_type_index() alone.  The gff_diagonal /
+        # gff_tracks toggles live in the static sidebar because anything that
+        # made this output re-render — self_panels() used to, via result() —
+        # rebuilds every checkbox and colour picker below at its default,
+        # silently discarding the user's choices on each run.
         return ui.div(
-            *toggles,
-            ui.input_checkbox('gff_tracks', 'Side tracks in focused pair view', True),
             ui.div(
                 ui.h6('Feature types'),
                 *controls,
@@ -1303,18 +1553,34 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             ),
         )
 
+    # Each toggle re-runs the whole figure, so unticking several types in a
+    # row rebuilds several times over and the later clicks land on a UI
+    # still drawing the earlier ones.  Waiting for a quiet period lets a
+    # set of changes be made for the price of one render, while still
+    # feeling responsive to a single deliberate toggle.
+    _GFF_TYPE_DEBOUNCE_S = 1.0
+
+    @debounce(_GFF_TYPE_DEBOUNCE_S)
     @reactive.calc
-    def annotations():
-        """Return (query_ann, target_ann) with the user's type/colour choices."""
-        rows, slugs, shared = gff_type_index()
-        # One control per *normalised* type, shared by both roles.
-        chosen = {
+    def gff_type_choices() -> dict:
+        """Per-type visibility and colour, settled.
+
+        One control per *normalised* type, shared by both roles.
+        """
+        rows, slugs, _shared = gff_type_index()
+        return {
             row['key']: (
                 bool(_read_dynamic(f'gtyp_{slugs[row["key"]]}', True)),
                 str(_read_dynamic(f'gcol_{slugs[row["key"]]}', '') or ''),
             )
             for row in rows
         }
+
+    @reactive.calc
+    def annotations():
+        """Return (query_ann, target_ann) with the user's type/colour choices."""
+        _rows, _slugs, shared = gff_type_index()
+        chosen = gff_type_choices()
         hidden = feature_hidden()
         feat_colors = feature_colors()
         result = {}
@@ -1407,6 +1673,15 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         focus.set(None)
         order_cache.clear()
         figure_ctx_cache.clear()
+
+    @reactive.effect
+    @reactive.event(focus)
+    def _clear_bands_on_view_change():
+        # Bands are gids from one rendered report, so a different focused
+        # pair -- or returning to the overview -- leaves them meaningless.
+        # A new result resets focus, so this covers that too.
+        if highlight_bands():
+            highlight_bands.set(())
         paf_pair_index.clear()
 
     @reactive.calc
@@ -1419,7 +1694,55 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         step.  Reads the raw inputs directly: going through ``config()``
         would re-invalidate ``layout()`` on every config recompute.
         """
-        return input.contig_order(), input.auto_reverse()
+        return (
+            input.contig_order(),
+            input.auto_reverse(),
+            max(0, int(input.min_contig_len() or 0)),
+        )
+
+    def _axis_inputs(res) -> tuple[list[str], list[str], dict[str, int]]:
+        """Return ``(query_names, target_names, lengths)`` before ordering.
+
+        Shared by :func:`layout` and :func:`grid_panel_count` so the two
+        cannot disagree about which contigs the grid contains.
+        """
+        kind, obj, meta = res
+        if kind == 'kmer':
+            q_in = list(meta['query'].names)
+            t_in = list(meta['target'].names)
+            lengths = {n: len(s) for n, s in meta['target'].records}
+            lengths.update({n: len(s) for n, s in meta['query'].records})
+        else:
+            q_in = list(obj.query_names)
+            t_in = list(obj.target_names)
+            lengths = {n: obj.get_sequence_length(n) for n in (*q_in, *t_in)}
+        return q_in, t_in, lengths
+
+    @reactive.calc
+    def grid_panel_count() -> int:
+        """Count the panels the grid will draw, from the result alone.
+
+        Deliberately does NOT go through ``layout()``: that would pull
+        ``input.contig_order`` / ``input.auto_reverse`` into ``plot_area``,
+        and re-rendering ``plot_area`` rebuilds the report ``<iframe>``,
+        throwing away its client-side state (zoom, highlight bands, pushed
+        display options, the selected match).  Reading ``result()`` — which
+        ``plot_area`` already depends on — costs no extra invalidation.
+
+        This is an upper bound: the ``colinearity`` ordering modes delegate
+        to ``compute_gravity_contigs``, which may return fewer contigs.  The
+        worst case is one over-advertised navigation tip.
+        """
+        res = result()
+        if res is None:
+            return 0
+        q_in, t_in, lengths = _axis_inputs(res)
+        min_len = max(0, int(input.min_contig_len() or 0))
+        q_keep, _ = filter_by_min_length(q_in, lengths, min_len)
+        t_keep, _ = filter_by_min_length(t_in, lengths, min_len)
+        # Same empty-axis fallback as layout(); the two must agree or the
+        # hint advertises a click-to-focus the report has disabled.
+        return (len(q_keep) or len(q_in)) * (len(t_keep) or len(t_in))
 
     @reactive.calc
     def self_panels() -> bool:
@@ -1448,37 +1771,50 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         """
         res = result()
         req(res)
-        contig_order, auto_reverse = ordering_config()
-        kind, obj, meta = res
+        contig_order, auto_reverse, min_len = ordering_config()
+        kind, obj, _meta = res
         # Memoise per ordering mode: re-selecting e.g. 'maximise colinearity'
         # after trying another mode must not recompute the gravity sort.
-        # auto_reverse stays outside the key — it only selects whether the
-        # cached reversed set is applied.
-        cache_key = (id(obj), contig_order)
+        # The length filter is part of the key because it changes which
+        # contigs the ordering runs over.  auto_reverse stays outside it —
+        # it only selects whether the cached reversed set is applied.
+        cache_key = (id(obj), contig_order, min_len)
         cached = order_cache.get(cache_key)
         if cached is None:
-            if kind == 'kmer':
-                records = obj.get_records_for_pair(QUERY_GROUP, TARGET_GROUP)
-                q_in = list(meta['query'].names)
-                t_in = list(meta['target'].names)
-                lengths = {n: len(s) for n, s in meta['target'].records}
-                lengths.update({n: len(s) for n, s in meta['query'].records})
-            else:
-                records = obj.records
-                q_in = list(obj.query_names)
-                t_in = list(obj.target_names)
-                lengths = {n: obj.get_sequence_length(n) for n in (*q_in, *t_in)}
-            cached = resolve_orders(contig_order, records, q_in, t_in, lengths)
+            q_in, t_in, lengths = _axis_inputs(res)
+            records = (
+                obj.get_records_for_pair(QUERY_GROUP, TARGET_GROUP)
+                if kind == 'kmer'
+                else obj.records
+            )
+            q_keep, q_drop = filter_by_min_length(q_in, lengths, min_len)
+            t_keep, t_drop = filter_by_min_length(t_in, lengths, min_len)
+            # A threshold above every contig would leave nothing to draw;
+            # keep that axis whole rather than rendering an empty grid.
+            if not q_keep:
+                q_keep, q_drop = q_in, []
+            if not t_keep:
+                t_keep, t_drop = t_in, []
+            cached = (
+                *resolve_orders(contig_order, records, q_keep, t_keep, lengths),
+                q_drop,
+                t_drop,
+            )
             order_cache[cache_key] = cached
         else:
             logger.info('contig-order cache hit for mode %r', contig_order)
-        q_order, t_order, reversed_q = cached
+        q_order, t_order, reversed_q, q_drop, t_drop = cached
         reverse = reversed_q if auto_reverse else set()
         # Return copies so downstream mutation cannot poison the memo.
         return {
             'query_names': list(q_order),
             'target_names': list(t_order),
             'reverse': set(reverse),
+            # Excluded by the length filter.  Kept so the FASTA export can
+            # stay complete: CrossIndex.write_fasta writes exactly the names
+            # it is given, so anything omitted here is silently lost.
+            'excluded_query': list(q_drop),
+            'excluded_target': list(t_drop),
         }
 
     def make_figure(res, cfg: PlotConfig, lay, pair=None, output_path=None):
@@ -1506,7 +1842,11 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         # without touching layout()'s dependencies.
         ann_q, ann_t = annotations()
         if ann_q is not None or ann_t is not None:
-            if self_panels() and bool(_read_dynamic('gff_diagonal', True)):
+            # Static inputs now, so read them directly.  The self_panels()
+            # conjunct still matters: a hidden checkbox keeps its last value,
+            # so a box ticked during a self-comparison must not shade the
+            # diagonal of a later cross-assembly run.
+            if self_panels() and bool(input.gff_diagonal()):
                 # On a self-comparison both roles describe the same
                 # sequences, so merge them: a user who uploaded the
                 # annotation under either role — or split it across two
@@ -1514,7 +1854,11 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 kwargs['annotation'] = merge_annotations([ann_q, ann_t])
             kwargs['annotation_query'] = ann_q
             kwargs['annotation_target'] = ann_t
-            kwargs['annotation_tracks'] = bool(_read_dynamic('gff_tracks', True))
+            kwargs['annotation_tracks'] = bool(input.gff_tracks())
+        if output_path is None and highlight_bands():
+            # Only for figures the user takes away.  The HTML report draws
+            # its own bands live, and would end up with two.
+            kwargs['highlight_regions'] = [dict(b) for b in highlight_bands()]
         # Memoise the plotter per result: for the k-mer path, building the
         # PafAlignment copies the full record list — pointless to repeat on
         # every re-render of the same result.
@@ -1616,7 +1960,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             title='Interactive dotplot report',
         )
 
-    def _nav_hint(focused: bool):
+    def _nav_hint(focused: bool, multi_panel: bool):
         """Build the navigation-tips box shown under the interactive report.
 
         Parameters
@@ -1625,24 +1969,16 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             Whether the focused single-pair view is active; panel-click tips
             do not apply there (click-to-focus is disabled on single-panel
             reports).
+        multi_panel : bool
+            Whether the grid has more than one panel.  See
+            :func:`core.panels.nav_tips`.
 
         Returns
         -------
         htmltools.Tag
             The hint ``div`` with each action term in bold.
         """
-        tips = [
-            ('scroll', 'pan up/down'),
-            ('Shift+scroll', 'pan left/right'),
-            ('Cmd/Ctrl+scroll', 'zoom'),
-            ('drag', 'zoom to region'),
-        ]
-        if not focused:
-            tips.append(('click panel', 'focus'))
-        tips.append(('click match', 'details'))
-        tips.append(('Esc', 'reset'))
-        if not focused:
-            tips.append(('double-click panel', 'standalone view'))
+        tips = nav_tips(focused, multi_panel)
         parts: list = [ui.tags.b('Navigate: ')]
         for i, (action, effect) in enumerate(tips):
             if i:
@@ -1669,7 +2005,11 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             body = ui.output_ui('report_frame')
         else:
             body = ui.output_plot('dotplot', height='72vh')
-        hint = _nav_hint(pair is not None) if input.interactive() else None
+        hint = (
+            _nav_hint(pair is not None, grid_panel_count() > 1)
+            if input.interactive()
+            else None
+        )
         if pair is None or not feature_rows():
             return ui.div(
                 ui.div(*toolbar, class_='rd-plot-toolbar') if toolbar else None,
@@ -1682,7 +2022,23 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             ui.div(*toolbar, class_='rd-plot-toolbar') if toolbar else None,
             ui.navset_tab(
                 ui.nav_panel('Plot', body, hint),
-                ui.nav_panel('Annotations', ui.output_ui('annotation_table')),
+                ui.nav_panel(
+                    'Annotations',
+                    ui.div(
+                        ui.input_action_button(
+                            'apply_features',
+                            'Apply changes',
+                            class_='btn-primary btn-sm',
+                            disabled=True,
+                        ),
+                        ui.span(
+                            'Show/hide and colour edits are held until you apply them.',
+                            class_='rd-ft-apply-note',
+                        ),
+                        class_='rd-ft-apply',
+                    ),
+                    ui.output_ui('annotation_table'),
+                ),
                 id='drill_tabs',
             ),
             class_='rd-plot-area',
@@ -1719,18 +2075,46 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             return
         if kind in ('vis', 'bulk'):
             visible = bool(ev.get('value'))
-            hidden = set(feature_hidden())
+            hidden = set(feature_hidden_pending())
             hidden.difference_update(uids) if visible else hidden.update(uids)
-            feature_hidden.set(frozenset(hidden))
+            feature_hidden_pending.set(frozenset(hidden))
         elif kind == 'color':
-            colors = dict(feature_colors())
+            colors = dict(feature_colors_pending())
             value = ev.get('value') or ''
             for uid in uids:
                 if value:
                     colors[uid] = value
                 else:
                     colors.pop(uid, None)  # reset to the type colour
-            feature_colors.set(colors)
+            feature_colors_pending.set(colors)
+
+    @reactive.effect
+    @reactive.event(input.apply_features, ignore_init=True)
+    def _apply_feature_overrides_now():
+        """Commit the pending per-feature edits, redrawing once."""
+        # reactive.event isolates the body, so these reads add no
+        # dependencies -- this runs on the button press and nothing else.
+        if feature_hidden_pending() == feature_hidden() and (
+            feature_colors_pending() == feature_colors()
+        ):
+            return  # equal-but-new objects would still invalidate
+        feature_hidden.set(feature_hidden_pending())
+        feature_colors.set(dict(feature_colors_pending()))
+
+    @reactive.effect
+    def _sync_apply_features_button():
+        """Say whether there is anything to apply, and how much."""
+        pending = count_pending_overrides(
+            feature_hidden_pending(),
+            feature_colors_pending(),
+            feature_hidden(),
+            feature_colors(),
+        )
+        ui.update_action_button(
+            'apply_features',
+            label=f'Apply changes ({pending})' if pending else 'Apply changes',
+            disabled=not pending,
+        )
 
     @render.ui
     def annotation_table():
@@ -1738,23 +2122,29 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         pair = focus()
         if not rows or pair is None:
             return None
-        hidden = feature_hidden()
-        overrides = feature_colors()
+        # Isolated: the table shows the pending edits whenever it *does*
+        # render, but must not re-render on every toggle -- ~600 rows per
+        # sequence rebuilt per click is the freeze this design avoids.
+        with reactive.isolate():
+            hidden = feature_hidden_pending()
+            overrides = feature_colors_pending()
         _type_rows, _slugs, shared = gff_type_index()
 
         def type_color(ft: str) -> str:
             return shared.get(normalise_type(ft), '#888888')
 
         body = []
-        for r in rows:
+        for idx, r in enumerate(rows):
             checked = '' if r['uid'] in hidden else ' checked'
             color = overrides.get(r['uid']) or type_color(r['type'])
             meta = ' · '.join(f'{k}={v}' for k, v in list(r['attributes'].items())[:6])
             body.append(
-                '<tr data-uid="{uid}" data-type="{type}" data-source="{src}">'
+                '<tr data-uid="{uid}" data-idx="{idx}" data-type="{type}" '
+                'data-source="{src}">'
                 '<td><input type="checkbox" data-uid="{uid}" data-kind="vis"{ck}></td>'
                 '<td><input type="color" data-uid="{uid}" data-kind="color" '
-                'value="{color}" class="rd-color-input"></td>'
+                'value="{color}" data-type-color="{type_color}" '
+                'class="rd-color-input"></td>'
                 '<td class="rd-ft-role">{role}</td>'
                 '<td class="rd-ft-type">{type}</td>'
                 '<td class="rd-ft-name">{name}</td>'
@@ -1766,8 +2156,10 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 '<td class="rd-ft-attrs" title="{meta}">{meta}</td>'
                 '</tr>'.format(
                     uid=_esc(r['uid']),
+                    idx=idx,
                     ck=checked,
                     color=_esc(color),
+                    type_color=_esc(type_color(r['type'])),
                     role=_esc(r['role']),
                     type=_esc(r['type']),
                     name=_esc(r['name'] or ''),
@@ -1779,10 +2171,18 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                     meta=_esc(meta),
                 )
             )
+        # Each header carries how its column compares, so the client can
+        # sort without a round trip -- the table deliberately does not
+        # re-render, and re-rendering would drop the pending edits.
         header = (
-            '<thead><tr><th>Show</th><th>Colour</th><th>Axis</th><th>Type</th>'
-            '<th>Name</th><th>Start</th><th>End</th><th>Length</th>'
-            '<th>Strand</th><th>Source</th><th>Attributes</th></tr></thead>'
+            '<thead><tr>'
+            + ''.join(
+                f'<th data-sort="{kind}" role="columnheader" '
+                f'aria-sort="none" tabindex="0" '
+                f'title="Sort by {label.lower()}">{label}</th>'
+                for label, kind in _FEATURE_COLUMNS
+            )
+            + '</tr></thead>'
         )
         return ui.div(
             ui.div(
@@ -2128,6 +2528,24 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         res = result()
         return res[0] if res else ''
 
+    @output(suspend_when_hidden=False)
+    @render.text
+    def gff_mode():
+        """Visibility state for the static annotation toggles.
+
+        ``''`` no annotations · ``'plain'`` cross-comparison ·
+        ``'self'`` at least one self-comparison panel.  Conditions on this
+        output test *positively* (``=== 'self'``), because before the first
+        report it is ``undefined`` client-side and a negative test would
+        flash the controls on a fresh page.
+
+        Checks ``ann_sources`` rather than ``gff_type_index()`` — same truth
+        value, without re-running the shared-colour assignment on each run.
+        """
+        if not any(gff_raw_for(role) is not None for role in ANNOTATION_ROLES):
+            return ''
+        return 'self' if self_panels() else 'plain'
+
     def _has_sequences(res) -> bool:
         """Whether a reordered-FASTA export is possible for this result."""
         kind, _obj, meta = res
@@ -2230,7 +2648,11 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         req(res)
         kind, obj, meta = res
         lay = layout()
-        order = lay['query_names']
+        # Contigs the length filter left out of the plot still belong in the
+        # export — they are simply unordered, appended after the plotted
+        # ones.  CrossIndex.write_fasta writes exactly the names it is
+        # given, so omitting them here would quietly drop sequence.
+        order = lay['query_names'] + lay['excluded_query']
         reverse = lay['reverse']
         if kind == 'kmer':
             with tempfile.TemporaryDirectory() as tmp:

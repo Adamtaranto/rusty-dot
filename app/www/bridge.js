@@ -109,6 +109,19 @@
       }
       return;
     }
+    if (msg.type === 'rd-bands') {
+      // Which features the report is currently highlighting, so a saved
+      // figure can carry the same bands.  Coordinates, not pixels: the
+      // export is redrawn server-side rather than screenshotted.
+      if (window.Shiny && typeof window.Shiny.setInputValue === 'function') {
+        window.Shiny.setInputValue(
+          'track_bands',
+          { bands: Array.isArray(msg.bands) ? msg.bands : [] },
+          { priority: 'event' }
+        );
+      }
+      return;
+    }
     if (msg.type !== 'rd-panel-dblclick') {
       return;
     }
@@ -158,6 +171,34 @@
           );
         }
       });
+      // Reset file inputs the server has cleared.  Shiny's FileInputBinding
+      // has a no-op setValue, so this cannot be done with an input message:
+      // without it the old filename stays on screen, and re-picking the same
+      // file fires no change event, so it would never reload.
+      window.Shiny.addCustomMessageHandler(
+        'rd_clear_file_inputs',
+        function (msg) {
+          var ids = (msg && msg.ids) || [];
+          ids.forEach(function (id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.value = '';
+            var group = el.closest('.input-group');
+            if (group) {
+              var text = group.querySelector('input[type="text"]');
+              if (text) text.value = '';
+            }
+            var wrap = el.closest('.form-group') || (group && group.parentNode);
+            var bar = wrap && wrap.querySelector('.progress-bar');
+            if (bar) {
+              bar.style.width = '0%';
+              bar.textContent = '';
+            }
+            var progress = wrap && wrap.querySelector('.progress');
+            if (progress) progress.style.visibility = 'hidden';
+          });
+        }
+      );
     } else {
       setTimeout(register, 100);
     }

@@ -1911,3 +1911,216 @@ def test_focused_thin_axis_single_end_tick():
     texts = [t.get_text() for t in ax.get_yticklabels() if t.get_text()]
     assert texts == ['30']
     plt.close(fig)
+
+
+# ----------------------------------------------- multi-row contig labels
+
+
+def _grid_plotter(lengths, prefix='query_contig_with_a_long_name_'):
+    import random
+
+    from rusty_dot import SequenceIndex
+
+    rng = random.Random(7)
+    idx = SequenceIndex(k=11)
+    names = []
+    for i, length in enumerate(lengths, 1):
+        name = f'{prefix}{i:03d}'
+        names.append(name)
+        idx.add_sequence(name, ''.join(rng.choice('ACGT') for _ in range(length)))
+    idx.add_sequence('target_contig', ''.join(rng.choice('ACGT') for _ in range(3000)))
+    return DotPlotter(idx), names
+
+
+def test_multi_row_contig_labels_are_angled():
+    """Vertical row labels collide when contigs differ in length.
+
+    A 90-degree label is as tall as the name is long, so a short contig's
+    row cannot contain it and neighbouring labels smear together.
+    """
+    pl, names = _grid_plotter([3000, 2500, 2000])
+    fig = pl.plot(query_names=names, target_names=['target_contig'])
+    left_col = [ax for ax in fig.axes if ax.get_ylabel()]
+    assert len(left_col) == 3
+    for ax in left_col:
+        rot = ax.yaxis.label.get_rotation()
+        assert 0 < rot < 90, f'row label should be angled, got {rot}'
+    plt.close(fig)
+
+
+def test_single_row_keeps_the_conventional_vertical_label():
+    """One row cannot collide with anything, so leave it alone."""
+    pl, names = _grid_plotter([3000])
+    fig = pl.plot(query_names=names, target_names=['target_contig'])
+    ax = next(ax for ax in fig.axes if ax.get_ylabel())
+    assert ax.yaxis.label.get_rotation() == 90
+    plt.close(fig)
+
+
+def test_row_labels_shrink_to_fit_a_short_row():
+    """A thin row gets a smaller label rather than one that overruns it."""
+    pl, names = _grid_plotter([30000, 900])
+    fig = pl.plot(query_names=names, target_names=['target_contig'])
+    labelled = [ax for ax in fig.axes if ax.get_ylabel()]
+    tall, short = labelled[0], labelled[1]
+    assert short.yaxis.label.get_fontsize() < tall.yaxis.label.get_fontsize(), (
+        'the short row should use a smaller label'
+    )
+    plt.close(fig)
+
+
+def test_row_label_fits_its_row_when_shrinking_is_enough():
+    """Where the name can be made to fit, it is."""
+    import math
+
+    pl, names = _grid_plotter([3000, 2200, 1800])
+    fig = pl.plot(query_names=names, target_names=['target_contig'])
+    fig_h = fig.get_size_inches()[1]
+    for ax in [ax for ax in fig.axes if ax.get_ylabel()]:
+        label = ax.yaxis.label
+        extent_in = (
+            len(ax.get_ylabel())
+            * label.get_fontsize()
+            * 0.62
+            / 72.0
+            * math.sin(math.radians(label.get_rotation()))
+        )
+        row_in = ax.get_position().height * fig_h
+        assert extent_in <= row_in * 1.05, (
+            f'label {ax.get_ylabel()!r} spans {extent_in:.2f}in of a {row_in:.2f}in row'
+        )
+    plt.close(fig)
+
+
+def test_row_label_is_never_elided_into_uselessness():
+    """A bacterial chromosome beside its plasmid is the real case.
+
+    The plasmid's row is far too thin for its name at any legible size, and
+    truncating to a bare ellipsis loses the only thing the label is for.
+    Overhanging into a neighbour is the lesser evil.
+    """
+    from rusty_dot.dotplot import _ROW_LABEL_MIN_CHARS
+
+    pl, names = _grid_plotter([5_000_000, 114_000], prefix='CP00024')
+    fig = pl.plot(query_names=names, target_names=['target_contig'])
+    labels = [ax.get_ylabel() for ax in fig.axes if ax.get_ylabel()]
+    assert len(labels) == 2
+    for text, original in zip(labels, names):
+        if text != original:
+            # Elided labels stay long enough to identify the contig...
+            assert len(text) >= _ROW_LABEL_MIN_CHARS, text
+            assert text.startswith('…')
+        # ...and the distinguishing tail always survives.
+        assert text.lstrip('…') in original
+    # The short contig keeps its whole name rather than collapsing.
+    assert names[1] in labels
+    plt.close(fig)
+
+
+# ---------------------------------------------------- highlight bands
+
+
+def _band_plotter():
+    import random
+
+    from rusty_dot import SequenceIndex
+
+    rng = random.Random(5)
+    seq = ''.join(rng.choice('ACGT') for _ in range(4000))
+    idx = SequenceIndex(k=11)
+    idx.add_sequence('qA', seq)
+    idx.add_sequence('tA', seq)
+    return DotPlotter(idx)
+
+
+def _spans(ax):
+    """(orientation, lo, hi) for each axhspan/axvspan drawn on *ax*."""
+    from matplotlib.patches import Rectangle
+
+    out = []
+    for patch in ax.patches:
+        if not isinstance(patch, Rectangle):
+            continue
+        x0, y0 = patch.get_xy()
+        # A span covers its whole cross-axis in axes coordinates.
+        if patch.get_width() == 1:
+            out.append(('y', y0, y0 + patch.get_height()))
+        elif patch.get_height() == 1:
+            out.append(('x', x0, x0 + patch.get_width()))
+    return out
+
+
+def test_highlight_regions_band_the_named_axis():
+    pl = _band_plotter()
+    fig = pl.plot(
+        query_names=['qA'],
+        target_names=['tA'],
+        highlight_regions=[
+            {
+                'axis': 'x',
+                'seqname': 'tA',
+                'start': 100,
+                'end': 400,
+                'color': '#123456',
+            },
+            {
+                'axis': 'y',
+                'seqname': 'qA',
+                'start': 700,
+                'end': 900,
+                'color': '#654321',
+            },
+        ],
+    )
+    spans = _spans(fig.axes[0])
+    assert ('x', 100, 400) in spans
+    assert ('y', 700, 900) in spans
+    plt.close(fig)
+
+
+def test_highlight_regions_ignore_other_sequences():
+    """A band belongs to the panel whose contig it names, not every panel."""
+    pl = _band_plotter()
+    fig = pl.plot(
+        query_names=['qA'],
+        target_names=['tA'],
+        highlight_regions=[
+            {'axis': 'x', 'seqname': 'somewhere_else', 'start': 0, 'end': 10},
+            # Right name, wrong axis: 'qA' is the query, not the target.
+            {'axis': 'x', 'seqname': 'qA', 'start': 0, 'end': 10},
+        ],
+    )
+    assert _spans(fig.axes[0]) == []
+    plt.close(fig)
+
+
+def test_highlight_regions_mirror_for_reversed_contigs():
+    """Bands must land where the feature is drawn, not where it is stored."""
+    pl = _band_plotter()
+    fig = pl.plot(
+        query_names=['qA'],
+        target_names=['tA'],
+        reverse_contigs={'qA'},
+        highlight_regions=[
+            {'axis': 'y', 'seqname': 'qA', 'start': 0, 'end': 1000},
+        ],
+    )
+    # 4000 bp contig displayed reversed: [0, 1000) shows at [3000, 4000).
+    assert ('y', 3000, 4000) in _spans(fig.axes[0])
+    plt.close(fig)
+
+
+def test_highlight_regions_survive_malformed_entries():
+    """The bands arrive from a sandboxed frame; do not trust the shape."""
+    pl = _band_plotter()
+    fig = pl.plot(
+        query_names=['qA'],
+        target_names=['tA'],
+        highlight_regions=[
+            {'axis': 'x', 'seqname': 'tA'},  # no coordinates
+            {'axis': 'x', 'seqname': 'tA', 'start': 'x', 'end': 9},
+            {'axis': 'x', 'seqname': 'tA', 'start': 10, 'end': 20},
+        ],
+    )
+    assert _spans(fig.axes[0]) == [('x', 10, 20)]
+    plt.close(fig)

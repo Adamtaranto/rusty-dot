@@ -11,7 +11,8 @@
  *
  * Behaviours:
  *  1. Click a panel        -> zoom the SVG viewBox to that panel and dim the
- *                             others; click again (or Esc) resets.
+ *                             others; any subsequent click in the figure
+ *                             (or Esc) returns to the full view.
  *  2. Wheel over the SVG   -> vertical pan; Shift+wheel -> horizontal pan;
  *                             Cmd/Ctrl+wheel (incl. trackpad pinch, which
  *                             browsers report as ctrl+wheel) -> uniform
@@ -136,8 +137,29 @@
   // 1. Panel selection / zoom
   // ---------------------------------------------------------------------
 
-  var panelGroups = Array.prototype.slice.call(
-    svg.querySelectorAll('g[id^="rd-panel-"]')
+  /* Panel groups are matched on the EXACT id shape, not the prefix alone.
+   * matplotlib nests every gid'd artist in its own <g>, so a panel group
+   * can contain descendants whose ids merely start the same way; matching
+   * loosely once made the axes background masquerade as a second panel,
+   * which dimmed the plot it was supposed to select and broke drill-down. */
+  var PANEL_ID_RE = /^rd-panel-\d+-\d+$/;
+
+  /* Nearest ancestor (inclusive) that is a real panel group, or null. */
+  function closestPanel(el) {
+    var node = el;
+    while (node && node.nodeType === 1) {
+      if (node === svg) return null; // never escape the figure
+      if (PANEL_ID_RE.test(node.id || '')) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
+
+  var panelGroups = Array.prototype.filter.call(
+    svg.querySelectorAll('g[id^="rd-panel-"]'),
+    function (g) {
+      return PANEL_ID_RE.test(g.id);
+    }
   );
   var selectedPanel = null;
 
@@ -150,10 +172,9 @@
   }
 
   function selectPanel(panel) {
-    if (selectedPanel === panel) {
-      resetView();
-      return;
-    }
+    // No same-panel toggle here: while a panel is selected the delegated
+    // handler below resets on any click, so this is only ever reached from
+    // the unfocused state.
     selectedPanel = panel;
     var box = bboxInRootSpace(panel);
     var pad = Math.max(box.w, box.h) * 0.03;
@@ -190,24 +211,35 @@
 
   /* Click-to-focus only makes sense with several panels to choose from:
    * in a single-panel report (the drill-down view) it would just recentre
-   * the one visible plot, so leave clicks alone there. */
+   * the one visible plot, so leave clicks alone there.
+   *
+   * One delegated listener on the SVG rather than one per panel, so that
+   * while a panel is focused a click *anywhere* in the figure returns to
+   * the full view — having to find and re-click the panel you zoomed into
+   * is a poor way out of a zoom.  Clicks the match / annotation / track
+   * handlers claim stop propagation and never reach here, so inspecting a
+   * match inside a focused panel still shows its details instead of
+   * throwing the zoom away. */
   if (panelGroups.length > 1) {
-    panelGroups.forEach(function (panel) {
-      panel.addEventListener('click', function (evt) {
-        // A completed drag-zoom releases a click too; swallow that one.
-        if (consumeDragClick()) return;
-        // Match clicks are handled (and stopped) by the match handler below.
-        evt.stopPropagation();
-        if (!window.RD_DBLCLICK_DRILLDOWN) {
-          selectPanel(panel);
-          return;
-        }
+    svg.addEventListener('click', function (evt) {
+      // A completed drag-zoom releases a click too; swallow that one.
+      if (consumeDragClick()) return;
+      if (selectedPanel !== null) {
         cancelPendingPanelClick();
-        pendingPanelTimer = setTimeout(function () {
-          pendingPanelTimer = null;
-          selectPanel(panel);
-        }, DBLCLICK_GRACE_MS);
-      });
+        resetView();
+        return;
+      }
+      var panel = closestPanel(evt.target);
+      if (!panel) return; // click landed on figure margin, not a panel
+      if (!window.RD_DBLCLICK_DRILLDOWN) {
+        selectPanel(panel);
+        return;
+      }
+      cancelPendingPanelClick();
+      pendingPanelTimer = setTimeout(function () {
+        pendingPanelTimer = null;
+        selectPanel(panel);
+      }, DBLCLICK_GRACE_MS);
     });
   }
 
@@ -321,10 +353,7 @@
     if (evt.button !== 0) return;
     suppressNextClick = false;
     // Only drags starting inside a panel arm region select.
-    var panel =
-      evt.target && evt.target.closest
-        ? evt.target.closest('g[id^="rd-panel-"]')
-        : null;
+    var panel = closestPanel(evt.target);
     if (!panel) return;
     drag = {
       cx0: evt.clientX,
@@ -760,10 +789,32 @@
 
   var trackData = payload.tracks || null;
   var activeBands = {}; // gid -> <rect>
+  var bandEntries = {}; // gid -> {axis, payload entry}
   var bandLayer = null;
 
+  /* Tell an embedding app which features are banded, so a figure it saves
+   * can carry the same highlights.  The bands here are DOM rects measured
+   * off the rendered SVG; a saved figure is drawn from coordinates, so the
+   * app gets the feature's own numbers rather than pixel geometry. */
+  function publishBands() {
+    if (window.parent === window) return; // standalone report: no app
+    var bands = Object.keys(activeBands).map(function (gid) {
+      var held = bandEntries[gid] || {};
+      var entry = held.entry || {};
+      return {
+        gid: gid,
+        axis: held.axis,
+        seqname: entry.seqname,
+        start: entry.start,
+        end: entry.end,
+        color: entry.color || patchFill(document.getElementById(gid)),
+      };
+    });
+    window.parent.postMessage({ type: 'rd-bands', bands: bands }, '*');
+  }
+
   function panelBackground() {
-    return svg.querySelector('[id="rd-panel-0-0-bg"]');
+    return svg.querySelector('[id="rd-plotbg-0-0"]');
   }
 
   /* Lazily create the band group, inserted directly after the panel
@@ -787,6 +838,8 @@
       if (el) el.classList.remove('rd-track-active');
     });
     activeBands = {};
+    bandEntries = {};
+    publishBands();
   }
 
   /* Colour a track patch is actually painted with.  A gid-tagged artist is
@@ -798,6 +851,20 @@
     var fill =
       kid.getAttribute('fill') || window.getComputedStyle(kid).fill || '';
     if (!fill || fill === 'none' || fill === 'rgb(0, 0, 0)') return '#888888';
+    // getComputedStyle reports 'rgb(r, g, b)'.  SVG takes that happily, but
+    // the app forwards this colour to matplotlib for saved figures, which
+    // does not, so normalise to hex here rather than parsing CSS there.
+    var m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(fill);
+    if (m) {
+      return (
+        '#' +
+        [m[1], m[2], m[3]]
+          .map(function (v) {
+            return ('0' + Number(v).toString(16)).slice(-2);
+          })
+          .join('')
+      );
+    }
     return fill;
   }
 
@@ -824,6 +891,7 @@
     rect.setAttribute('class', 'rd-band');
     layer.appendChild(rect);
     activeBands[gid] = rect;
+    bandEntries[gid] = { axis: axis, entry: entry };
     el.classList.add('rd-track-active');
   }
 
@@ -831,6 +899,7 @@
     var rect = activeBands[gid];
     if (rect && rect.parentNode) rect.parentNode.removeChild(rect);
     delete activeBands[gid];
+    delete bandEntries[gid];
     var el = document.getElementById(gid);
     if (el) el.classList.remove('rd-track-active');
   }
@@ -846,6 +915,7 @@
       if (allOn) removeBand(gid);
       else if (!activeBands[gid]) addBand(gid, entries[i], axis);
     });
+    publishBands();
   }
 
   if (trackData) {

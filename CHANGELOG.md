@@ -8,6 +8,116 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added (highlights carry into saved figures)
+
+- A feature highlight now survives export. Clicking a feature in an
+  annotation track shades the row or column it occupies; until now that
+  band lived only in the browser, so a saved SVG, PNG or PDF came back
+  without it and the point being illustrated was lost. The highlighted
+  regions are sent back to the app as coordinates and redrawn into the
+  exported figure, matching colour and extent — including on reversed
+  contigs, where the band is mirrored with the sequence. Highlights clear
+  when the view changes.
+
+### Fixed (annotation controls and short-contig labels)
+
+- Toggling annotation feature types no longer rebuilds the figure once per
+  click. The per-type controls are read through a value that settles after
+  a second, so a run of changes costs one render instead of one each —
+  unticking six types in a row now redraws once.
+- The drill-down Annotations table sorts by any column: click a header for
+  ascending, again for descending, a third time to return to file order.
+  Sorting happens in the browser, so it costs no redraw and carries
+  unapplied edits along with their rows; it composes with the filter.
+- The drill-down Annotations tab gained an **Apply changes** button. Its
+  per-feature show/hide and colour edits are held until you press it, so
+  working down a list of several hundred features costs one redraw rather
+  than one per click. The button reports how many features are pending and
+  is disabled when there is nothing to apply.
+- A short contig's row label is no longer reduced to an ellipsis. Shrinking
+  and truncating to fit could leave nothing but `…` where a row is very
+  thin — a bacterial chromosome beside its 114 kb plasmid, for instance.
+  Truncation now stops while the label still identifies the contig, and
+  below that the full name is kept and allowed to overhang: a name running
+  into its neighbour is still readable, `…` is not.
+
+### Added (contig length filter)
+
+- A **Min contig length** setting leaves contigs shorter than the given
+  size out of the plot. One panel per contig means a couple of
+  chromosomes can be buried under hundreds of short scaffolds, each drawn
+  as a sliver. Excluded contigs are still written to the
+  reordered-FASTA download — the plot is filtered, the data is not — and
+  a threshold that would empty an axis leaves that axis whole instead of
+  rendering an empty grid.
+
+### Changed (sidebar layout and plot navigation)
+
+- Ticking **Align assembly to itself** now clears the target annotations
+  and hides their upload, alongside the target assembly: both axes are the
+  query assembly, so there is nothing for a target GFF to annotate, and
+  leaving it loaded would draw the query's own features twice. PAF input
+  keeps the upload, having both roles but no self-align notion.
+- Multi-panel plots: clicking a panel centres it as before, but **any**
+  subsequent click in the figure returns to the full view. Previously the
+  second click had to land on the same panel — every listener was attached
+  per panel and stopped propagation, so no click elsewhere could reset.
+  Clicks that a match, annotation or side-track claims still show their
+  details rather than throwing the zoom away.
+
+### Added (annotation handling)
+
+- A **Clear annotations** button in the GFF section drops every uploaded
+  annotation and resets the file inputs. Shiny cannot clear a file input
+  from the server, so this also resets the widget itself — without which
+  the filename would linger and re-picking the same file would never
+  reload it.
+- Uploading a GFF whose sequence names are absent from the corresponding
+  assembly now warns, naming the offending contigs (or, when nothing
+  matches at all, suggesting the likely cause: wrong file, or assigned to
+  the wrong role). Previously the features simply never appeared, which
+  reads as a broken plot — the library logged a warning the browser user
+  never saw.
+
+### Fixed (sidebar and multi-panel labels)
+
+- Choosing a GFF file no longer scrolls the sidebar back to the top. The
+  jump happens during the file-picker interaction, before any re-render,
+  so the position is captured when the picker is opened and re-asserted
+  once the panel settles; a real scroll gesture cancels it.
+- Multi-panel plots: per-row contig labels are angled rather than
+  vertical, and shrink to fit their row. A vertical label is as tall as
+  the contig name is long, so an assembly mixing one large chromosome with
+  small contigs had the short rows' labels overrun into their neighbours'
+  and smear together.
+
+### Fixed (single-panel plots and annotation controls)
+
+- Clicking a dot plot no longer dims the panel it just selected. The axes
+  background was gid-tagged `rd-panel-<r>-<c>-bg`, and matplotlib nests
+  gid'd artists, so it matched every `g[id^="rd-panel-"]` selector: the
+  report counted it as an extra panel (defeating the guard that disables
+  click-to-focus on single-panel reports) and dimmed the clicked panel's
+  parent. On a multi-panel grid, clicking blank area dimmed *every* panel.
+  The background now uses its own `rd-plotbg-` prefix, and the report
+  matches panel ids on their exact shape rather than the prefix alone.
+- Double-clicking a plot opens the drill-down again. The same id collision
+  made the app's bridge resolve to the background group, whose id failed
+  the strict panel regex, so no message was ever posted and the drill-down
+  silently never opened — on any grid size, though it was most visible on
+  a single-panel plot where nearly all of the panel is background.
+- Feature-type toggles and colours survive pressing "Run comparison". The
+  controls are rendered dynamically, and the block also drew the
+  "Shade features on diagonal" checkbox, whose visibility depends on the
+  result — so every run rebuilt the whole list at its defaults. The two
+  global toggles are now static (shown or hidden through a conditional
+  panel), leaving the type list dependent only on the uploaded
+  annotations. Re-running in GenBank mode no longer re-registers an
+  unchanged annotation source either, which also preserves the
+  Annotations tab's per-feature show/hide and colour overrides.
+- The navigation hint no longer advertises "click panel = focus" on a
+  single-panel plot, where click-to-focus is deliberately inert.
+
 ### Added (GenBank input)
 
 - Browser app: **Assemblies (GenBank)** input mode reads sequences *and*

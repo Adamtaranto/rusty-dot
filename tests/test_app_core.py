@@ -666,3 +666,424 @@ def test_report_frame_is_not_suspended_when_hidden():
     head = app_py.split('def report_frame')[0]
     assert head.rstrip().endswith('@render.ui')
     assert 'suspend_when_hidden=False' in head.rsplit('@output', 1)[1]
+
+
+# ------------------------------------------------------ annotation sources
+
+
+def _ann(text='c1\tt\tgene\t1\t10\t.\t+\t.\tID=a'):
+    from rusty_dot.annotation import GffAnnotation
+
+    return GffAnnotation.from_text(text)
+
+
+def test_replace_source_reports_no_change_for_an_identical_upload():
+    """Re-running an alignment re-parses the same GenBank file every time.
+
+    The app's reactive values invalidate on identity, so re-setting an
+    equal-but-new tuple would rebuild the feature-type controls and discard
+    the user's toggles and colours on every run.
+    """
+    from core.annotation_state import replace_source
+
+    key = ('digest1', 'a.gbk')
+    entries = replace_source((), 'genbank', 'a.gbk', _ann(), key)
+    assert entries is not None and len(entries) == 1
+    assert replace_source(entries, 'genbank', 'a.gbk', _ann(), key) is None
+
+
+def test_replace_source_detects_new_content_under_the_same_name():
+    from core.annotation_state import replace_source
+
+    entries = replace_source((), 'genbank', 'a.gbk', _ann(), ('d1', 'a.gbk'))
+    updated = replace_source(entries, 'genbank', 'a.gbk', _ann(), ('d2', 'a.gbk'))
+    assert updated is not None
+    assert updated[0]['key'] == ('d2', 'a.gbk')
+
+
+def test_replace_source_detects_the_same_content_under_a_new_name():
+    """source_file is displayed in the drill-down, so the name must refresh."""
+    from core.annotation_state import replace_source
+
+    entries = replace_source((), 'gff', 'a.gff', _ann(), ('d1', 'a.gff'))
+    updated = replace_source(entries, 'gff', 'b.gff', _ann(), ('d1', 'b.gff'))
+    assert updated is not None
+    assert updated[0]['filename'] == 'b.gff'
+
+
+def test_replace_source_clearing_an_empty_slot_is_a_no_op():
+    """Otherwise an empty GFF upload wipes every per-feature override."""
+    from core.annotation_state import replace_source
+
+    assert replace_source((), 'gff', '', None, None) is None
+    entries = replace_source((), 'gff', 'a.gff', _ann(), ('d1', 'a.gff'))
+    cleared = replace_source(entries, 'gff', '', None, None)
+    assert cleared == ()
+
+
+def test_replace_source_leaves_the_other_kind_alone():
+    """A role can hold GenBank-derived features and an uploaded GFF."""
+    from core.annotation_state import replace_source
+
+    entries = replace_source((), 'genbank', 'a.gbk', _ann(), ('d1', 'a.gbk'))
+    both = replace_source(entries, 'gff', 'b.gff', _ann(), ('d2', 'b.gff'))
+    assert {e['kind'] for e in both} == {'genbank', 'gff'}
+    # Replacing the gff must not disturb the genbank entry...
+    again = replace_source(both, 'gff', 'c.gff', _ann(), ('d3', 'c.gff'))
+    assert {e['kind'] for e in again} == {'genbank', 'gff'}
+    gb = next(e for e in again if e['kind'] == 'genbank')
+    assert gb['key'] == ('d1', 'a.gbk')
+    # ...and an unchanged genbank still short-circuits alongside a gff.
+    assert replace_source(again, 'genbank', 'a.gbk', _ann(), ('d1', 'a.gbk')) is None
+
+
+# --------------------------------------------------------------- nav tips
+
+
+def test_nav_tips_hides_click_to_focus_on_a_single_panel():
+    """Click-to-focus is disabled in the report when there is one panel."""
+    from core.panels import nav_tips
+
+    actions = lambda f, m: [a for a, _ in nav_tips(f, m)]  # noqa: E731
+
+    assert 'click panel' in actions(False, True)
+    assert 'click panel' not in actions(False, False)
+    assert 'click panel' not in actions(True, True)  # already focused
+    # Double-click drill-down works even on a single-panel overview.
+    assert 'double-click panel' in actions(False, False)
+    assert 'double-click panel' not in actions(True, False)
+    # The pan/zoom tips are unconditional.
+    for combo in ((True, True), (True, False), (False, True), (False, False)):
+        assert {'scroll', 'drag', 'Esc'} <= set(actions(*combo))
+
+
+# ------------------------------------------------ asset-level UI contracts
+
+
+def test_report_js_matches_panel_ids_strictly():
+    """Prefix-only matching let the axes background pose as a panel."""
+    import rusty_dot._html as html_pkg
+
+    js = (Path(html_pkg.__file__).parent / 'report.js').read_text()
+    assert 'PANEL_ID_RE' in js
+    assert 'function closestPanel(' in js
+    # panelGroups must be filtered, not taken raw from the prefix selector.
+    head = js.split('var panelGroups')[1].split('var selectedPanel')[0]
+    assert 'PANEL_ID_RE.test' in head
+    # The colliding id is gone everywhere.
+    css = (Path(html_pkg.__file__).parent / 'report.css').read_text()
+    dotplot = (Path(html_pkg.__file__).parent.parent / 'dotplot.py').read_text()
+    for src in (js, css, dotplot):
+        assert 'rd-panel-0-0-bg' not in src
+        assert "f'{gid}-bg'" not in src
+
+
+def test_panel_dblclick_bridge_walks_ancestors():
+    """closest() with a prefix selector stopped at the background group."""
+    app_py = (APP_DIR / 'app.py').read_text()
+    bridge = app_py.split('_PANEL_DBLCLICK_JS = ')[1].split('"""', 2)[1]
+    assert '.closest(' not in bridge  # the call, not the word in a comment
+    assert 'parentNode' in bridge
+    # The exact-shape regex is what makes the walk terminate correctly, and
+    # tests/test_app_state.py pins that it survives Python escaping.
+    assert r'/^rd-panel-(\\d+)-(\\d+)$/' in bridge
+
+
+def test_annotation_toggles_are_static_so_a_rerun_cannot_reset_them():
+    """gff_controls must depend on the type index alone.
+
+    Anything that re-renders it recreates every gtyp_/gcol_ input at its
+    default, silently discarding the user's annotation choices.
+    """
+    app_py = (APP_DIR / 'app.py').read_text()
+    before, body = app_py.split('def gff_controls')
+    body = body.split('@reactive.calc')[0]
+    # Comments in this file legitimately name the things being asserted
+    # against, so test the code only.
+    code = '\n'.join(
+        line for line in body.splitlines() if not line.lstrip().startswith('#')
+    )
+
+    assert 'self_panels()' not in code
+    for toggle in ("'gff_diagonal'", "'gff_tracks'"):
+        assert toggle not in code, f'{toggle} must live outside gff_controls'
+        assert toggle in before
+    # Visibility is driven by a hidden output, which must be exempt from
+    # Shiny's suspend-when-hidden behaviour to update at all.
+    assert 'def gff_mode' in app_py
+    gff_mode_head = app_py.split('def gff_mode')[0].rsplit('@output', 1)[1]
+    assert 'suspend_when_hidden=False' in gff_mode_head
+    # Conditions test positively: output.gff_mode is undefined before the
+    # first report, and `undefined !== ''` would flash the controls.
+    assert "output.gff_mode === 'self'" in before
+    assert 'output.gff_mode !==' not in before
+
+
+def test_panel_click_is_delegated_so_any_click_can_reset():
+    """Focus must be escapable by clicking anywhere, not only the same panel.
+
+    Per-panel listeners each called stopPropagation, so no click outside the
+    focused panel could ever reach a reset.
+    """
+    import rusty_dot._html as html_pkg
+
+    js = (Path(html_pkg.__file__).parent / 'report.js').read_text()
+    block = js.split('if (panelGroups.length > 1)')[1].split('// ---')[0]
+    assert "svg.addEventListener('click'" in block
+    assert 'panelGroups.forEach' not in block, 'still one listener per panel'
+    assert 'selectedPanel !== null' in block, 'no click-anywhere reset branch'
+    assert 'closestPanel(evt.target)' in block
+
+
+# ----------------------------------------------- annotation name validation
+
+
+def test_annotation_names_all_present_is_silent():
+    from core.validate import validate_annotation_names
+
+    assert validate_annotation_names(['c1', 'c2'], ['c1'], 'query') == []
+    # Nothing to say when either side is empty.
+    assert validate_annotation_names([], ['c1'], 'query') == []
+    assert validate_annotation_names(['c1'], [], 'query') == []
+
+
+def test_annotation_names_partial_mismatch_lists_the_missing():
+    from core.validate import validate_annotation_names
+
+    (msg,) = validate_annotation_names(['c1', 'c2'], ['c1', 'c9'], 'query')
+    assert 'c9' in msg and 'query' in msg
+    assert 'c1' not in msg  # only the offenders are named
+
+
+def test_annotation_names_total_mismatch_suggests_the_likely_cause():
+    """Wrong file or wrong role is the usual reason nothing lines up."""
+    from core.validate import validate_annotation_names
+
+    (msg,) = validate_annotation_names(['c1', 'c2'], ['zz', 'yy'], 'target')
+    assert 'None of the target GFF' in msg
+    assert 'right role' in msg
+
+
+def test_annotation_names_preview_is_capped():
+    from core.validate import validate_annotation_names
+
+    missing = [f'x{i}' for i in range(12)]
+    (msg,) = validate_annotation_names(['c1'], ['c1'] + missing, 'query')
+    assert '12 sequence name(s)' in msg
+    assert msg.count(',') <= 5  # 5 names shown then an ellipsis
+    assert '…' in msg
+
+
+def test_clear_annotations_resets_the_widget_not_just_the_server():
+    """Shiny's file-input binding has a no-op setValue.
+
+    Without the custom message the filename would linger after clearing,
+    and re-picking the same file would fire no change event, so it could
+    never be reloaded.
+    """
+    app_py = (APP_DIR / 'app.py').read_text()
+    bridge = (APP_DIR / 'www' / 'bridge.js').read_text()
+
+    assert "'clear_gff'" in app_py
+    assert "send_custom_message(\n            'rd_clear_file_inputs'" in app_py
+    assert "addCustomMessageHandler(\n        'rd_clear_file_inputs'" in bridge
+    # The three pieces of DOM the binding writes and we must undo.
+    for reset in ("el.value = ''", "text.value = ''", 'progress-bar'):
+        assert reset in bridge
+
+
+def test_sidebar_scroll_is_captured_before_the_picker_opens():
+    """The jump happens during the picker interaction, not the re-render.
+
+    By the time `change` fires the container is already at the top, so
+    capturing there would restore 0.  The position has to be taken when
+    the input is clicked.
+    """
+    js = (APP_DIR / 'www' / 'sidebar-scroll.js').read_text()
+    click_block = js.split("'click'")[1].split('document.addEventListener')[0]
+    assert 'mark = {' in click_block, 'position not captured on click'
+    change_block = js.split("'change'")[1]
+    assert 'mark && mark.el === scroller' in change_block, (
+        'change handler must prefer the pre-picker position'
+    )
+    # A real gesture has to be able to cancel the hold.
+    assert "'wheel'" in js and 'release' in js
+
+
+def test_self_align_drops_target_annotations_but_spares_paf():
+    """Self-alignment puts the query assembly on both axes.
+
+    A target annotation set then has nothing of its own to annotate, and
+    its upload is hidden, so leaving it loaded would keep it in the merged
+    set with no visible control to remove it.  PAF input is exempt: it has
+    both roles and no self-alignment, and `self_align` keeps its last value
+    while its panel is hidden.
+    """
+    app_py = (APP_DIR / 'app.py').read_text()
+    body = app_py.split('def _drop_target_annotations_when_self_aligning')[1]
+    body = body.split('\n    _MIN_LEN_NOTIF_ID')[0]
+
+    assert "input.input_mode() == 'paf'" in body, 'PAF must be exempt'
+    assert 'not input.self_align()' in body
+    # Both source kinds go, and the widget is reset too -- Shiny cannot
+    # clear a file input, so the filename would otherwise linger.
+    assert "_set_ann_source('target', kind, '', None)" in body
+    assert "'rd_clear_file_inputs'" in body
+    assert "'target_gff'" in body
+    # The query role is never touched.
+    assert "'query'" not in body
+
+    # The upload is hidden on the matching condition.
+    assert '"input.input_mode === \'paf\' || !input.self_align"' in app_py, (
+        'target_gff visibility must match the drop condition'
+    )
+
+
+def test_feature_type_toggles_are_debounced():
+    """Each toggle otherwise re-renders the whole figure.
+
+    Unticking six types in a row rebuilt six times over, and the later
+    clicks landed on a UI still drawing the earlier ones.
+    """
+    app_py = (APP_DIR / 'app.py').read_text()
+
+    head = app_py.split('def gff_type_choices')[0]
+    assert '@debounce(_GFF_TYPE_DEBOUNCE_S)' in head.rsplit('\n\n', 1)[-1]
+
+    # annotations() must go through the settled values, not the raw inputs.
+    body = app_py.split('def annotations')[1].split('# --- end GFF')[0]
+    assert 'gff_type_choices()' in body
+    for raw in ('gtyp_', 'gcol_'):
+        assert raw not in body, f'annotations() still reads {raw}* directly'
+
+
+# ------------------------------------------------ pending feature overrides
+
+
+def test_count_pending_overrides_counts_distinct_features():
+    """The button says how many features change, not how many edits."""
+    from core.annotation_state import count_pending_overrides
+
+    # One feature both hidden and recoloured still counts once.
+    assert (
+        count_pending_overrides(
+            frozenset({'query:0'}), {'query:0': '#fff'}, frozenset(), {}
+        )
+        == 1
+    )
+    assert (
+        count_pending_overrides(
+            frozenset({'query:0'}), {'query:1': '#fff'}, frozenset(), {}
+        )
+        == 2
+    )
+
+
+def test_count_pending_overrides_is_zero_when_settled():
+    from core.annotation_state import count_pending_overrides
+
+    hidden, colors = frozenset({'query:3'}), {'query:4': '#abc'}
+    assert count_pending_overrides(hidden, colors, hidden, dict(colors)) == 0
+    assert count_pending_overrides(frozenset(), {}, frozenset(), {}) == 0
+
+
+def test_count_pending_overrides_sees_reverted_and_changed_edits():
+    from core.annotation_state import count_pending_overrides
+
+    # Un-hiding something that is currently hidden is a pending change.
+    assert count_pending_overrides(frozenset(), {}, frozenset({'q:1'}), {}) == 1
+    # So is dropping a colour override, or changing one.
+    assert count_pending_overrides(frozenset(), {}, frozenset(), {'q:1': '#a'}) == 1
+    assert (
+        count_pending_overrides(frozenset(), {'q:1': '#b'}, frozenset(), {'q:1': '#a'})
+        == 1
+    )
+
+
+def test_feature_edits_are_held_until_apply():
+    """Per-feature edits must not redraw the figure on every click.
+
+    ~600 rows per sequence, and each toggle previously re-rendered both the
+    figure and the whole table.
+    """
+    app_py = (APP_DIR / 'app.py').read_text()
+
+    handler = app_py.split('def _on_feature_table_change')[1]
+    handler = handler.split('@reactive.effect')[0]
+    assert 'feature_hidden_pending.set' in handler
+    assert 'feature_colors_pending.set' in handler
+    assert 'feature_hidden.set' not in handler, 'handler must not commit'
+
+    apply_fn = app_py.split('def _apply_feature_overrides_now')[1]
+    apply_fn = apply_fn.split('@reactive.effect')[0]
+    assert 'feature_hidden.set(feature_hidden_pending())' in apply_fn
+    # Equal-but-new objects would still invalidate and cost a render.
+    assert 'return' in apply_fn
+
+    # annotations() draws from the committed values only.
+    ann = app_py.split('def annotations')[1].split('# --- end GFF')[0]
+    assert 'feature_hidden()' in ann and '_pending' not in ann
+
+
+def test_annotation_table_does_not_rerender_on_every_edit():
+    """It reads the pending values under isolate() for exactly this reason."""
+    app_py = (APP_DIR / 'app.py').read_text()
+    body = app_py.split('def annotation_table')[1].split('\n    @')[0]
+    assert 'with reactive.isolate():' in body
+    assert 'feature_hidden_pending()' in body
+
+    # With no re-render, the reset button has to repaint the swatches, so
+    # each one carries the type colour it falls back to.
+    assert 'data-type-color=' in body
+    js = (APP_DIR / 'www' / 'feature-table.js').read_text()
+    reset = js.split("action === 'reset'")[1]
+    assert 'dataset.typeColor' in reset
+
+
+# ------------------------------------------------ annotations table sorting
+
+
+def test_feature_table_headers_declare_how_they_sort():
+    """The client sorts, so every column has to say how it compares."""
+    # Read the constant out of the source: importing app.py needs shiny,
+    # which the test environment deliberately does not carry.
+    import ast
+
+    tree = ast.parse((APP_DIR / 'app.py').read_text())
+    spec = next(
+        node.value
+        for node in tree.body
+        if isinstance(node, ast.AnnAssign)
+        and getattr(node.target, 'id', None) == '_FEATURE_COLUMNS'
+    )
+    kinds = dict(ast.literal_eval(spec))
+    assert kinds['Start'] == kinds['End'] == kinds['Length'] == 'num'
+    assert kinds['Show'] == 'check'
+    assert kinds['Colour'] == 'color'
+    assert kinds['Type'] == kinds['Name'] == 'text'
+
+    app_py = (APP_DIR / 'app.py').read_text()
+    body = app_py.split('def annotation_table')[1].split('\n    @')[0]
+    assert 'data-sort=' in body and 'aria-sort=' in body
+    # Rows remember their file position so the sort can be undone.
+    assert 'data-idx=' in body
+
+
+def test_feature_table_sorts_on_the_client():
+    """Sorting must not go through the server.
+
+    Re-rendering hundreds of rows is the cost this table is built to
+    avoid, and it would discard edits that have not been applied yet.
+    """
+    js = (APP_DIR / 'www' / 'feature-table.js').read_text()
+    sort = js.split('// --- column sorting')[1].split('// --- client-side filter')[0]
+
+    assert 'setInputValue' not in sort, 'sorting must stay client-side'
+    # Rows are moved, not rebuilt, so their inputs keep their state.
+    assert 'appendChild' in sort and 'createDocumentFragment' in sort
+    # Numeric columns are formatted with thousands separators.
+    assert "replace(/,/g, '')" in sort
+    # asc -> desc -> file order, and ties keep file order so repeated
+    # sorts do not depend on the previous one.
+    assert 'data-idx' in sort
+    assert 'aria-sort' in sort

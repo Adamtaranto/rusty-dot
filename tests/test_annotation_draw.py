@@ -658,7 +658,7 @@ def test_html_report_emits_track_gids_and_panel_background(tmp_path):
             f'rd-{axis}track-{i}' for i in range(len(entries))
         ]
     # The band overlay measures against this rect.
-    assert 'rd-panel-0-0-bg' in html
+    assert 'rd-plotbg-0-0' in html
     first = payload['tracks']['x'][0]
     assert {'gid', 'group', 'type', 'seqname', 'start', 'end', 'strand'} <= set(first)
 
@@ -676,3 +676,32 @@ def test_track_payload_absent_without_tracks(tmp_path):
         ).group(1)
     )
     assert 'tracks' not in payload
+
+
+def test_panel_background_gid_does_not_collide_with_panel_prefix(tmp_path):
+    """Only real panels may carry an ``rd-panel-<r>-<c>`` id.
+
+    matplotlib nests every gid'd artist in its own ``<g>``, so the axes
+    background lands inside the panel group.  When it was tagged
+    ``rd-panel-<r>-<c>-bg`` it matched every ``g[id^="rd-panel-"]``
+    selector: report.js counted it as a second panel (defeating the
+    single-panel click-to-focus guard and dimming the panel a click was
+    meant to select), and the app's double-click bridge resolved to it and
+    silently never opened the drill-down.
+    """
+    pl = _plotter()
+    out = tmp_path / 'panels.html'
+    plt.close(pl.to_html(out, query_names=['c1', 'c2'], target_names=['c1', 'c2']))
+    html = out.read_text()
+    # Scope to the SVG: report.js's own doc comments mention the literal
+    # id template 'rd-panel-<row>-<col>' and would otherwise match.
+    svg = html[html.index('<svg') : html.index('</svg>')]
+
+    exact = re.compile(r'rd-panel-\d+-\d+')
+    panelish = re.findall(r'id="(rd-panel-[^"]*)"', svg)
+    assert panelish, 'no panel ids emitted'
+    stray = [gid for gid in panelish if not exact.fullmatch(gid)]
+    assert not stray, f'ids sharing the panel prefix but not its shape: {stray}'
+    assert len(panelish) == 4  # 2 x 2 grid, one id per panel
+    # The background is still emitted, under its own prefix.
+    assert 'id="rd-plotbg-0-0"' in svg
