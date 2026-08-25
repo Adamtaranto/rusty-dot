@@ -195,3 +195,42 @@ def nav_tips(focused: bool, multi_panel: bool) -> list[tuple[str, str]]:
         # Double-click drill-down works even on a single-panel overview.
         tips.append(('double-click panel', 'standalone view'))
     return tips
+
+
+def filter_by_min_length(
+    names: Iterable[str],
+    lengths: Mapping[str, int],
+    min_length: int,
+) -> tuple[list[str], list[str]]:
+    """Split contig names into those long enough to plot and those not.
+
+    A grid panel per contig means a handful of large chromosomes can be
+    buried under hundreds of short scaffolds, each drawn as a sliver.
+    Dropping the short ones is a display choice only — callers are
+    expected to keep the excluded names for anything that must stay
+    complete, such as the reordered-FASTA export.
+
+    Parameters
+    ----------
+    names : Iterable[str]
+        Contig names for one axis, in input order.
+    lengths : Mapping[str, int]
+        ``name -> length`` in bases.  Names missing from the mapping are
+        treated as length 0 and therefore excluded by any positive
+        threshold.
+    min_length : int
+        Minimum length to keep, in bases.  Zero or negative keeps
+        everything.
+
+    Returns
+    -------
+    tuple[list[str], list[str]]
+        ``(kept, excluded)``, each in the input order.
+    """
+    if min_length <= 0:
+        return list(names), []
+    kept: list[str] = []
+    excluded: list[str] = []
+    for name in names:
+        (kept if lengths.get(name, 0) >= min_length else excluded).append(name)
+    return kept, excluded

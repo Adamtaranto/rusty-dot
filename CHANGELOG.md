@@ -8,6 +8,16 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added (contig length filter)
+
+- A **Min contig length** setting leaves contigs shorter than the given
+  size out of the plot. One panel per contig means a couple of
+  chromosomes can be buried under hundreds of short scaffolds, each drawn
+  as a sliver. Excluded contigs are still written to the
+  reordered-FASTA download — the plot is filtered, the data is not — and
+  a threshold that would empty an axis leaves that axis whole instead of
+  rendering an empty grid.
+
 ### Changed (sidebar layout and plot navigation)
 
 - The target/reference assembly is now the first upload in the sidebar,

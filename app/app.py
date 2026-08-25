@@ -48,7 +48,13 @@ from core.cache import QUERY_GROUP, TARGET_GROUP, SessionCache
 from core.export import reordered_fasta_text
 from core.fasta import FastaInput, content_digest, parse_fasta_bytes
 from core.genbank import parse_genbank_bytes
-from core.panels import has_self_pair, nav_tips, panel_pair, resolve_orders
+from core.panels import (
+    filter_by_min_length,
+    has_self_pair,
+    nav_tips,
+    panel_pair,
+    resolve_orders,
+)
 from core.state import ORDER_CHOICES, PlotConfig
 from core.validate import validate_annotation_names, validate_query_names
 from core.wheels import pick_wasm_wheel, runtime_platform_tag
@@ -554,6 +560,19 @@ app_ui = ui.page_sidebar(
                 'the other assembly.',
             ),
             choices=ORDER_CHOICES,
+        ),
+        ui.input_numeric(
+            'min_contig_len',
+            _lbl(
+                'Min contig length (bp, 0 = keep all)',
+                'Leave contigs shorter than this out of the plot. One panel '
+                'per contig means a few chromosomes can be buried under '
+                'hundreds of short scaffolds. Excluded contigs are still '
+                'written to the reordered-FASTA download.',
+            ),
+            value=0,
+            min=0,
+            step=1000,
         ),
         ui.input_checkbox(
             'auto_reverse',
@@ -1274,6 +1293,40 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         req(ready())
         _parse_gff_upload(input.target_gff, 'target')
 
+    _MIN_LEN_NOTIF_ID = 'rd_min_contig_len'
+
+    @reactive.effect
+    def _report_excluded_contigs():
+        """Say how many contigs the length filter is hiding.
+
+        Silently dropping panels looks like missing data, so keep a
+        standing note while the filter is active.  Uses a fixed id so
+        adjusting the threshold replaces the note instead of stacking up.
+        """
+        if result() is None:
+            return
+        lay = layout()
+        dropped = len(lay['excluded_query']) + len(lay['excluded_target'])
+        min_len = max(0, int(input.min_contig_len() or 0))
+        if not min_len:
+            ui.notification_remove(_MIN_LEN_NOTIF_ID)
+            return
+        if not dropped:
+            ui.notification_show(
+                f'No contigs are shorter than {min_len:,} bp; nothing excluded.',
+                id=_MIN_LEN_NOTIF_ID,
+                type='message',
+                duration=6,
+            )
+            return
+        ui.notification_show(
+            f'Hiding {dropped} contig(s) shorter than {min_len:,} bp. '
+            'They are still included in the reordered-FASTA download.',
+            id=_MIN_LEN_NOTIF_ID,
+            type='message',
+            duration=8,
+        )
+
     @reactive.effect
     def _warn_on_annotation_name_mismatch():
         """Warn when a GFF annotates contigs the assembly does not have.
@@ -1518,7 +1571,29 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         step.  Reads the raw inputs directly: going through ``config()``
         would re-invalidate ``layout()`` on every config recompute.
         """
-        return input.contig_order(), input.auto_reverse()
+        return (
+            input.contig_order(),
+            input.auto_reverse(),
+            max(0, int(input.min_contig_len() or 0)),
+        )
+
+    def _axis_inputs(res) -> tuple[list[str], list[str], dict[str, int]]:
+        """Return ``(query_names, target_names, lengths)`` before ordering.
+
+        Shared by :func:`layout` and :func:`grid_panel_count` so the two
+        cannot disagree about which contigs the grid contains.
+        """
+        kind, obj, meta = res
+        if kind == 'kmer':
+            q_in = list(meta['query'].names)
+            t_in = list(meta['target'].names)
+            lengths = {n: len(s) for n, s in meta['target'].records}
+            lengths.update({n: len(s) for n, s in meta['query'].records})
+        else:
+            q_in = list(obj.query_names)
+            t_in = list(obj.target_names)
+            lengths = {n: obj.get_sequence_length(n) for n in (*q_in, *t_in)}
+        return q_in, t_in, lengths
 
     @reactive.calc
     def grid_panel_count() -> int:
@@ -1538,10 +1613,13 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         res = result()
         if res is None:
             return 0
-        kind, obj, meta = res
-        if kind == 'kmer':
-            return len(meta['query'].names) * len(meta['target'].names)
-        return len(obj.query_names) * len(obj.target_names)
+        q_in, t_in, lengths = _axis_inputs(res)
+        min_len = max(0, int(input.min_contig_len() or 0))
+        q_keep, _ = filter_by_min_length(q_in, lengths, min_len)
+        t_keep, _ = filter_by_min_length(t_in, lengths, min_len)
+        # Same empty-axis fallback as layout(); the two must agree or the
+        # hint advertises a click-to-focus the report has disabled.
+        return (len(q_keep) or len(q_in)) * (len(t_keep) or len(t_in))
 
     @reactive.calc
     def self_panels() -> bool:
@@ -1570,37 +1648,50 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         """
         res = result()
         req(res)
-        contig_order, auto_reverse = ordering_config()
-        kind, obj, meta = res
+        contig_order, auto_reverse, min_len = ordering_config()
+        kind, obj, _meta = res
         # Memoise per ordering mode: re-selecting e.g. 'maximise colinearity'
         # after trying another mode must not recompute the gravity sort.
-        # auto_reverse stays outside the key — it only selects whether the
-        # cached reversed set is applied.
-        cache_key = (id(obj), contig_order)
+        # The length filter is part of the key because it changes which
+        # contigs the ordering runs over.  auto_reverse stays outside it —
+        # it only selects whether the cached reversed set is applied.
+        cache_key = (id(obj), contig_order, min_len)
         cached = order_cache.get(cache_key)
         if cached is None:
-            if kind == 'kmer':
-                records = obj.get_records_for_pair(QUERY_GROUP, TARGET_GROUP)
-                q_in = list(meta['query'].names)
-                t_in = list(meta['target'].names)
-                lengths = {n: len(s) for n, s in meta['target'].records}
-                lengths.update({n: len(s) for n, s in meta['query'].records})
-            else:
-                records = obj.records
-                q_in = list(obj.query_names)
-                t_in = list(obj.target_names)
-                lengths = {n: obj.get_sequence_length(n) for n in (*q_in, *t_in)}
-            cached = resolve_orders(contig_order, records, q_in, t_in, lengths)
+            q_in, t_in, lengths = _axis_inputs(res)
+            records = (
+                obj.get_records_for_pair(QUERY_GROUP, TARGET_GROUP)
+                if kind == 'kmer'
+                else obj.records
+            )
+            q_keep, q_drop = filter_by_min_length(q_in, lengths, min_len)
+            t_keep, t_drop = filter_by_min_length(t_in, lengths, min_len)
+            # A threshold above every contig would leave nothing to draw;
+            # keep that axis whole rather than rendering an empty grid.
+            if not q_keep:
+                q_keep, q_drop = q_in, []
+            if not t_keep:
+                t_keep, t_drop = t_in, []
+            cached = (
+                *resolve_orders(contig_order, records, q_keep, t_keep, lengths),
+                q_drop,
+                t_drop,
+            )
             order_cache[cache_key] = cached
         else:
             logger.info('contig-order cache hit for mode %r', contig_order)
-        q_order, t_order, reversed_q = cached
+        q_order, t_order, reversed_q, q_drop, t_drop = cached
         reverse = reversed_q if auto_reverse else set()
         # Return copies so downstream mutation cannot poison the memo.
         return {
             'query_names': list(q_order),
             'target_names': list(t_order),
             'reverse': set(reverse),
+            # Excluded by the length filter.  Kept so the FASTA export can
+            # stay complete: CrossIndex.write_fasta writes exactly the names
+            # it is given, so anything omitted here is silently lost.
+            'excluded_query': list(q_drop),
+            'excluded_target': list(t_drop),
         }
 
     def make_figure(res, cfg: PlotConfig, lay, pair=None, output_path=None):
@@ -2370,7 +2461,11 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         req(res)
         kind, obj, meta = res
         lay = layout()
-        order = lay['query_names']
+        # Contigs the length filter left out of the plot still belong in the
+        # export — they are simply unordered, appended after the plotted
+        # ones.  CrossIndex.write_fasta writes exactly the names it is
+        # given, so omitting them here would quietly drop sequence.
+        order = lay['query_names'] + lay['excluded_query']
         reverse = lay['reverse']
         if kind == 'kmer':
             with tempfile.TemporaryDirectory() as tmp:

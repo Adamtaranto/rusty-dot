@@ -361,3 +361,61 @@ def test_self_align_kmer_index_and_plot():
     )
     assert fig.axes
     plt.close(fig)
+
+
+# --------------------------------------------- minimum contig length filter
+
+
+def test_filter_by_min_length_splits_on_the_threshold():
+    from core.panels import filter_by_min_length
+
+    lengths = {'big': 5000, 'mid': 1000, 'small': 200}
+    kept, dropped = filter_by_min_length(['big', 'mid', 'small'], lengths, 1000)
+    assert kept == ['big', 'mid']  # threshold is inclusive
+    assert dropped == ['small']
+
+
+def test_filter_by_min_length_zero_keeps_everything():
+    from core.panels import filter_by_min_length
+
+    names = ['a', 'b']
+    kept, dropped = filter_by_min_length(names, {'a': 1, 'b': 2}, 0)
+    assert kept == names and dropped == []
+    # Negative is treated the same, not as "drop everything".
+    assert filter_by_min_length(names, {'a': 1, 'b': 2}, -5) == (names, [])
+
+
+def test_filter_by_min_length_preserves_input_order():
+    from core.panels import filter_by_min_length
+
+    lengths = {'c': 900, 'a': 900, 'b': 10}
+    kept, _ = filter_by_min_length(['c', 'a', 'b'], lengths, 100)
+    assert kept == ['c', 'a']  # not sorted
+
+
+def test_filter_by_min_length_excludes_unknown_names():
+    """A name with no recorded length cannot be shown to clear the bar."""
+    from core.panels import filter_by_min_length
+
+    kept, dropped = filter_by_min_length(['known', 'ghost'], {'known': 500}, 100)
+    assert kept == ['known'] and dropped == ['ghost']
+
+
+def test_filter_by_min_length_can_empty_an_axis():
+    """The caller is responsible for the fallback, so report it honestly."""
+    from core.panels import filter_by_min_length
+
+    kept, dropped = filter_by_min_length(['a', 'b'], {'a': 10, 'b': 20}, 10**9)
+    assert kept == []
+    assert dropped == ['a', 'b']
+
+
+def test_min_contig_len_keeps_the_export_complete():
+    """Excluded contigs must still reach the reordered FASTA.
+
+    CrossIndex.write_fasta writes exactly the names it is handed, so the
+    download path has to append what the filter removed.
+    """
+    app_py = (Path(__file__).resolve().parent.parent / 'app' / 'app.py').read_text()
+    dl = app_py.split('def dl_fasta')[1].split('@')[0]
+    assert "lay['query_names'] + lay['excluded_query']" in dl
