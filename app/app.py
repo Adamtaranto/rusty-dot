@@ -43,6 +43,7 @@ from core.annotation_state import (
 from core.cache import QUERY_GROUP, TARGET_GROUP, SessionCache
 from core.export import reordered_fasta_text
 from core.fasta import FastaInput, parse_fasta_bytes
+from core.genbank import parse_genbank_bytes
 from core.panels import has_self_pair, panel_pair, resolve_orders
 from core.state import ORDER_CHOICES, PlotConfig
 from core.validate import validate_query_names
@@ -274,16 +275,38 @@ app_ui = ui.page_sidebar(
         ui.input_radio_buttons(
             'input_mode',
             None,
-            {'fasta': 'Assemblies (FASTA)', 'paf': 'Alignment (PAF)'},
+            {
+                'fasta': 'Assemblies (FASTA)',
+                'genbank': 'Assemblies (GenBank)',
+                'paf': 'Alignment (PAF)',
+            },
             selected='fasta',
             inline=True,
         ),
+        # Everything except the PAF branch shares the self-align checkbox,
+        # the method selector and the per-method parameter panels; only the
+        # upload widgets differ between FASTA and GenBank.
         ui.panel_conditional(
-            "input.input_mode === 'fasta'",
-            ui.input_file(
-                'query_fasta',
-                'Query assembly (FASTA / .gz)',
-                accept=['.fa', '.fasta', '.fna', '.gz'],
+            "input.input_mode !== 'paf'",
+            ui.panel_conditional(
+                "input.input_mode === 'fasta'",
+                ui.input_file(
+                    'query_fasta',
+                    'Query assembly (FASTA / .gz)',
+                    accept=['.fa', '.fasta', '.fna', '.gz'],
+                ),
+            ),
+            ui.panel_conditional(
+                "input.input_mode === 'genbank'",
+                ui.input_file(
+                    'query_gbk',
+                    _lbl(
+                        'Query assembly (GenBank / .gz)',
+                        'Sequences and annotations are read from the same '
+                        'file; any GFF uploaded below is merged with them.',
+                    ),
+                    accept=['.gb', '.gbk', '.gbff', '.genbank', '.gz'],
+                ),
             ),
             ui.input_checkbox(
                 'self_align',
@@ -295,11 +318,19 @@ app_ui = ui.page_sidebar(
                 False,
             ),
             ui.panel_conditional(
-                '!input.self_align',
+                "!input.self_align && input.input_mode === 'fasta'",
                 ui.input_file(
                     'target_fasta',
                     'Target / reference assembly (FASTA / .gz)',
                     accept=['.fa', '.fasta', '.fna', '.gz'],
+                ),
+            ),
+            ui.panel_conditional(
+                "!input.self_align && input.input_mode === 'genbank'",
+                ui.input_file(
+                    'target_gbk',
+                    'Target / reference assembly (GenBank / .gz)',
+                    accept=['.gb', '.gbk', '.gbff', '.genbank', '.gz'],
                 ),
             ),
             ui.input_select(
@@ -642,16 +673,35 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         raw = Path(files[0]['datapath']).read_bytes()
         return parse_fasta_bytes(raw)
 
+    def _parse_seq_upload(role: str) -> FastaInput:
+        """Parse one assembly upload for the current input mode.
+
+        GenBank carries its annotations in the same file, so parsing also
+        registers them as an annotation source for *role* — merged with
+        any GFF the user uploads separately.
+        """
+        if input.input_mode() != 'genbank':
+            fasta_input = input.query_fasta if role == 'query' else input.target_fasta
+            return _parse_upload(fasta_input, role)
+
+        gbk_input = input.query_gbk if role == 'query' else input.target_gbk
+        files = gbk_input()
+        if not files:
+            raise ValueError(f'Please upload a {role} assembly.')
+        parsed = parse_genbank_bytes(Path(files[0]['datapath']).read_bytes())
+        _set_ann_source(role, 'genbank', files[0]['name'], parsed.gff_text)
+        return parsed.fasta
+
     def _parse_inputs(progress=None) -> tuple[FastaInput, FastaInput]:
         """Parse the query (and target, or reuse query when self-aligning)."""
         if progress is not None:
             progress.set(0, message='Parsing query assembly…')
-        query = _parse_upload(input.query_fasta, 'query')
+        query = _parse_seq_upload('query')
         if input.self_align():
             return query, query
         if progress is not None:
             progress.set(1, message='Parsing target assembly…')
-        return query, _parse_upload(input.target_fasta, 'target')
+        return query, _parse_seq_upload('target')
 
     # The canonical CSR k-mer index costs ~13-16 bytes/bp (both strands);
     # a real 74 Mb pair completes in the browser (verified), so the guard
@@ -844,7 +894,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         # instead of burning CPU ahead of the run the user wants.
         if aligner_pending() is not None:
             await _cancel_pending('superseded by a new run')
-        if input.input_mode() != 'fasta':
+        if input.input_mode() not in ('fasta', 'genbank'):
             return
         method = input.method()
         if method not in BIOWASM_TOOLS:
@@ -1058,39 +1108,75 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         return int(input.min_length() or 0)
 
     # --- GFF annotations -----------------------------------------------------
-    # Parsed uploads (upload-derived state, deliberately outside PlotConfig).
-    gff_raw = {role: reactive.value(None) for role in ANNOTATION_ROLES}
+    # Annotation sources per role (upload-derived state, deliberately outside
+    # PlotConfig).  A role can hold both a GenBank-derived set and a GFF
+    # upload; they are merged, tagged by the file they came from.  Each entry
+    # is {'kind': 'gff'|'genbank', 'filename': str, 'annotation': GffAnnotation}.
+    ann_sources = {role: reactive.value(()) for role in ANNOTATION_ROLES}
+
+    def _set_ann_source(role: str, kind: str, filename: str, ann) -> None:
+        """Add or replace one annotation source for *role*.
+
+        *ann* may be a parsed GffAnnotation or GFF3 text.  Every record is
+        tagged with *filename* so the drill-down can say where a feature
+        came from once several sources are merged.
+        """
+        from rusty_dot.annotation import GffAnnotation  # noqa: PLC0415
+
+        if isinstance(ann, str):
+            ann = GffAnnotation.from_text(ann) if ann.strip() else None
+        entries = [e for e in ann_sources[role]() if e['kind'] != kind]
+        if ann is not None and len(ann):
+            for rec in ann.records:
+                rec.source_file = filename
+            entries.append({'kind': kind, 'filename': filename, 'annotation': ann})
+        ann_sources[role].set(tuple(entries))
 
     def _parse_gff_upload(file_input, role: str) -> None:
-        from rusty_dot.annotation import GffAnnotation
+        from rusty_dot.annotation import GffAnnotation  # noqa: PLC0415
 
         files = file_input()
         if not files:
-            gff_raw[role].set(None)
+            _set_ann_source(role, 'gff', '', None)
             return
         try:
             ann = GffAnnotation.from_bytes(Path(files[0]['datapath']).read_bytes())
         except ValueError as exc:
-            gff_raw[role].set(None)
+            _set_ann_source(role, 'gff', '', None)
             ui.notification_show(
                 f'Could not parse {role} GFF: {exc}', type='error', duration=10
             )
             return
         if len(ann) == 0:
-            gff_raw[role].set(None)
+            _set_ann_source(role, 'gff', '', None)
             ui.notification_show(
                 f'No features found in the {role} GFF file.',
                 type='warning',
                 duration=8,
             )
             return
-        gff_raw[role].set(ann)
+        _set_ann_source(role, 'gff', files[0]['name'], ann)
+        kinds = {e['kind'] for e in ann_sources[role]()}
+        if 'genbank' in kinds:
+            # Overlapping duplicates are likely, but silently deduping would
+            # discard features the user deliberately supplied.  Say so and
+            # let them toggle sources off instead.
+            ui.notification_show(
+                f'{role.capitalize()} now has annotations from both a GenBank '
+                'file and a GFF; features present in both will be drawn twice.',
+                type='warning',
+                duration=10,
+            )
         ui.notification_show(
             f'{role.capitalize()} annotations: {len(ann)} feature(s), '
             f'{len(ann.feature_types())} type(s).',
             type='message',
             duration=5,
         )
+
+    def gff_raw_for(role: str):
+        """Return the merged annotation for *role* across all its sources."""
+        return merge_annotations([e['annotation'] for e in ann_sources[role]()])
 
     @reactive.effect
     @reactive.event(input.query_gff)
@@ -1128,7 +1214,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         types_by_role = {
             role: list(ann.feature_types())
             for role in ANNOTATION_ROLES
-            if (ann := gff_raw[role]()) is not None
+            if (ann := gff_raw_for(role)) is not None
         }
         if not types_by_role:
             return [], {}, {}
@@ -1214,7 +1300,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         }
         result = {}
         for role in ANNOTATION_ROLES:
-            ann = gff_raw[role]()
+            ann = gff_raw_for(role)
             if ann is None:
                 result[role] = None
                 continue
