@@ -12,7 +12,7 @@ and this project adheres to
 
 - Toggling annotation feature types no longer rebuilds the figure once per
   click. The per-type controls are read through a value that settles after
-  two seconds, so a run of changes costs one render instead of one each —
+  a second, so a run of changes costs one render instead of one each —
   unticking six types in a row now redraws once.
 - The drill-down Annotations table sorts by any column: click a header for
   ascending, again for descending, a third time to return to file order.

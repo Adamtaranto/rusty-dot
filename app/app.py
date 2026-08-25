@@ -1520,9 +1520,9 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     # Each toggle re-runs the whole figure, so unticking several types in a
     # row rebuilds several times over and the later clicks land on a UI
     # still drawing the earlier ones.  Waiting for a quiet period lets a
-    # set of changes be made for the price of one render, with room to
-    # read the list and think between clicks.
-    _GFF_TYPE_DEBOUNCE_S = 2.0
+    # set of changes be made for the price of one render, while still
+    # feeling responsive to a single deliberate toggle.
+    _GFF_TYPE_DEBOUNCE_S = 1.0
 
     @debounce(_GFF_TYPE_DEBOUNCE_S)
     @reactive.calc
