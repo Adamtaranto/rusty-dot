@@ -41,13 +41,14 @@ from core.annotation_state import (
     apply_feature_overrides,
     build_feature_rows,
     merge_annotations,
+    replace_source,
     type_slug_map,
 )
 from core.cache import QUERY_GROUP, TARGET_GROUP, SessionCache
 from core.export import reordered_fasta_text
-from core.fasta import FastaInput, parse_fasta_bytes
+from core.fasta import FastaInput, content_digest, parse_fasta_bytes
 from core.genbank import parse_genbank_bytes
-from core.panels import has_self_pair, panel_pair, resolve_orders
+from core.panels import has_self_pair, nav_tips, panel_pair, resolve_orders
 from core.state import ORDER_CHOICES, PlotConfig
 from core.validate import validate_query_names
 from core.wheels import pick_wasm_wheel, runtime_platform_tag
@@ -148,10 +149,16 @@ _PANEL_DBLCLICK_JS = """
   // without this, double-clicking a panel zooms in and then swaps views.
   window.RD_DBLCLICK_DRILLDOWN = true;
   document.addEventListener('dblclick', function (ev) {
-    var el = ev.target;
-    var g = el && el.closest ? el.closest('g[id^="rd-panel-"]') : null;
-    if (!g) { return; }
-    var m = /^rd-panel-(\\d+)-(\\d+)$/.exec(g.id);
+    // Walk ancestors testing the exact panel id.  closest() with a prefix
+    // selector would stop at the axes background group, whose id merely
+    // starts the same way, and the drill-down would silently never fire.
+    var node = ev.target;
+    var m = null;
+    while (node && node.nodeType === 1) {
+      m = /^rd-panel-(\\d+)-(\\d+)$/.exec(node.id || '');
+      if (m) { break; }
+      node = node.parentNode;
+    }
     if (!m) { return; }
     window.parent.postMessage(
       {type: 'rd-panel-dblclick',
@@ -623,6 +630,21 @@ app_ui = ui.page_sidebar(
             'Target annotations (.gff / .gff3 / .gz)',
             accept=['.gff', '.gff3', '.gz'],
         ),
+        # Static, so pressing Run never destroys them.  Only their visibility
+        # is reactive (output.gff_mode); panel_conditional toggles CSS display
+        # and leaves the inputs bound, so they can be read unconditionally.
+        ui.panel_conditional(
+            "output.gff_mode === 'plain' || output.gff_mode === 'self'",
+            ui.input_checkbox('gff_tracks', 'Side tracks in focused pair view', True),
+        ),
+        ui.panel_conditional(
+            "output.gff_mode === 'self'",
+            ui.tooltip(
+                ui.input_checkbox('gff_diagonal', 'Shade features on diagonal', True),
+                'Draws each feature as a square on the diagonal of '
+                'self-comparison panels.',
+            ),
+        ),
         ui.output_ui('gff_controls'),
         ui.hr(),
         ui.h5('Downloads'),
@@ -636,6 +658,7 @@ app_ui = ui.page_sidebar(
     # e.g. on native runs where the wasm heap does not exist).
     ui.div(ui.output_text('app_memory'), class_='rd-mem-fixed'),
     ui.div(ui.output_text('result_kind'), class_='rd-hidden'),
+    ui.div(ui.output_text('gff_mode'), class_='rd-hidden'),
     ui.output_ui('status'),
     # --- W2: interactive plot ---
     ui.output_ui('plot_area'),
@@ -695,7 +718,15 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         if not files:
             raise ValueError(f'Please upload a {role} assembly.')
         parsed = parse_genbank_bytes(Path(files[0]['datapath']).read_bytes())
-        _set_ann_source(role, 'genbank', files[0]['name'], parsed.gff_text)
+        # digest is over the raw upload, so an unchanged file re-run keeps the
+        # existing annotation source (and the user's annotation choices).
+        _set_ann_source(
+            role,
+            'genbank',
+            files[0]['name'],
+            parsed.gff_text,
+            key=(parsed.fasta.digest, files[0]['name']),
+        )
         return parsed.fasta
 
     def _parse_inputs(progress=None) -> tuple[FastaInput, FastaInput]:
@@ -1120,23 +1151,37 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     # is {'kind': 'gff'|'genbank', 'filename': str, 'annotation': GffAnnotation}.
     ann_sources = {role: reactive.value(()) for role in ANNOTATION_ROLES}
 
-    def _set_ann_source(role: str, kind: str, filename: str, ann) -> None:
-        """Add or replace one annotation source for *role*.
+    def _set_ann_source(role: str, kind: str, filename: str, ann, key=None) -> None:
+        """Add, replace or clear one annotation source for *role*.
 
         *ann* may be a parsed GffAnnotation or GFF3 text.  Every record is
         tagged with *filename* so the drill-down can say where a feature
         came from once several sources are merged.
+
+        *key* identifies the upload — normally ``(content_digest, filename)``.
+        When it matches what is already stored this is a no-op: re-running an
+        alignment re-parses the same GenBank file every time, and blindly
+        re-setting the reactive value would rebuild the feature-type controls
+        and wipe the user's toggles, colours and per-feature overrides.
         """
         from rusty_dot.annotation import GffAnnotation  # noqa: PLC0415
 
+        entries = ann_sources[role]()
+        # Cheap identity check first, so an unchanged GenBank upload does not
+        # even pay for re-parsing its GFF text.
+        if key is not None:
+            current = next((e for e in entries if e['kind'] == kind), None)
+            if current is not None and current.get('key') == key:
+                return
         if isinstance(ann, str):
             ann = GffAnnotation.from_text(ann) if ann.strip() else None
-        entries = [e for e in ann_sources[role]() if e['kind'] != kind]
+        updated = replace_source(entries, kind, filename, ann, key)
+        if updated is None:
+            return  # nothing changed; leave the controls and overrides alone
         if ann is not None and len(ann):
             for rec in ann.records:
                 rec.source_file = filename
-            entries.append({'kind': kind, 'filename': filename, 'annotation': ann})
-        ann_sources[role].set(tuple(entries))
+        ann_sources[role].set(updated)
         _reset_feature_overrides()
 
     def _parse_gff_upload(file_input, role: str) -> None:
@@ -1146,8 +1191,9 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         if not files:
             _set_ann_source(role, 'gff', '', None)
             return
+        raw = Path(files[0]['datapath']).read_bytes()
         try:
-            ann = GffAnnotation.from_bytes(Path(files[0]['datapath']).read_bytes())
+            ann = GffAnnotation.from_bytes(raw)
         except ValueError as exc:
             _set_ann_source(role, 'gff', '', None)
             ui.notification_show(
@@ -1162,7 +1208,13 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 duration=8,
             )
             return
-        _set_ann_source(role, 'gff', files[0]['name'], ann)
+        _set_ann_source(
+            role,
+            'gff',
+            files[0]['name'],
+            ann,
+            key=(content_digest(raw), files[0]['name']),
+        )
         kinds = {e['kind'] for e in ann_sources[role]()}
         if 'genbank' in kinds:
             # Overlapping duplicates are likely, but silently deduping would
@@ -1279,23 +1331,12 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                     class_='rd-gff-type-row',
                 )
             )
-        toggles = []
-        # Diagonal shading only draws where a contig meets itself; offering
-        # it on a plain cross-assembly comparison promises something that
-        # cannot happen.
-        if self_panels():
-            toggles.append(
-                ui.tooltip(
-                    ui.input_checkbox(
-                        'gff_diagonal', 'Shade features on diagonal', True
-                    ),
-                    'Draws each feature as a square on the diagonal of '
-                    'self-comparison panels.',
-                )
-            )
+        # Deliberately depends on gff_type_index() alone.  The gff_diagonal /
+        # gff_tracks toggles live in the static sidebar because anything that
+        # made this output re-render — self_panels() used to, via result() —
+        # rebuilds every checkbox and colour picker below at its default,
+        # silently discarding the user's choices on each run.
         return ui.div(
-            *toggles,
-            ui.input_checkbox('gff_tracks', 'Side tracks in focused pair view', True),
             ui.div(
                 ui.h6('Feature types'),
                 *controls,
@@ -1422,6 +1463,29 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         return input.contig_order(), input.auto_reverse()
 
     @reactive.calc
+    def grid_panel_count() -> int:
+        """Count the panels the grid will draw, from the result alone.
+
+        Deliberately does NOT go through ``layout()``: that would pull
+        ``input.contig_order`` / ``input.auto_reverse`` into ``plot_area``,
+        and re-rendering ``plot_area`` rebuilds the report ``<iframe>``,
+        throwing away its client-side state (zoom, highlight bands, pushed
+        display options, the selected match).  Reading ``result()`` — which
+        ``plot_area`` already depends on — costs no extra invalidation.
+
+        This is an upper bound: the ``colinearity`` ordering modes delegate
+        to ``compute_gravity_contigs``, which may return fewer contigs.  The
+        worst case is one over-advertised navigation tip.
+        """
+        res = result()
+        if res is None:
+            return 0
+        kind, obj, meta = res
+        if kind == 'kmer':
+            return len(meta['query'].names) * len(meta['target'].names)
+        return len(obj.query_names) * len(obj.target_names)
+
+    @reactive.calc
     def self_panels() -> bool:
         """Whether the panel grid contains a self-comparison panel.
 
@@ -1506,7 +1570,11 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         # without touching layout()'s dependencies.
         ann_q, ann_t = annotations()
         if ann_q is not None or ann_t is not None:
-            if self_panels() and bool(_read_dynamic('gff_diagonal', True)):
+            # Static inputs now, so read them directly.  The self_panels()
+            # conjunct still matters: a hidden checkbox keeps its last value,
+            # so a box ticked during a self-comparison must not shade the
+            # diagonal of a later cross-assembly run.
+            if self_panels() and bool(input.gff_diagonal()):
                 # On a self-comparison both roles describe the same
                 # sequences, so merge them: a user who uploaded the
                 # annotation under either role — or split it across two
@@ -1514,7 +1582,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 kwargs['annotation'] = merge_annotations([ann_q, ann_t])
             kwargs['annotation_query'] = ann_q
             kwargs['annotation_target'] = ann_t
-            kwargs['annotation_tracks'] = bool(_read_dynamic('gff_tracks', True))
+            kwargs['annotation_tracks'] = bool(input.gff_tracks())
         # Memoise the plotter per result: for the k-mer path, building the
         # PafAlignment copies the full record list — pointless to repeat on
         # every re-render of the same result.
@@ -1616,7 +1684,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             title='Interactive dotplot report',
         )
 
-    def _nav_hint(focused: bool):
+    def _nav_hint(focused: bool, multi_panel: bool):
         """Build the navigation-tips box shown under the interactive report.
 
         Parameters
@@ -1625,24 +1693,16 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             Whether the focused single-pair view is active; panel-click tips
             do not apply there (click-to-focus is disabled on single-panel
             reports).
+        multi_panel : bool
+            Whether the grid has more than one panel.  See
+            :func:`core.panels.nav_tips`.
 
         Returns
         -------
         htmltools.Tag
             The hint ``div`` with each action term in bold.
         """
-        tips = [
-            ('scroll', 'pan up/down'),
-            ('Shift+scroll', 'pan left/right'),
-            ('Cmd/Ctrl+scroll', 'zoom'),
-            ('drag', 'zoom to region'),
-        ]
-        if not focused:
-            tips.append(('click panel', 'focus'))
-        tips.append(('click match', 'details'))
-        tips.append(('Esc', 'reset'))
-        if not focused:
-            tips.append(('double-click panel', 'standalone view'))
+        tips = nav_tips(focused, multi_panel)
         parts: list = [ui.tags.b('Navigate: ')]
         for i, (action, effect) in enumerate(tips):
             if i:
@@ -1669,7 +1729,11 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             body = ui.output_ui('report_frame')
         else:
             body = ui.output_plot('dotplot', height='72vh')
-        hint = _nav_hint(pair is not None) if input.interactive() else None
+        hint = (
+            _nav_hint(pair is not None, grid_panel_count() > 1)
+            if input.interactive()
+            else None
+        )
         if pair is None or not feature_rows():
             return ui.div(
                 ui.div(*toolbar, class_='rd-plot-toolbar') if toolbar else None,
@@ -2127,6 +2191,24 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         # which Shiny would otherwise never update.
         res = result()
         return res[0] if res else ''
+
+    @output(suspend_when_hidden=False)
+    @render.text
+    def gff_mode():
+        """Visibility state for the static annotation toggles.
+
+        ``''`` no annotations · ``'plain'`` cross-comparison ·
+        ``'self'`` at least one self-comparison panel.  Conditions on this
+        output test *positively* (``=== 'self'``), because before the first
+        report it is ``undefined`` client-side and a negative test would
+        flash the controls on a fresh page.
+
+        Checks ``ann_sources`` rather than ``gff_type_index()`` — same truth
+        value, without re-running the shared-colour assignment on each run.
+        """
+        if not any(gff_raw_for(role) is not None for role in ANNOTATION_ROLES):
+            return ''
+        return 'self' if self_panels() else 'plain'
 
     def _has_sequences(res) -> bool:
         """Whether a reordered-FASTA export is possible for this result."""

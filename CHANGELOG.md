@@ -8,6 +8,33 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed (single-panel plots and annotation controls)
+
+- Clicking a dot plot no longer dims the panel it just selected. The axes
+  background was gid-tagged `rd-panel-<r>-<c>-bg`, and matplotlib nests
+  gid'd artists, so it matched every `g[id^="rd-panel-"]` selector: the
+  report counted it as an extra panel (defeating the guard that disables
+  click-to-focus on single-panel reports) and dimmed the clicked panel's
+  parent. On a multi-panel grid, clicking blank area dimmed *every* panel.
+  The background now uses its own `rd-plotbg-` prefix, and the report
+  matches panel ids on their exact shape rather than the prefix alone.
+- Double-clicking a plot opens the drill-down again. The same id collision
+  made the app's bridge resolve to the background group, whose id failed
+  the strict panel regex, so no message was ever posted and the drill-down
+  silently never opened — on any grid size, though it was most visible on
+  a single-panel plot where nearly all of the panel is background.
+- Feature-type toggles and colours survive pressing "Run comparison". The
+  controls are rendered dynamically, and the block also drew the
+  "Shade features on diagonal" checkbox, whose visibility depends on the
+  result — so every run rebuilt the whole list at its defaults. The two
+  global toggles are now static (shown or hidden through a conditional
+  panel), leaving the type list dependent only on the uploaded
+  annotations. Re-running in GenBank mode no longer re-registers an
+  unchanged annotation source either, which also preserves the
+  Annotations tab's per-feature show/hide and colour overrides.
+- The navigation hint no longer advertises "click panel = focus" on a
+  single-panel plot, where click-to-focus is deliberately inert.
+
 ### Added (GenBank input)
 
 - Browser app: **Assemblies (GenBank)** input mode reads sequences *and*

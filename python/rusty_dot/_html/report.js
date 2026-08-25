@@ -136,8 +136,29 @@
   // 1. Panel selection / zoom
   // ---------------------------------------------------------------------
 
-  var panelGroups = Array.prototype.slice.call(
-    svg.querySelectorAll('g[id^="rd-panel-"]')
+  /* Panel groups are matched on the EXACT id shape, not the prefix alone.
+   * matplotlib nests every gid'd artist in its own <g>, so a panel group
+   * can contain descendants whose ids merely start the same way; matching
+   * loosely once made the axes background masquerade as a second panel,
+   * which dimmed the plot it was supposed to select and broke drill-down. */
+  var PANEL_ID_RE = /^rd-panel-\d+-\d+$/;
+
+  /* Nearest ancestor (inclusive) that is a real panel group, or null. */
+  function closestPanel(el) {
+    var node = el;
+    while (node && node.nodeType === 1) {
+      if (node === svg) return null; // never escape the figure
+      if (PANEL_ID_RE.test(node.id || '')) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
+
+  var panelGroups = Array.prototype.filter.call(
+    svg.querySelectorAll('g[id^="rd-panel-"]'),
+    function (g) {
+      return PANEL_ID_RE.test(g.id);
+    }
   );
   var selectedPanel = null;
 
@@ -321,10 +342,7 @@
     if (evt.button !== 0) return;
     suppressNextClick = false;
     // Only drags starting inside a panel arm region select.
-    var panel =
-      evt.target && evt.target.closest
-        ? evt.target.closest('g[id^="rd-panel-"]')
-        : null;
+    var panel = closestPanel(evt.target);
     if (!panel) return;
     drag = {
       cx0: evt.clientX,
@@ -763,7 +781,7 @@
   var bandLayer = null;
 
   function panelBackground() {
-    return svg.querySelector('[id="rd-panel-0-0-bg"]');
+    return svg.querySelector('[id="rd-plotbg-0-0"]');
   }
 
   /* Lazily create the band group, inserted directly after the panel

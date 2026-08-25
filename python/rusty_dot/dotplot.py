@@ -1411,7 +1411,13 @@ class DotPlotter:
             ax.set_gid(gid)
             # The report measures band overlays against this rect, so it
             # needs no bp->pixel arithmetic of its own.
-            ax.patch.set_gid(f'{gid}-bg')
+            #
+            # The prefix MUST differ from 'rd-panel-': matplotlib wraps every
+            # gid'd artist in its own <g>, so the background lands *inside*
+            # the panel group.  Sharing the prefix made it match every
+            # `g[id^="rd-panel-"]` selector in report.js and the app's
+            # double-click bridge, which broke panel dimming and drill-down.
+            ax.patch.set_gid(f'rd-plotbg-{row}-{col}')
             capture['current'] = gid
             capture['panels'][gid] = {
                 'query': display_q,

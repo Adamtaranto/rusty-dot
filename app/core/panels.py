@@ -161,3 +161,37 @@ def has_self_pair(query_names: Iterable[str], target_names: Iterable[str]) -> bo
         without guaranteeing squares.
     """
     return bool(set(query_names) & set(target_names))
+
+
+def nav_tips(focused: bool, multi_panel: bool) -> list[tuple[str, str]]:
+    """Build the navigation tips shown under the interactive report.
+
+    Parameters
+    ----------
+    focused : bool
+        Whether the focused single-pair view is active.
+    multi_panel : bool
+        Whether the grid has more than one panel.  Click-to-focus zooms one
+        panel and dims the rest, so it is meaningless — and disabled in the
+        report — when there is only one panel to choose from; advertising it
+        anyway sends users clicking at something that will not respond.
+
+    Returns
+    -------
+    list[tuple[str, str]]
+        ``(action, effect)`` pairs in display order.
+    """
+    tips = [
+        ('scroll', 'pan up/down'),
+        ('Shift+scroll', 'pan left/right'),
+        ('Cmd/Ctrl+scroll', 'zoom'),
+        ('drag', 'zoom to region'),
+    ]
+    if not focused and multi_panel:
+        tips.append(('click panel', 'focus'))
+    tips.append(('click match', 'details'))
+    tips.append(('Esc', 'reset'))
+    if not focused:
+        # Double-click drill-down works even on a single-panel overview.
+        tips.append(('double-click panel', 'standalone view'))
+    return tips

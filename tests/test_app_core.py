@@ -666,3 +666,154 @@ def test_report_frame_is_not_suspended_when_hidden():
     head = app_py.split('def report_frame')[0]
     assert head.rstrip().endswith('@render.ui')
     assert 'suspend_when_hidden=False' in head.rsplit('@output', 1)[1]
+
+
+# ------------------------------------------------------ annotation sources
+
+
+def _ann(text='c1\tt\tgene\t1\t10\t.\t+\t.\tID=a'):
+    from rusty_dot.annotation import GffAnnotation
+
+    return GffAnnotation.from_text(text)
+
+
+def test_replace_source_reports_no_change_for_an_identical_upload():
+    """Re-running an alignment re-parses the same GenBank file every time.
+
+    The app's reactive values invalidate on identity, so re-setting an
+    equal-but-new tuple would rebuild the feature-type controls and discard
+    the user's toggles and colours on every run.
+    """
+    from core.annotation_state import replace_source
+
+    key = ('digest1', 'a.gbk')
+    entries = replace_source((), 'genbank', 'a.gbk', _ann(), key)
+    assert entries is not None and len(entries) == 1
+    assert replace_source(entries, 'genbank', 'a.gbk', _ann(), key) is None
+
+
+def test_replace_source_detects_new_content_under_the_same_name():
+    from core.annotation_state import replace_source
+
+    entries = replace_source((), 'genbank', 'a.gbk', _ann(), ('d1', 'a.gbk'))
+    updated = replace_source(entries, 'genbank', 'a.gbk', _ann(), ('d2', 'a.gbk'))
+    assert updated is not None
+    assert updated[0]['key'] == ('d2', 'a.gbk')
+
+
+def test_replace_source_detects_the_same_content_under_a_new_name():
+    """source_file is displayed in the drill-down, so the name must refresh."""
+    from core.annotation_state import replace_source
+
+    entries = replace_source((), 'gff', 'a.gff', _ann(), ('d1', 'a.gff'))
+    updated = replace_source(entries, 'gff', 'b.gff', _ann(), ('d1', 'b.gff'))
+    assert updated is not None
+    assert updated[0]['filename'] == 'b.gff'
+
+
+def test_replace_source_clearing_an_empty_slot_is_a_no_op():
+    """Otherwise an empty GFF upload wipes every per-feature override."""
+    from core.annotation_state import replace_source
+
+    assert replace_source((), 'gff', '', None, None) is None
+    entries = replace_source((), 'gff', 'a.gff', _ann(), ('d1', 'a.gff'))
+    cleared = replace_source(entries, 'gff', '', None, None)
+    assert cleared == ()
+
+
+def test_replace_source_leaves_the_other_kind_alone():
+    """A role can hold GenBank-derived features and an uploaded GFF."""
+    from core.annotation_state import replace_source
+
+    entries = replace_source((), 'genbank', 'a.gbk', _ann(), ('d1', 'a.gbk'))
+    both = replace_source(entries, 'gff', 'b.gff', _ann(), ('d2', 'b.gff'))
+    assert {e['kind'] for e in both} == {'genbank', 'gff'}
+    # Replacing the gff must not disturb the genbank entry...
+    again = replace_source(both, 'gff', 'c.gff', _ann(), ('d3', 'c.gff'))
+    assert {e['kind'] for e in again} == {'genbank', 'gff'}
+    gb = next(e for e in again if e['kind'] == 'genbank')
+    assert gb['key'] == ('d1', 'a.gbk')
+    # ...and an unchanged genbank still short-circuits alongside a gff.
+    assert replace_source(again, 'genbank', 'a.gbk', _ann(), ('d1', 'a.gbk')) is None
+
+
+# --------------------------------------------------------------- nav tips
+
+
+def test_nav_tips_hides_click_to_focus_on_a_single_panel():
+    """Click-to-focus is disabled in the report when there is one panel."""
+    from core.panels import nav_tips
+
+    actions = lambda f, m: [a for a, _ in nav_tips(f, m)]  # noqa: E731
+
+    assert 'click panel' in actions(False, True)
+    assert 'click panel' not in actions(False, False)
+    assert 'click panel' not in actions(True, True)  # already focused
+    # Double-click drill-down works even on a single-panel overview.
+    assert 'double-click panel' in actions(False, False)
+    assert 'double-click panel' not in actions(True, False)
+    # The pan/zoom tips are unconditional.
+    for combo in ((True, True), (True, False), (False, True), (False, False)):
+        assert {'scroll', 'drag', 'Esc'} <= set(actions(*combo))
+
+
+# ------------------------------------------------ asset-level UI contracts
+
+
+def test_report_js_matches_panel_ids_strictly():
+    """Prefix-only matching let the axes background pose as a panel."""
+    import rusty_dot._html as html_pkg
+
+    js = (Path(html_pkg.__file__).parent / 'report.js').read_text()
+    assert 'PANEL_ID_RE' in js
+    assert 'function closestPanel(' in js
+    # panelGroups must be filtered, not taken raw from the prefix selector.
+    head = js.split('var panelGroups')[1].split('var selectedPanel')[0]
+    assert 'PANEL_ID_RE.test' in head
+    # The colliding id is gone everywhere.
+    css = (Path(html_pkg.__file__).parent / 'report.css').read_text()
+    dotplot = (Path(html_pkg.__file__).parent.parent / 'dotplot.py').read_text()
+    for src in (js, css, dotplot):
+        assert 'rd-panel-0-0-bg' not in src
+        assert "f'{gid}-bg'" not in src
+
+
+def test_panel_dblclick_bridge_walks_ancestors():
+    """closest() with a prefix selector stopped at the background group."""
+    app_py = (APP_DIR / 'app.py').read_text()
+    bridge = app_py.split('_PANEL_DBLCLICK_JS = ')[1].split('"""', 2)[1]
+    assert '.closest(' not in bridge  # the call, not the word in a comment
+    assert 'parentNode' in bridge
+    # The exact-shape regex is what makes the walk terminate correctly, and
+    # tests/test_app_state.py pins that it survives Python escaping.
+    assert r'/^rd-panel-(\\d+)-(\\d+)$/' in bridge
+
+
+def test_annotation_toggles_are_static_so_a_rerun_cannot_reset_them():
+    """gff_controls must depend on the type index alone.
+
+    Anything that re-renders it recreates every gtyp_/gcol_ input at its
+    default, silently discarding the user's annotation choices.
+    """
+    app_py = (APP_DIR / 'app.py').read_text()
+    before, body = app_py.split('def gff_controls')
+    body = body.split('@reactive.calc')[0]
+    # Comments in this file legitimately name the things being asserted
+    # against, so test the code only.
+    code = '\n'.join(
+        line for line in body.splitlines() if not line.lstrip().startswith('#')
+    )
+
+    assert 'self_panels()' not in code
+    for toggle in ("'gff_diagonal'", "'gff_tracks'"):
+        assert toggle not in code, f'{toggle} must live outside gff_controls'
+        assert toggle in before
+    # Visibility is driven by a hidden output, which must be exempt from
+    # Shiny's suspend-when-hidden behaviour to update at all.
+    assert 'def gff_mode' in app_py
+    gff_mode_head = app_py.split('def gff_mode')[0].rsplit('@output', 1)[1]
+    assert 'suspend_when_hidden=False' in gff_mode_head
+    # Conditions test positively: output.gff_mode is undefined before the
+    # first report, and `undefined !== ''` would flash the controls.
+    assert "output.gff_mode === 'self'" in before
+    assert 'output.gff_mode !==' not in before

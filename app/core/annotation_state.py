@@ -260,3 +260,65 @@ def apply_feature_overrides(
     return GffAnnotation(
         kept, colors={ft: annotation.get_color(ft) for ft in annotation.feature_types()}
     )
+
+
+def replace_source(
+    entries: tuple,
+    kind: str,
+    filename: str,
+    annotation: 'GffAnnotation | None',
+    key,
+) -> tuple | None:
+    """Add, replace or clear one annotation source, or report no change.
+
+    A role can hold several sources at once (a GenBank file's own features
+    plus an uploaded GFF), so only the entry of the matching *kind* is
+    touched.
+
+    Returning ``None`` for an unchanged source matters: the app's reactive
+    values invalidate on *identity*, so re-setting an equal-but-new tuple
+    would rebuild the feature-type controls and discard the user's toggles
+    and colours on every run.
+
+    Parameters
+    ----------
+    entries : tuple
+        Current sources for the role, each
+        ``{'kind', 'filename', 'annotation', 'key'}``.
+    kind : str
+        ``'gff'`` or ``'genbank'`` — which slot this call owns.
+    filename : str
+        Name of the uploaded file, recorded for display.
+    annotation : GffAnnotation or None
+        Parsed features, or ``None`` to clear this kind.
+    key : hashable
+        Identity of the upload, normally ``(content_digest, filename)``.
+        The filename is part of it because re-uploading identical content
+        under a new name must still refresh what the drill-down displays.
+
+    Returns
+    -------
+    tuple or None
+        The new entries tuple, or ``None`` when nothing changed and the
+        caller should leave the reactive value alone.
+    """
+    current = next((e for e in entries if e['kind'] == kind), None)
+    clearing = annotation is None or not len(annotation)
+    if clearing:
+        # Clearing a slot that is already empty is a no-op, not a reset.
+        return (
+            None if current is None else tuple(e for e in entries if e['kind'] != kind)
+        )
+    if current is not None and current.get('key') is not None and current['key'] == key:
+        return None
+    return tuple(
+        [e for e in entries if e['kind'] != kind]
+        + [
+            {
+                'kind': kind,
+                'filename': filename,
+                'annotation': annotation,
+                'key': key,
+            }
+        ]
+    )
