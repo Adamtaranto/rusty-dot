@@ -226,23 +226,29 @@ def draw_track(
                 )
             else:
                 length = end - start
-                rounding = min(0.25 * length, 0.005 * seq_len)
+                # Corner radius along the sequence axis (bases) and across
+                # the lanes (lane units) -- the two axes carry different
+                # units, so the radius differs per axis.
+                r_along = min(0.25 * length, 0.005 * seq_len)
+                r_across = 0.25 * (1 - 2 * _LANE_PAD)
                 xy = _xy(start, lane_lo, orientation)
                 if orientation == 'x':
                     w, h = length, lane_hi - lane_lo
                 else:
                     w, h = lane_hi - lane_lo, length
-                    xy = _xy(start, lane_lo, orientation)
-                if rounding <= 0:
+                if r_along <= 0:
                     ax.add_patch(
                         Rectangle(xy, w, h, facecolor=color, edgecolor='none', zorder=2)
                     )
                 else:
-                    # mutation_aspect rescales the across-track rounding so the
-                    # corners look round despite bp-vs-lane axis anisotropy.
-                    aspect = (0.25 * (1 - 2 * _LANE_PAD)) / rounding
-                    if orientation == 'y':
-                        aspect = 1.0 / aspect if aspect else 1.0
+                    # FancyBboxPatch applies rounding_size directly on x and
+                    # rounding_size * mutation_aspect on y.  Give it the
+                    # x-axis radius and let the aspect carry the y one, so
+                    # the corners look round despite the axis anisotropy.
+                    if orientation == 'x':
+                        rounding, aspect = r_along, r_across / r_along
+                    else:
+                        rounding, aspect = r_across, r_along / r_across
                     ax.add_patch(
                         FancyBboxPatch(
                             xy,

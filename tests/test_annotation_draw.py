@@ -206,6 +206,40 @@ def test_draw_track_unstranded_rounded_and_connectors():
     assert list(xs) == sorted(xs)  # midpoints in ascending order
 
 
+@pytest.mark.parametrize('seq_len', [1_000, 1_000_000])
+@pytest.mark.parametrize('short', [True, False])
+@pytest.mark.parametrize('orientation', ['x', 'y'])
+def test_draw_track_unstranded_patch_stays_inside_track(seq_len, short, orientation):
+    """Rounded rectangles must not spill outside their lane or feature span.
+
+    Regression guard: the y-orientation branch used to pass a
+    ``rounding_size`` measured in bases to an across-track axis measured in
+    lane units, blowing the patch up by orders of magnitude.
+    """
+    length = 50 if short else seq_len // 2
+    start = seq_len // 4
+    ann = GffAnnotation.from_text(
+        f'c1\tt\trepeat_region\t{start + 1}\t{start + length}\t.\t.\t.\tID=r1'
+    )
+    _fig, ax = plt.subplots()
+    if orientation == 'x':
+        ax.set_xlim(0, seq_len)
+    else:
+        ax.set_ylim(0, seq_len)
+    n_lanes = draw_track(ax, ann, 'c1', seq_len, orientation=orientation)
+
+    patch = [p for p in ax.patches if isinstance(p, FancyBboxPatch)][0]
+    bbox = patch.get_path().get_extents(patch.get_patch_transform())
+    r_along = min(0.25 * length, 0.005 * seq_len)
+    along_lo, along_hi = start - r_along, start + length + r_along
+    if orientation == 'x':
+        (along_min, across_min), (along_max, across_max) = bbox.min, bbox.max
+    else:
+        (across_min, along_min), (across_max, along_max) = bbox.min, bbox.max
+    assert along_lo <= along_min and along_max <= along_hi
+    assert -0.01 <= across_min and across_max <= n_lanes + 0.01
+
+
 def test_draw_track_empty_sequence_hides_axis():
     ann = GffAnnotation.from_text('c1\tt\tgene\t1\t10\t.\t+\t.\tID=a')
     ax = _track_ax()
