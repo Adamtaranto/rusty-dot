@@ -68,6 +68,45 @@ def type_slug_map(feature_types: list[str]) -> dict[str, str]:
     return mapping
 
 
+def merge_annotations(
+    annotations: list['GffAnnotation | None'],
+) -> 'GffAnnotation | None':
+    """Combine several parsed annotations into one.
+
+    Used where a single annotation object is required but the features may
+    have come from more than one upload — diagonal shading on a
+    self-comparison, where the query and target GFFs describe the same
+    sequences, and (later) merging GenBank-derived features with an
+    uploaded GFF for the same role.
+
+    Parameters
+    ----------
+    annotations : list[GffAnnotation or None]
+        Parsed annotations; ``None`` entries are skipped.
+
+    Returns
+    -------
+    GffAnnotation or None
+        A new annotation over the concatenated records, carrying the
+        colours of the inputs (later entries win on conflict).  ``None``
+        when there is nothing to merge.  A single non-``None`` input is
+        returned as-is rather than copied.
+    """
+    from rusty_dot.annotation import GffAnnotation  # noqa: PLC0415
+
+    present = [a for a in annotations if a is not None]
+    if not present:
+        return None
+    if len(present) == 1:
+        return present[0]
+    colors: dict[str, str] = {}
+    records: list = []
+    for ann in present:
+        records.extend(ann.records)
+        colors.update({ft: ann.get_color(ft) for ft in ann.feature_types()})
+    return GffAnnotation(records, colors=colors)
+
+
 def apply_annotation_config(
     annotation: 'GffAnnotation',
     enabled: dict[str, bool],

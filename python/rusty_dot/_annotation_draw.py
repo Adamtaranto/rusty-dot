@@ -196,9 +196,12 @@ def draw_track(
     for ((_gid, _parent), parts), lane in zip(groups, lanes):
         lane_lo = lane + _LANE_PAD
         lane_hi = lane + 1 - _LANE_PAD
-        color = annotation.get_color(parts[0].feature_type)
+        # Group colour, overridable per part: a single exon of a CDS can
+        # be recoloured without detaching it from its group.
+        group_color = parts[0].color or annotation.get_color(parts[0].feature_type)
         mids: list[float] = []
         for feat in parts:
+            color = feat.color or group_color
             start, end = float(feat.start), float(feat.end)
             strand = feat.strand
             if reverse:
@@ -262,10 +265,11 @@ def draw_track(
                         )
                     )
         if len(parts) > 1:
-            # Connector through the part midpoints at lane centre.
+            # Connector through the part midpoints at lane centre.  Uses the
+            # group colour, not the last part's override.
             centre = lane + 0.5
             xs, ys = zip(*(_xy(m, centre, orientation) for m in sorted(mids)))
-            ax.add_line(Line2D(xs, ys, color=color, linewidth=0.8, zorder=1))
+            ax.add_line(Line2D(xs, ys, color=group_color, linewidth=0.8, zorder=1))
 
     if orientation == 'x':
         ax.set_ylim(0, n_lanes)

@@ -510,3 +510,30 @@ def test_make_figure_call_path_accepts_annotations():
         query_group=QUERY_GROUP, target_group=TARGET_GROUP, **kwargs
     )
     assert fig.axes
+
+
+def test_has_self_pair_detects_shared_contigs():
+    from core.panels import has_self_pair
+
+    assert has_self_pair(['c1', 'c2'], ['c2', 'c3'])
+    assert not has_self_pair(['c1', 'c2'], ['c3'])
+    assert not has_self_pair([], [])
+
+
+def test_merge_annotations_concatenates_and_keeps_colours():
+    from core.annotation_state import merge_annotations
+
+    from rusty_dot.annotation import GffAnnotation
+
+    a = GffAnnotation.from_text('c1\tt\tgene\t1\t10\t.\t+\t.\tID=a')
+    b = GffAnnotation.from_text('c1\tt\texon\t20\t30\t.\t+\t.\tID=b')
+    a.set_colors({'gene': '#111111'})
+    b.set_colors({'exon': '#222222'})
+
+    merged = merge_annotations([a, b])
+    assert len(merged) == 2
+    assert merged.get_color('gene') == '#111111'
+    assert merged.get_color('exon') == '#222222'
+    # Degenerate inputs.
+    assert merge_annotations([None, None]) is None
+    assert merge_annotations([a, None]) is a  # single input passes through

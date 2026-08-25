@@ -525,3 +525,58 @@ def test_html_payload_keeps_genomic_coords_on_reversed_panel(tmp_path):
     # Original genomic locus and strand, even though the patch is mirrored.
     assert annot['start'] == 100 and annot['end'] == 300
     assert annot['strand'] == '+'
+
+
+# ------------------------------------------------ per-feature colour override
+
+
+def test_feature_color_override_beats_type_colour_on_tracks():
+    """GffFeature.color wins over the annotation's per-type colour.
+
+    Backs the drill-down's per-feature colour control; features without an
+    override (color=None) keep taking the type colour.
+    """
+    ann = GffAnnotation.from_text(
+        'c1\tt\tgene\t101\t500\t.\t+\t.\tID=a\n'
+        'c1\tt\trepeat_region\t1001\t1500\t.\t.\t.\tID=r\n'
+    )
+    override = next(r for r in ann.records if r.feature_type == 'gene')
+    override.color = '#123456'
+
+    for orientation in ('x', 'y'):
+        _fig, ax = plt.subplots()
+        (ax.set_xlim if orientation == 'x' else ax.set_ylim)(0, 2000)
+        draw_track(ax, ann, 'c1', 2000, orientation=orientation)
+        arrow = [p for p in ax.patches if isinstance(p, Polygon)][0]
+        assert matplotlib.colors.to_hex(arrow.get_facecolor()) == '#123456'
+        box = [p for p in ax.patches if isinstance(p, FancyBboxPatch)][0]
+        assert matplotlib.colors.to_hex(box.get_facecolor()) == ann.get_color(
+            'repeat_region'
+        )
+
+
+def test_feature_color_override_applies_to_diagonal_squares():
+    from matplotlib.collections import PatchCollection
+
+    pl = _plotter()
+    ann = GffAnnotation.from_text('c1\tt\tgene\t101\t500\t.\t+\t.\tID=a')
+    ann.records[0].color = '#abcdef'
+    fig = pl.plot(query_names=['c1'], target_names=['c1'], annotation=ann)
+    cols = [
+        c for a in fig.axes for c in a.collections if isinstance(c, PatchCollection)
+    ]
+    hexes = {matplotlib.colors.to_hex(fc) for c in cols for fc in c.get_facecolor()}
+    assert '#abcdef' in hexes
+
+
+def test_multipart_connector_uses_the_group_colour():
+    """Recolouring one exon must not drag the connector line with it."""
+    ann = GffAnnotation.from_text(
+        'c1\tt\tCDS\t101\t300\t.\t+\t0\tID=c;Parent=m\n'
+        'c1\tt\tCDS\t801\t1000\t.\t+\t0\tID=c;Parent=m\n'
+    )
+    ann.records[1].color = '#ff0000'
+    ax = _track_ax()
+    draw_track(ax, ann, 'c1', 2000, orientation='x')
+    line = ax.lines[0]
+    assert matplotlib.colors.to_hex(line.get_color()) == ann.get_color('CDS')

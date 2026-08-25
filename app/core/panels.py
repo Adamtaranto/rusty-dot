@@ -134,3 +134,30 @@ def resolve_orders(
         )
         return q_order, t_order, reversed_q
     raise ValueError(f'Unknown contig-order mode {mode!r}')
+
+
+def has_self_pair(query_names: Iterable[str], target_names: Iterable[str]) -> bool:
+    """Whether the panel grid contains at least one self-comparison panel.
+
+    Diagonal feature shading only draws on panels where a contig is
+    compared against itself (``DotPlotter._draw_annotation_squares`` is
+    reached only for such panels), so the control that toggles it is
+    pointless — and misleading — on a plain cross-assembly comparison.
+
+    Parameters
+    ----------
+    query_names, target_names : Iterable[str]
+        The plotted row and column contig names, as produced by
+        :func:`resolve_orders`.
+
+    Returns
+    -------
+    bool
+        ``True`` when any contig appears on both axes.  This is a
+        superset of what actually gets shaded: the plotter additionally
+        requires the two sequences to be the same length before treating
+        a panel as a self-comparison, so a name that coincidentally
+        collides between two different assemblies enables the control
+        without guaranteeing squares.
+    """
+    return bool(set(query_names) & set(target_names))

@@ -37,12 +37,13 @@ from core.annotation_colors import (
 from core.annotation_state import (
     ANNOTATION_ROLES,
     apply_annotation_config,
+    merge_annotations,
     type_slug_map,
 )
 from core.cache import QUERY_GROUP, TARGET_GROUP, SessionCache
 from core.export import reordered_fasta_text
 from core.fasta import FastaInput, parse_fasta_bytes
-from core.panels import panel_pair, resolve_orders
+from core.panels import has_self_pair, panel_pair, resolve_orders
 from core.state import ORDER_CHOICES, PlotConfig
 from core.validate import validate_query_names
 from core.wheels import pick_wasm_wheel, runtime_platform_tag
@@ -1175,8 +1176,22 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                     class_='rd-gff-type-row',
                 )
             )
+        toggles = []
+        # Diagonal shading only draws where a contig meets itself; offering
+        # it on a plain cross-assembly comparison promises something that
+        # cannot happen.
+        if self_panels():
+            toggles.append(
+                ui.tooltip(
+                    ui.input_checkbox(
+                        'gff_diagonal', 'Shade features on diagonal', True
+                    ),
+                    'Draws each feature as a square on the diagonal of '
+                    'self-comparison panels.',
+                )
+            )
         return ui.div(
-            ui.input_checkbox('gff_diagonal', 'Shade features on diagonal', True),
+            *toggles,
             ui.input_checkbox('gff_tracks', 'Side tracks in focused pair view', True),
             ui.div(
                 ui.h6('Feature types'),
@@ -1294,6 +1309,24 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         return input.contig_order(), input.auto_reverse()
 
     @reactive.calc
+    def self_panels() -> bool:
+        """Whether the panel grid contains a self-comparison panel.
+
+        Gates the diagonal-shading control, which can only ever draw on
+        such a panel.  Judged on the whole grid rather than the focused
+        pair, so the control does not appear and vanish as the user drills
+        in and out.  Returns ``False`` rather than blocking before the
+        first run, so the feature-type list stays visible while a plot is
+        being set up.
+        """
+        if input.input_mode() != 'paf' and input.self_align():
+            return True
+        if result() is None:
+            return False
+        lay = layout()
+        return has_self_pair(lay['query_names'], lay['target_names'])
+
+    @reactive.calc
     def layout():
         """Explicit plotted axis orders for the current result + config.
 
@@ -1360,8 +1393,12 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         # without touching layout()'s dependencies.
         ann_q, ann_t = annotations()
         if ann_q is not None or ann_t is not None:
-            if bool(_read_dynamic('gff_diagonal', True)):
-                kwargs['annotation'] = ann_q if ann_q is not None else ann_t
+            if self_panels() and bool(_read_dynamic('gff_diagonal', True)):
+                # On a self-comparison both roles describe the same
+                # sequences, so merge them: a user who uploaded the
+                # annotation under either role — or split it across two
+                # files — gets everything shaded.
+                kwargs['annotation'] = merge_annotations([ann_q, ann_t])
             kwargs['annotation_query'] = ann_q
             kwargs['annotation_target'] = ann_t
             kwargs['annotation_tracks'] = bool(_read_dynamic('gff_tracks', True))

@@ -104,6 +104,15 @@ class GffFeature:
         Reading frame (0, 1, or 2), or ``None`` if the GFF field is ``'.'``.
     attributes : str
         Raw attributes string from column 9 of the GFF.
+    source_file : str
+        Name of the file this record was read from, when the caller
+        recorded one.  Purely informational — nothing in the drawing code
+        reads it — but it lets an application distinguish features that
+        were merged from several uploads.
+    color : str or None
+        Per-feature colour override.  ``None`` (the default) means "use
+        the annotation's colour for this feature's type", which is what
+        every existing caller gets.
     """
 
     seqname: str
@@ -115,6 +124,8 @@ class GffFeature:
     strand: str
     frame: Optional[int]
     attributes: str
+    source_file: str = ''
+    color: Optional[str] = None
     #: Lazily populated cache for :meth:`attr_dict` (not part of equality).
     _attr_cache: Optional[dict[str, str]] = field(
         default=None, repr=False, compare=False

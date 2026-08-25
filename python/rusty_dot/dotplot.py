@@ -1804,7 +1804,7 @@ class DotPlotter:
             # the target (x) axis always runs forward.
             y = (seq_len - feat.end) if reverse else feat.start
             rects.append(mpatches.Rectangle((x, y), width, width))
-            facecolors.append(annotation.get_color(feat.feature_type))
+            facecolors.append(feat.color or annotation.get_color(feat.feature_type))
         if rects:
             collection = PatchCollection(
                 rects,
