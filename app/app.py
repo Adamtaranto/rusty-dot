@@ -12,6 +12,7 @@ import importlib.util
 import io
 import logging
 from pathlib import Path
+import re
 import sys
 import tempfile
 import time
@@ -1355,6 +1356,41 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             duration=6,
         )
 
+    # Features the interactive report is currently banding.  Held so a
+    # saved figure can carry the same highlights: the report draws its
+    # bands from on-screen geometry, but an export is redrawn from
+    # coordinates and would otherwise come out plain.
+    highlight_bands = reactive.value(())
+
+    _HEX_COLOR_RE = re.compile(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$')
+
+    @reactive.effect
+    @reactive.event(input.track_bands)
+    def _on_track_bands():
+        ev = input.track_bands() or {}
+        bands = []
+        for band in ev.get('bands') or []:
+            try:
+                bands.append(
+                    {
+                        'axis': band['axis'],
+                        'seqname': band['seqname'],
+                        'start': int(band['start']),
+                        'end': int(band['end']),
+                        # Straight from a sandboxed frame into
+                        # matplotlib, which raises on anything it cannot
+                        # parse -- accept only plain hex.
+                        'color': (
+                            band.get('color')
+                            if _HEX_COLOR_RE.match(str(band.get('color') or ''))
+                            else '#888888'
+                        ),
+                    }
+                )
+            except (KeyError, TypeError, ValueError):
+                continue  # malformed entry from the frame; ignore it
+        highlight_bands.set(tuple(bands))
+
     _MIN_LEN_NOTIF_ID = 'rd_min_contig_len'
 
     @reactive.effect
@@ -1637,6 +1673,15 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         focus.set(None)
         order_cache.clear()
         figure_ctx_cache.clear()
+
+    @reactive.effect
+    @reactive.event(focus)
+    def _clear_bands_on_view_change():
+        # Bands are gids from one rendered report, so a different focused
+        # pair -- or returning to the overview -- leaves them meaningless.
+        # A new result resets focus, so this covers that too.
+        if highlight_bands():
+            highlight_bands.set(())
         paf_pair_index.clear()
 
     @reactive.calc
@@ -1810,6 +1855,10 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             kwargs['annotation_query'] = ann_q
             kwargs['annotation_target'] = ann_t
             kwargs['annotation_tracks'] = bool(input.gff_tracks())
+        if output_path is None and highlight_bands():
+            # Only for figures the user takes away.  The HTML report draws
+            # its own bands live, and would end up with two.
+            kwargs['highlight_regions'] = [dict(b) for b in highlight_bands()]
         # Memoise the plotter per result: for the k-mer path, building the
         # PafAlignment copies the full record list — pointless to repeat on
         # every re-render of the same result.

@@ -92,6 +92,12 @@ _ROW_LABEL_MIN_SIZE_PT = 5.0
 # neighbour is still readable; '...' is not.
 _ROW_LABEL_MIN_CHARS = 6
 
+# Feature highlight bands.  Matches the interactive report's .rd-band rule
+# so a saved figure looks like the screen it came from, and sits below the
+# diagonal squares (0.5) and the match collections.
+_HIGHLIGHT_ALPHA = 0.22
+_HIGHLIGHT_ZORDER = 0.3
+
 # Absolute margins (inches) reserved around the focused single-pair panel so
 # the title and axis labels always have room, however thin the proportional
 # panel gets for extreme sequence-length ratios.
@@ -660,6 +666,7 @@ class DotPlotter:
         auto_reverse: bool = False,
         hide_internal_axes: bool = False,
         identity_colorbar: bool = False,
+        highlight_regions: Optional[list[dict]] = None,
     ) -> matplotlib.figure.Figure:
         """Plot an all-vs-all dotplot grid.
 
@@ -762,6 +769,16 @@ class DotPlotter:
             Features for the query (y) axis side track.  Default ``None``.
         annotation_target : GffAnnotation, optional
             Features for the target (x) axis side track.  Default ``None``.
+        highlight_regions : list[dict], optional
+            Bands to shade behind the matches, each
+            ``{'axis': 'x'|'y', 'seqname': str, 'start': int, 'end': int,
+            'color': str}``.  ``'x'`` shades a column of the panels whose
+            target is *seqname*, ``'y'`` a row of those whose query is.
+            Coordinates are 0-based half-open in the sequence's own
+            orientation and are mirrored here for reverse-displayed
+            contigs, so a caller passes feature coordinates and gets the
+            band where the feature is drawn.  Used to carry the
+            interactive report's feature highlights into a saved figure.
         annotation_tracks : bool, optional
             Draw side annotation tracks (left of the y axis and below the x
             axis) with lane-packed feature shapes, strand arrows for
@@ -1068,6 +1085,18 @@ class DotPlotter:
                     if col_idx < ncols - 1:
                         ax.spines['right'].set_visible(False)
 
+                # Feature highlight bands, behind everything else in the
+                # panel so matches and annotation squares stay readable
+                # through them.
+                if highlight_regions:
+                    self._draw_highlight_bands(
+                        ax,
+                        highlight_regions,
+                        q_name=q_name,
+                        t_name=t_name,
+                        reverse_set=reverse_set,
+                    )
+
                 # Annotation squares on self-vs-self (diagonal) panels,
                 # drawn behind the alignments and mirrored with the axis.
                 # A CrossIndex self-comparison stores the same sequence
@@ -1361,6 +1390,68 @@ class DotPlotter:
         if output_path is not None:
             self._save_figure(fig, output_path, dpi=dpi, format=format, title=title)
         return fig
+
+    def _draw_highlight_bands(
+        self,
+        ax,
+        regions: list[dict],
+        q_name: str,
+        t_name: str,
+        reverse_set: set,
+    ) -> None:
+        """Shade the panel columns/rows named by *regions*.
+
+        The interactive report draws these client-side from the on-screen
+        geometry; a saved figure has to reconstruct them from coordinates,
+        which is why the mirroring for reverse-displayed contigs is
+        repeated here rather than inherited.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The panel being drawn.
+        regions : list[dict]
+            ``{'axis', 'seqname', 'start', 'end', 'color'}`` entries; see
+            :meth:`plot`.
+        q_name, t_name : str
+            Internal (possibly group-prefixed) names for this panel.
+        reverse_set : set
+            Display names shown reverse-complemented.
+        """
+        q_display = self._strip_group_prefix(q_name)
+        t_display = self._strip_group_prefix(t_name)
+        for region in regions:
+            axis = region.get('axis')
+            seqname = region.get('seqname')
+            try:
+                start = int(region['start'])
+                end = int(region['end'])
+            except (KeyError, TypeError, ValueError):
+                continue
+            color = region.get('color') or '#888888'
+            if axis == 'x' and seqname == t_display:
+                # The target axis always runs forward.
+                ax.axvspan(
+                    start,
+                    end,
+                    facecolor=color,
+                    edgecolor='none',
+                    alpha=_HIGHLIGHT_ALPHA,
+                    zorder=_HIGHLIGHT_ZORDER,
+                )
+            elif axis == 'y' and seqname == q_display:
+                lo, hi = start, end
+                if q_display in reverse_set:
+                    seq_len = self.index.get_sequence_length(q_name)
+                    lo, hi = seq_len - end, seq_len - start
+                ax.axhspan(
+                    lo,
+                    hi,
+                    facecolor=color,
+                    edgecolor='none',
+                    alpha=_HIGHLIGHT_ALPHA,
+                    zorder=_HIGHLIGHT_ZORDER,
+                )
 
     @staticmethod
     def _fit_row_labels(fig, axes, nrows: int) -> None:

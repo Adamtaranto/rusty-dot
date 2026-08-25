@@ -109,6 +109,19 @@
       }
       return;
     }
+    if (msg.type === 'rd-bands') {
+      // Which features the report is currently highlighting, so a saved
+      // figure can carry the same bands.  Coordinates, not pixels: the
+      // export is redrawn server-side rather than screenshotted.
+      if (window.Shiny && typeof window.Shiny.setInputValue === 'function') {
+        window.Shiny.setInputValue(
+          'track_bands',
+          { bands: Array.isArray(msg.bands) ? msg.bands : [] },
+          { priority: 'event' }
+        );
+      }
+      return;
+    }
     if (msg.type !== 'rd-panel-dblclick') {
       return;
     }

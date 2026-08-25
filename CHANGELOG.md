@@ -8,6 +8,17 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added (highlights carry into saved figures)
+
+- A feature highlight now survives export. Clicking a feature in an
+  annotation track shades the row or column it occupies; until now that
+  band lived only in the browser, so a saved SVG, PNG or PDF came back
+  without it and the point being illustrated was lost. The highlighted
+  regions are sent back to the app as coordinates and redrawn into the
+  exported figure, matching colour and extent — including on reversed
+  contigs, where the band is mirrored with the sequence. Highlights clear
+  when the view changes.
+
 ### Fixed (annotation controls and short-contig labels)
 
 - Toggling annotation feature types no longer rebuilds the figure once per

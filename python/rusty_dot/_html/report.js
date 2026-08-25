@@ -789,7 +789,29 @@
 
   var trackData = payload.tracks || null;
   var activeBands = {}; // gid -> <rect>
+  var bandEntries = {}; // gid -> {axis, payload entry}
   var bandLayer = null;
+
+  /* Tell an embedding app which features are banded, so a figure it saves
+   * can carry the same highlights.  The bands here are DOM rects measured
+   * off the rendered SVG; a saved figure is drawn from coordinates, so the
+   * app gets the feature's own numbers rather than pixel geometry. */
+  function publishBands() {
+    if (window.parent === window) return; // standalone report: no app
+    var bands = Object.keys(activeBands).map(function (gid) {
+      var held = bandEntries[gid] || {};
+      var entry = held.entry || {};
+      return {
+        gid: gid,
+        axis: held.axis,
+        seqname: entry.seqname,
+        start: entry.start,
+        end: entry.end,
+        color: entry.color || patchFill(document.getElementById(gid)),
+      };
+    });
+    window.parent.postMessage({ type: 'rd-bands', bands: bands }, '*');
+  }
 
   function panelBackground() {
     return svg.querySelector('[id="rd-plotbg-0-0"]');
@@ -816,6 +838,8 @@
       if (el) el.classList.remove('rd-track-active');
     });
     activeBands = {};
+    bandEntries = {};
+    publishBands();
   }
 
   /* Colour a track patch is actually painted with.  A gid-tagged artist is
@@ -827,6 +851,20 @@
     var fill =
       kid.getAttribute('fill') || window.getComputedStyle(kid).fill || '';
     if (!fill || fill === 'none' || fill === 'rgb(0, 0, 0)') return '#888888';
+    // getComputedStyle reports 'rgb(r, g, b)'.  SVG takes that happily, but
+    // the app forwards this colour to matplotlib for saved figures, which
+    // does not, so normalise to hex here rather than parsing CSS there.
+    var m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(fill);
+    if (m) {
+      return (
+        '#' +
+        [m[1], m[2], m[3]]
+          .map(function (v) {
+            return ('0' + Number(v).toString(16)).slice(-2);
+          })
+          .join('')
+      );
+    }
     return fill;
   }
 
@@ -853,6 +891,7 @@
     rect.setAttribute('class', 'rd-band');
     layer.appendChild(rect);
     activeBands[gid] = rect;
+    bandEntries[gid] = { axis: axis, entry: entry };
     el.classList.add('rd-track-active');
   }
 
@@ -860,6 +899,7 @@
     var rect = activeBands[gid];
     if (rect && rect.parentNode) rect.parentNode.removeChild(rect);
     delete activeBands[gid];
+    delete bandEntries[gid];
     var el = document.getElementById(gid);
     if (el) el.classList.remove('rd-track-active');
   }
@@ -875,6 +915,7 @@
       if (allOn) removeBand(gid);
       else if (!activeBands[gid]) addBand(gid, entries[i], axis);
     });
+    publishBands();
   }
 
   if (trackData) {

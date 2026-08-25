@@ -2015,3 +2015,112 @@ def test_row_label_is_never_elided_into_uselessness():
     # The short contig keeps its whole name rather than collapsing.
     assert names[1] in labels
     plt.close(fig)
+
+
+# ---------------------------------------------------- highlight bands
+
+
+def _band_plotter():
+    import random
+
+    from rusty_dot import SequenceIndex
+
+    rng = random.Random(5)
+    seq = ''.join(rng.choice('ACGT') for _ in range(4000))
+    idx = SequenceIndex(k=11)
+    idx.add_sequence('qA', seq)
+    idx.add_sequence('tA', seq)
+    return DotPlotter(idx)
+
+
+def _spans(ax):
+    """(orientation, lo, hi) for each axhspan/axvspan drawn on *ax*."""
+    from matplotlib.patches import Rectangle
+
+    out = []
+    for patch in ax.patches:
+        if not isinstance(patch, Rectangle):
+            continue
+        x0, y0 = patch.get_xy()
+        # A span covers its whole cross-axis in axes coordinates.
+        if patch.get_width() == 1:
+            out.append(('y', y0, y0 + patch.get_height()))
+        elif patch.get_height() == 1:
+            out.append(('x', x0, x0 + patch.get_width()))
+    return out
+
+
+def test_highlight_regions_band_the_named_axis():
+    pl = _band_plotter()
+    fig = pl.plot(
+        query_names=['qA'],
+        target_names=['tA'],
+        highlight_regions=[
+            {
+                'axis': 'x',
+                'seqname': 'tA',
+                'start': 100,
+                'end': 400,
+                'color': '#123456',
+            },
+            {
+                'axis': 'y',
+                'seqname': 'qA',
+                'start': 700,
+                'end': 900,
+                'color': '#654321',
+            },
+        ],
+    )
+    spans = _spans(fig.axes[0])
+    assert ('x', 100, 400) in spans
+    assert ('y', 700, 900) in spans
+    plt.close(fig)
+
+
+def test_highlight_regions_ignore_other_sequences():
+    """A band belongs to the panel whose contig it names, not every panel."""
+    pl = _band_plotter()
+    fig = pl.plot(
+        query_names=['qA'],
+        target_names=['tA'],
+        highlight_regions=[
+            {'axis': 'x', 'seqname': 'somewhere_else', 'start': 0, 'end': 10},
+            # Right name, wrong axis: 'qA' is the query, not the target.
+            {'axis': 'x', 'seqname': 'qA', 'start': 0, 'end': 10},
+        ],
+    )
+    assert _spans(fig.axes[0]) == []
+    plt.close(fig)
+
+
+def test_highlight_regions_mirror_for_reversed_contigs():
+    """Bands must land where the feature is drawn, not where it is stored."""
+    pl = _band_plotter()
+    fig = pl.plot(
+        query_names=['qA'],
+        target_names=['tA'],
+        reverse_contigs={'qA'},
+        highlight_regions=[
+            {'axis': 'y', 'seqname': 'qA', 'start': 0, 'end': 1000},
+        ],
+    )
+    # 4000 bp contig displayed reversed: [0, 1000) shows at [3000, 4000).
+    assert ('y', 3000, 4000) in _spans(fig.axes[0])
+    plt.close(fig)
+
+
+def test_highlight_regions_survive_malformed_entries():
+    """The bands arrive from a sandboxed frame; do not trust the shape."""
+    pl = _band_plotter()
+    fig = pl.plot(
+        query_names=['qA'],
+        target_names=['tA'],
+        highlight_regions=[
+            {'axis': 'x', 'seqname': 'tA'},  # no coordinates
+            {'axis': 'x', 'seqname': 'tA', 'start': 'x', 'end': 9},
+            {'axis': 'x', 'seqname': 'tA', 'start': 10, 'end': 20},
+        ],
+    )
+    assert _spans(fig.axes[0]) == [('x', 10, 20)]
+    plt.close(fig)
