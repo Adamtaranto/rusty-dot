@@ -304,35 +304,6 @@ app_ui = ui.page_sidebar(
         # upload widgets differ between FASTA and GenBank.
         ui.panel_conditional(
             "input.input_mode !== 'paf'",
-            # Target/reference first: it is the axis everything else is read
-            # against (x axis, column titles), so it reads more naturally as
-            # the thing you choose first.
-            ui.panel_conditional(
-                "!input.self_align && input.input_mode === 'fasta'",
-                ui.input_file(
-                    'target_fasta',
-                    'Target / reference assembly (FASTA / .gz)',
-                    accept=['.fa', '.fasta', '.fna', '.gz'],
-                ),
-            ),
-            ui.panel_conditional(
-                "!input.self_align && input.input_mode === 'genbank'",
-                ui.input_file(
-                    'target_gbk',
-                    'Target / reference assembly (GenBank / .gz)',
-                    accept=['.gb', '.gbk', '.gbff', '.genbank', '.gz'],
-                ),
-            ),
-            ui.input_checkbox(
-                'self_align',
-                _lbl(
-                    'Align assembly to itself',
-                    'Compare one assembly against itself to reveal repeats '
-                    'and segmental duplications — no second upload needed. '
-                    'Only the query assembly is used.',
-                ),
-                False,
-            ),
             ui.panel_conditional(
                 "input.input_mode === 'fasta'",
                 ui.input_file(
@@ -350,6 +321,32 @@ app_ui = ui.page_sidebar(
                         'Sequences and annotations are read from the same '
                         'file; any GFF uploaded below is merged with them.',
                     ),
+                    accept=['.gb', '.gbk', '.gbff', '.genbank', '.gz'],
+                ),
+            ),
+            ui.input_checkbox(
+                'self_align',
+                _lbl(
+                    'Align assembly to itself',
+                    'Compare one assembly against itself to reveal repeats '
+                    'and segmental duplications — no second upload needed. '
+                    'Only the query assembly is used.',
+                ),
+                False,
+            ),
+            ui.panel_conditional(
+                "!input.self_align && input.input_mode === 'fasta'",
+                ui.input_file(
+                    'target_fasta',
+                    'Target / reference assembly (FASTA / .gz)',
+                    accept=['.fa', '.fasta', '.fna', '.gz'],
+                ),
+            ),
+            ui.panel_conditional(
+                "!input.self_align && input.input_mode === 'genbank'",
+                ui.input_file(
+                    'target_gbk',
+                    'Target / reference assembly (GenBank / .gz)',
                     accept=['.gb', '.gbk', '.gbff', '.genbank', '.gz'],
                 ),
             ),
@@ -643,16 +640,23 @@ app_ui = ui.page_sidebar(
         ui.hr(),
         # --- GFF annotations -------------------------------------------------
         ui.h5('Annotations (GFF3)'),
-        # Same target-then-query order as the assembly uploads above.
-        ui.input_file(
-            'target_gff',
-            'Target annotations (.gff / .gff3 / .gz)',
-            accept=['.gff', '.gff3', '.gz'],
-        ),
+        # Same query-then-target order as the assembly uploads above.
         ui.input_file(
             'query_gff',
             'Query annotations (.gff / .gff3 / .gz)',
             accept=['.gff', '.gff3', '.gz'],
+        ),
+        # Hidden alongside the target assembly when self-aligning: both axes
+        # are then the query assembly, so there is no target to annotate.
+        # PAF input has no self-align notion but does have both roles, so it
+        # keeps the upload regardless of a stale checkbox value.
+        ui.panel_conditional(
+            "input.input_mode === 'paf' || !input.self_align",
+            ui.input_file(
+                'target_gff',
+                'Target annotations (.gff / .gff3 / .gz)',
+                accept=['.gff', '.gff3', '.gz'],
+            ),
         ),
         ui.panel_conditional(
             "output.gff_mode === 'plain' || output.gff_mode === 'self'",

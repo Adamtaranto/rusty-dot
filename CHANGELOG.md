@@ -20,10 +20,10 @@ and this project adheres to
 
 ### Changed (sidebar layout and plot navigation)
 
-- The target/reference assembly is now the first upload in the sidebar,
-  ahead of the query, matching the order of the annotation uploads below
-  it. The target is the x axis everything else is read against, so it is
-  the more natural thing to choose first.
+- Ticking **Align assembly to itself** now hides the target annotation
+  upload as well as the target assembly: both axes are the query assembly,
+  so there is no target to annotate. PAF input keeps the upload, having
+  both roles but no self-align notion.
 - Multi-panel plots: clicking a panel centres it as before, but **any**
   subsequent click in the figure returns to the full view. Previously the
   second click had to land on the same panel — every listener was attached
