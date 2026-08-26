@@ -96,6 +96,51 @@ jobs:
       - name: Run pytest
         run: pytest tests/ -v
 
+  python-tests-freethreaded:
+    name: Python Tests (free-threaded 3.14t)
+    runs-on: ubuntu-latest
+    needs: rust-tests
+    env:
+      # Refuse to let the interpreter quietly turn the GIL back on, and warn on
+      # any extension that has not opted into free-threading.
+      PYTHON_GIL: "0"
+      PYTHONWARNDEFAULTTHREADSAFETY: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up free-threaded Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14t"
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-ft-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install maturin and dependencies
+        # No shiny here, unlike the GIL build: it pulls orjson, which has no
+        # free-threaded wheel and fails to build from source.  The suite does
+        # not need it (same 741 passed / 6 skipped either way).
+        run: |
+          pip install maturin pytest pytest-cov matplotlib numpy
+      - name: Build and install rusty-dot
+        # The wheel is tagged cp314-cp314t (python tag cp314, abi tag cp314t).
+        run: |
+          maturin build --release
+          pip install target/wheels/*cp314t*.whl
+      - name: Assert the extension does not re-enable the GIL
+        # src/lib.rs declares #[pymodule(gil_used = false)].  If that is ever
+        # dropped, importing the module flips the GIL back on and the cp314t
+        # wheel we publish is free-threaded in name only -- fail here instead.
+        run: |
+          python -c "import sys, rusty_dot; assert not sys._is_gil_enabled(), 'GIL re-enabled on import'"
+      - name: Run pytest
+        run: pytest tests/ -v
+
   native-wheel-build:
     name: Native Wheel Build
     runs-on: ubuntu-latest

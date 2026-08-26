@@ -1,0 +1,216 @@
+name: Publish to PyPI
+
+# rusty-dot is a PyO3 extension built with maturin, and it is deliberately NOT
+# abi3 (Pyodide rejects abi3 wheels), so every interpreter needs its own wheel --
+# including a separate cp314t build for the free-threaded interpreter.  This
+# workflow builds that matrix plus an sdist and uploads the lot in one go.
+#
+# Scope: CPython 3.12, 3.13, 3.14 and 3.14t -- the whole requires-python range
+# (>=3.12,<3.15), so no supported interpreter has to compile from the sdist.
+# 3.12 and 3.13 are verified: the suite passes on both (745 passed, 2 skipped).
+on:
+  release:
+    types:
+      - published
+  # Dry run: build the whole matrix on a branch without uploading anything.
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Upload the built artifacts to PyPI"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  sdist:
+    name: Build sdist
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - name: Upload sdist
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-sdist
+          path: dist
+
+  linux:
+    name: "Wheels: linux-${{ matrix.target }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          # manylinux_2_28 images ship every interpreter below, including the
+          # free-threaded cp314t; aarch64 is cross-built in the same container.
+          manylinux: 2_28
+          args: >-
+            --release --out dist
+            --interpreter python3.12 python3.13 python3.14 python3.14t
+      - name: Check wheel tags
+        # Free-threaded wheels carry the abi tag cp314t with the python tag
+        # still cp314 (rusty_dot-0.1.0-cp314-cp314t-...), so match on the abi.
+        run: |
+          ls dist/
+          for tag in cp312-cp312 cp313-cp313 cp314-cp314 cp314-cp314t; do
+            ls dist/*-"$tag"-manylinux*.whl
+          done
+      - name: Upload wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-linux-${{ matrix.target }}
+          path: dist
+
+  macos:
+    name: "Wheels: macos-${{ matrix.target }}-${{ matrix.python }}"
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+        python: ["3.12", "3.13", "3.14", "3.14t"]
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+      - name: Set up Python
+        id: py
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          # The explicit interpreter path is the portable way to select the
+          # free-threaded build: "python3.14t" is not on PATH on every runner.
+          # The x86_64 leg cross-compiles from the arm64 runner, where the
+          # interpreter is read for its version only.
+          args: --release --out dist --interpreter ${{ steps.py.outputs.python-path }}
+      - name: Check wheel tags
+        run: ls dist/*.whl
+      - name: Upload wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-macos-${{ matrix.target }}-${{ matrix.python }}
+          path: dist
+
+  windows:
+    name: "Wheels: windows-${{ matrix.python }}"
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14", "3.14t"]
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+      - name: Set up Python
+        id: py
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: x64
+          args: --release --out dist --interpreter ${{ steps.py.outputs.python-path }}
+      - name: Check wheel tags
+        run: dir dist
+      - name: Upload wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-windows-${{ matrix.python }}
+          path: dist
+
+  pyemscripten:
+    name: "Wheel: pyemscripten (PEP 783)"
+    runs-on: ubuntu-latest
+    # NOTE: this is NOT the wheel the browser app loads.  The Shinylive app
+    # runs Pyodide 0.27 and needs the legacy
+    # cp312-cp312-emscripten_3_1_58_wasm32 tag, which PyPI rejects; that wheel
+    # is built by ci.yml / docs.yml against the pins in .cargo/config.toml and
+    # environment-wasm.yml.  This job builds the PEP 783
+    # pyemscripten_<year>_<patch>_wasm32 wheel for PyPI consumers on a modern
+    # Pyodide.  The two are not interchangeable -- never copy this one into
+    # app/wheels/.
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          # Must match the target Pyodide's CPython (314.x = CPython 3.14):
+          # pyodide-build cross-builds only from a matching host interpreter.
+          python-version: "3.14"
+      - name: Install Rust
+        # The toolchain version comes from the Pyodide cross-build env; this
+        # action just provides rustup.
+        uses: dtolnay/rust-toolchain@stable
+      - name: Set up the Pyodide cross-build toolchain
+        id: toolchain
+        # "auto" takes the Rust toolchain pyodide-build reports for this
+        # release.  Emscripten is deliberately not installed here: `pyodide
+        # build` installs and patches its own emsdk, and a stock emcc cannot
+        # link a Rust side module ("invalid export name: _ZN...").
+        run: echo "rust=$(scripts/setup_wasm_toolchain.sh 314.0.6 auto | tail -1)" >> "$GITHUB_OUTPUT"
+      - name: Build wasm wheel
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.rust }}
+        # RUSTFLAGS (not CARGO_TARGET_<triple>_RUSTFLAGS, which merges instead
+        # of overriding) replaces the [target.wasm32-unknown-emscripten] block
+        # in .cargo/config.toml.  That block is tuned for the app's Pyodide
+        # 0.27 wheel and carries nightly-only -Z flags; this ABI builds with
+        # *stable* Rust, which rejects them outright.
+        #
+        # --no-default-features drops needletail (emcc cannot link it) and
+        # rayon (the target is single-threaded), as the app wheel does.
+        run: |
+          export RUSTFLAGS="$(pyodide config get rustflags)"
+          rm -rf target/wheels dist
+          pyodide build --config-setting=build-args="--no-default-features"
+      - name: Check wheel platform tag
+        # Only the PEP 783 repack in dist/ may go to PyPI; the maturin output
+        # in target/wheels/ carries the Emscripten-derived tag, which PyPI
+        # rejects.  A wrong tag must fail here, not at upload time.
+        run: |
+          ls target/wheels/ dist/
+          ls dist/*cp314-cp314-pyemscripten_2026_0_wasm32.whl
+      - name: Upload wasm wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-pyemscripten
+          path: dist/*pyemscripten_*_wasm32.whl
+
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [sdist, linux, macos, windows, pyemscripten]
+    if: ${{ github.event_name == 'release' || inputs.publish }}
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+      - name: List what will be uploaded
+        run: ls -l dist
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.RUSTYDOT_PYPI_TOKEN }}
