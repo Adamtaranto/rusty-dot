@@ -8,6 +8,19 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed (drill-down layout)
+
+- The aligner log no longer covers the bottom of the plot in the focused
+  single-pair view. Clicking an annotation shows its metadata in a bar
+  pinned to the bottom of the report frame, and the log box was being laid
+  out over exactly that strip — so the metadata appeared to never show. The
+  drill-down wraps the report in tab panes, which are plain block boxes,
+  and the report frame is an inline element whose wrapper measures nothing:
+  the plot area computed shorter than the frame it held, and the log (the
+  next thing on the page) was drawn into the overflow. The panes now form
+  the same flex column the overview uses, and the annotations table shrinks
+  with its pane instead of overflowing it.
+
 ### Fixed (Shinylive startup)
 
 - Annotations no longer break for the whole session when the app is opened
