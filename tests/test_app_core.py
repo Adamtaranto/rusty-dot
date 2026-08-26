@@ -1115,3 +1115,48 @@ def test_feature_table_sorts_on_the_client():
     # sorts do not depend on the previous one.
     assert 'data-idx' in sort
     assert 'aria-sort' in sort
+
+
+def test_drilldown_plot_pane_is_a_flex_column_like_the_overview():
+    """The aligner log must never be laid out over the report frame.
+
+    In the drill-down `plot_area` wraps the frame in `ui.navset_tab`, whose
+    `.tab-content` / `.tab-pane` are plain block boxes -- and Shiny's output
+    wrappers are `display: contents`, so the frame is a flex item of
+    whatever box encloses it.  Under block layout `.rd-plot-area` measured
+    ~90px shorter than the frame it contained, and `aligner_log_ui` (the
+    next sibling in the page body, with no z-index on either side) was laid
+    out inside that overflow and painted on top of the frame -- hiding the
+    report's fixed bottom detail bar, which is where a clicked annotation's
+    metadata appears.
+
+    These three declarations are what keeps the pane measuring its own
+    contents; dropping any of them brings the overlap straight back.
+    """
+    css = (APP_DIR / 'www' / 'app.css').read_text()
+
+    def rule(selector: str) -> str:
+        head, _, rest = css.partition(selector + ' {')
+        assert rest, f'no rule for {selector}'
+        assert head.rstrip().endswith(('}', '*/')), f'{selector} matched mid-rule'
+        return rest.split('}')[0]
+
+    # The frame itself: an inline replaced element is sized through a line
+    # box, which leaves its wrapper measuring 0 tall.
+    assert 'display: block;' in rule('.rd-report-frame')
+
+    for selector in (
+        '.rd-plot-area .tab-content',
+        '.rd-plot-area .tab-content > .tab-pane.active',
+    ):
+        body = rule(selector)
+        assert 'display: flex;' in body, f'{selector} is not a flex container'
+        assert 'flex-direction: column;' in body, f'{selector} is not a column'
+        assert 'min-height: 0;' in body, f'{selector} cannot shrink'
+
+    # The annotations tab is the same story: its scroller has to shrink with
+    # the pane rather than hold a fixed 62vh and overflow it.
+    for selector in ('.rd-ft-panel', '.rd-ft-scroll'):
+        body = rule(selector)
+        assert 'flex: 1 1 auto;' in body, f'{selector} does not grow/shrink'
+        assert 'min-height: 0;' in body, f'{selector} cannot shrink'
