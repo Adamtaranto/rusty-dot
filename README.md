@@ -29,7 +29,7 @@ See [docs/webapp.md](https://adamtaranto.github.io/rusty-dot/webapp/) for capabi
 Requirements:
 
 - Rust: See [rust-lang.org](https://rust-lang.org/tools/install/)
-- Python >=3.9 <3.15
+- Python >=3.12 <3.15 (binary wheels are published for 3.12, 3.13, 3.14 and 3.14t)
 
 ```bash
 # Clone this project repo

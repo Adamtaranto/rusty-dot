@@ -8,6 +8,31 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed (release wheels)
+
+- Releases now publish real binary wheels. The release workflow ran
+  `hatch build`, which is not the declared build backend and produced no
+  compiled artifact, so installing `rusty-dot` meant compiling Rust from the
+  sdist. It now builds with maturin across Linux (x86_64, aarch64), macOS
+  (arm64, x86_64) and Windows (x64) for CPython 3.12, 3.13, 3.14 and 3.14t,
+  plus an sdist — the whole supported range, so no supported interpreter has
+  to compile from source.
+
+### Added (free-threaded and wasm wheels)
+
+- A free-threaded (`cp314t`) wheel, tested as free-threaded. The module now
+  states `#[pymodule(gil_used = false)]` explicitly instead of inheriting it
+  from pyo3's default, and CI runs the whole test suite on 3.14t and fails if
+  `sys._is_gil_enabled()` is true after import — so a pyo3 upgrade cannot
+  quietly ship a wheel that turns the GIL back on.
+- A PEP 783 `pyemscripten_2026_0_wasm32` wheel on PyPI for browser runtimes,
+  built with `pyodide build` (which supplies the patched Emscripten SDK a Rust
+  side module needs). This is a separate build from the wheel the Shinylive
+  app loads: that one carries the legacy `emscripten_3_1_58_wasm32` tag, which
+  PyPI rejects, and only works on the Pyodide 0.27.7 release Shinylive
+  bundles. The two are not interchangeable, and the app's toolchain is
+  unchanged.
+
 ### Fixed (drill-down layout)
 
 - The aligner log no longer covers the bottom of the plot in the focused

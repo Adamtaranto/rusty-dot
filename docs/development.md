@@ -39,7 +39,14 @@ conda activate rustydot
     and it needs a pinned Emscripten toolchain. See
     [`app/README.md`](https://github.com/Adamtaranto/rusty-dot/blob/main/app/README.md).
 
-Alternatively, use any Python ≥ 3.9 virtual environment:
+!!! note "Released wheels"
+    Releases publish binary wheels for CPython **3.12**, **3.13**, **3.14**
+    and **3.14t** (free-threaded) on Linux, macOS and Windows, an sdist, and a
+    PEP 783 `pyemscripten_*_wasm32` wheel — see
+    `.github/workflows/publish.yml`. That covers the whole supported range
+    (`requires-python = ">=3.12,<3.15"`).
+
+Alternatively, use any Python ≥ 3.12 virtual environment:
 
 ```bash
 python -m venv .venv
