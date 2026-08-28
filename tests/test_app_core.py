@@ -1228,9 +1228,7 @@ def test_dedupe_feature_rows_keeps_distinct_sources():
         rec.source_file = 'genes.gb'
     for rec in b.records:
         rec.source_file = 'genes.gff'
-    rows = build_feature_rows(a, 'c1', 'query') + build_feature_rows(
-        b, 'c1', 'target'
-    )
+    rows = build_feature_rows(a, 'c1', 'query') + build_feature_rows(b, 'c1', 'target')
     # Same coordinates from different files is deliberate (GenBank + GFF
     # both loaded); both copies stay.
     assert dedupe_feature_rows(rows) == rows
