@@ -259,6 +259,10 @@ def _track_entry(axis: str, n: int, group: int, feat: Any) -> dict[str, Any]:
     """Describe one drawn side-track part for the report payload."""
     return {
         'gid': f'rd-{axis}track-{n}',
+        # Set by the app's override pass (annotation_state) so its table
+        # rows and these entries can name the same feature; standalone
+        # renders have no uid and match on coordinates instead.
+        'uid': getattr(feat, 'uid', '') or '',
         'group': int(group),
         'type': feat.feature_type,
         'seqname': feat.seqname,

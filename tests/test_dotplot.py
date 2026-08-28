@@ -1863,6 +1863,26 @@ def test_focused_extreme_ratio_title_clear_of_panel():
     plt.close(fig)
 
 
+def test_focused_title_centered_on_panel_with_colorbar():
+    """The identity colorbar steals axes width; the title must follow."""
+    plotter = _extreme_pair_plotter()
+    fig = plotter.plot(
+        query_names=['tiny_query_contig'],
+        target_names=['very_long_target_chromosome'],
+        title='tiny_query_contig vs very_long_target_chromosome',
+        color_by_identity=True,
+        identity_colorbar=True,
+    )
+    fig.canvas.draw()
+    pos = fig.axes[0].get_position()
+    center = (pos.x0 + pos.x1) / 2
+    # Margins + colorbar leave the panel off figure centre ...
+    assert abs(center - 0.5) > 0.01
+    # ... and the suptitle sits on the panel's centre, not the figure's.
+    assert abs(fig._suptitle.get_position()[0] - center) < 1e-6
+    plt.close(fig)
+
+
 def test_focused_extreme_ratio_labels_inside_canvas():
     """1:100 pair: axis name labels fit fully inside the figure canvas."""
     plotter = _extreme_pair_plotter()

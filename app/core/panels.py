@@ -186,6 +186,7 @@ def nav_tips(focused: bool, multi_panel: bool) -> list[tuple[str, str]]:
         ('Shift+scroll', 'pan left/right'),
         ('Cmd/Ctrl+scroll', 'zoom'),
         ('drag', 'zoom to region'),
+        ('Shift+drag', 'select matches'),
     ]
     if not focused and multi_panel:
         tips.append(('click panel', 'focus'))

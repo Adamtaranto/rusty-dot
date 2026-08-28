@@ -7,7 +7,6 @@ run natively (``shiny run app/app.py``) it uses the installed rusty-dot.
 
 from __future__ import annotations
 
-from html import escape as _esc
 import importlib.util
 import io
 import logging
@@ -42,6 +41,8 @@ from core.annotation_state import (
     apply_feature_overrides,
     build_feature_rows,
     count_pending_overrides,
+    count_pending_type_changes,
+    dedupe_feature_rows,
     merge_annotations,
     replace_source,
     type_slug_map,
@@ -192,6 +193,7 @@ _FEATURE_COLUMNS: tuple[tuple[str, str], ...] = (
     ('Show', 'check'),
     ('Colour', 'color'),
     ('Axis', 'text'),
+    ('Contig', 'text'),
     ('Type', 'text'),
     ('Name', 'text'),
     ('Start', 'num'),
@@ -280,6 +282,21 @@ def debounce(delay_secs: float):
 
 
 _HIDE_REPORT_HEADER_CSS = '<style>#rd-header{display:none}</style>'
+
+# Fullscreen-toggle icons (expand / collapse corners); www/app.css shows
+# exactly one of the pair depending on the html.rd-fullscreen class.
+_FS_EXPAND_SVG = (
+    '<svg class="rd-fs-expand" width="15" height="15" viewBox="0 0 24 24"'
+    ' fill="none" stroke="currentColor" stroke-width="2.4"'
+    ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    '<path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>'
+)
+_FS_COLLAPSE_SVG = (
+    '<svg class="rd-fs-collapse" width="15" height="15" viewBox="0 0 24 24"'
+    ' fill="none" stroke="currentColor" stroke-width="2.4"'
+    ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    '<path d="M3 8h5V3M21 8h-5V3M3 16h5v5M21 16h-5v5"/></svg>'
+)
 
 
 def strip_report_header(html: str) -> str:
@@ -712,9 +729,6 @@ app_ui = ui.page_sidebar(
         ui.output_ui('downloads'),
         width=320,
     ),
-    # Pure-CSS busy pill: html.shiny-busy (set by Shiny while any
-    # computation runs) makes it visible, with spinner + pulse animations.
-    ui.div('Processing…', class_='rd-busy-pill'),
     # Fixed memory note (bottom-right; hidden while the readout is empty,
     # e.g. on native runs where the wasm heap does not exist).
     ui.div(ui.output_text('app_memory'), class_='rd-mem-fixed'),
@@ -725,6 +739,9 @@ app_ui = ui.page_sidebar(
     ui.output_ui('plot_area'),
     ui.output_ui('aligner_log_ui'),
     ui.head_content(
+        # Space Grotesk for the wordmark and headings, embedded as a data
+        # URI so it loads offline under shinylive too.
+        ui.include_css(APP_DIR / 'www' / 'font.css'),
         ui.include_css(APP_DIR / 'www' / 'app.css'),
         ui.include_js(APP_DIR / 'www' / 'bridge.js'),
         # Custom Shiny binding for native <input type="color"> pickers.
@@ -734,10 +751,32 @@ app_ui = ui.page_sidebar(
         ui.include_js(APP_DIR / 'www' / 'feature-table.js', method='inline'),
         # Hold the sidebar's scroll position across dynamic-UI re-renders.
         ui.include_js(APP_DIR / 'www' / 'sidebar-scroll.js', method='inline'),
+        # Mirror ui.Progress messages into the header's task-status slot
+        # (the popup card itself is hidden in app.css).
+        ui.include_js(APP_DIR / 'www' / 'task-status.js', method='inline'),
+        # Plot-area fullscreen toggle (delegated; state on <html>).
+        ui.include_js(APP_DIR / 'www' / 'fullscreen.js', method='inline'),
     ),
+    # The busy pill and the header task status already cover "something is
+    # running"; Shiny's own sliding banner on top of them reads as noise.
+    ui.busy_indicators.use(pulse=False),
     # W1: biowasm aligner bridge (Aioli loaded lazily from the CDN on use).
     ui.head_content(ui.include_js(APP_DIR / 'www' / 'aligners.js', method='inline')),
-    title='rusty-dot · assembly comparison',
+    title=ui.div(
+        ui.span(
+            'rusty',
+            ui.span('·dot', class_='rd-wordmark-dot'),
+            class_='rd-wordmark',
+        ),
+        ui.span('live assembly comparison', class_='rd-wordmark-sub'),
+        # Filled by www/task-status.js with the active ui.Progress message.
+        ui.span(id='rd-task-status', class_='rd-task-status'),
+        # Manual light/dark toggle; defaults to the system preference and
+        # stamps data-bs-theme on <html>, which the --rd-* palette keys off.
+        ui.span(ui.input_dark_mode(id='dark_mode'), class_='rd-theme-toggle'),
+        class_='rd-header-flex',
+    ),
+    window_title='rusty-dot · assembly comparison',
     fillable=True,
 )
 
@@ -1312,12 +1351,21 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     feature_colors_pending = reactive.value({})
     feature_hidden = reactive.value(frozenset())
     feature_colors = reactive.value({})
+    # Per-type choices the plot was last drawn with.  The sidebar controls
+    # are the pending side; they reach this value automatically while no
+    # plot exists yet, and only through "Apply changes" afterwards.  An
+    # empty dict means every type is at its default (visible, type colour).
+    gff_type_applied = reactive.value({})
 
     def _reset_feature_overrides() -> None:
         feature_hidden_pending.set(frozenset())
         feature_colors_pending.set({})
         feature_hidden.set(frozenset())
         feature_colors.set({})
+        # New sources rebuild the type controls at their defaults, so the
+        # applied side resets with them -- anything else would show the
+        # fresh controls as phantom pending changes.
+        gff_type_applied.set({})
 
     @reactive.effect
     @reactive.event(input.query_gff)
@@ -1553,38 +1601,95 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             ui.div(
                 ui.h6('Feature types'),
                 *controls,
+                # Static within this output: its label and disabled state
+                # are driven by ui.update_action_button from
+                # _sync_apply_gff_types_button, so the render still
+                # depends on gff_type_index() alone.
+                ui.input_action_button(
+                    'apply_gff_types',
+                    'Apply changes',
+                    class_='btn-primary btn-sm rd-gff-apply',
+                    disabled=True,
+                ),
                 class_='rd-gff-section',
             ),
         )
 
-    # Each toggle re-runs the whole figure, so unticking several types in a
-    # row rebuilds several times over and the later clicks land on a UI
-    # still drawing the earlier ones.  Waiting for a quiet period lets a
-    # set of changes be made for the price of one render, while still
-    # feeling responsive to a single deliberate toggle.
-    _GFF_TYPE_DEBOUNCE_S = 1.0
-
-    @debounce(_GFF_TYPE_DEBOUNCE_S)
     @reactive.calc
-    def gff_type_choices() -> dict:
-        """Per-type visibility and colour, settled.
+    def gff_type_choices_live() -> dict:
+        """Per-type visibility and colour as the sidebar controls stand.
 
-        One control per *normalised* type, shared by both roles.
+        One control per *normalised* type, shared by both roles.  This is
+        the pending side: the figure draws from ``gff_type_applied``,
+        which these values reach automatically before the first plot and
+        through the "Apply changes" button afterwards.
+
+        A colour picker always holds a real value -- it is initialised to
+        the type's assigned colour -- so that default reads back as ``''``
+        (no override) here; otherwise every type would count as a pending
+        colour change from the moment the controls render.
         """
         rows, slugs, _shared = gff_type_index()
-        return {
-            row['key']: (
+        out = {}
+        for row in rows:
+            color = str(_read_dynamic(f'gcol_{slugs[row["key"]]}', '') or '')
+            if color.lower() == str(row['color']).lower():
+                color = ''
+            out[row['key']] = (
                 bool(_read_dynamic(f'gtyp_{slugs[row["key"]]}', True)),
-                str(_read_dynamic(f'gcol_{slugs[row["key"]]}', '') or ''),
+                color,
             )
-            for row in rows
-        }
+        return out
+
+    @reactive.effect
+    def _sync_types_before_first_plot():
+        """Mirror the type controls straight into the applied state.
+
+        Only while no plot exists yet: choices made before the first run
+        should simply be there when the plot appears, without asking for
+        an explicit apply.  Once a result exists this backs off and the
+        button takes over.
+        """
+        if result() is not None:
+            return
+        live = gff_type_choices_live()
+        with reactive.isolate():
+            if gff_type_applied() != live:
+                gff_type_applied.set(live)
+
+    @reactive.effect
+    @reactive.event(input.apply_gff_types, ignore_init=True)
+    def _apply_gff_types():
+        """Commit the pending type toggles/colours, redrawing once."""
+        # reactive.event isolates the body, so these reads add no
+        # dependencies -- this runs on the button press and nothing else.
+        live = gff_type_choices_live()
+        if gff_type_applied() != live:
+            gff_type_applied.set(live)
+
+    @reactive.effect
+    def _sync_apply_gff_types_button():
+        """Say whether there is anything to apply, and how much."""
+        if result() is None:
+            # Auto-apply mode: nothing can ever be pending.
+            ui.update_action_button(
+                'apply_gff_types', label='Apply changes', disabled=True
+            )
+            return
+        pending = count_pending_type_changes(
+            gff_type_choices_live(), gff_type_applied()
+        )
+        ui.update_action_button(
+            'apply_gff_types',
+            label=f'Apply changes ({pending})' if pending else 'Apply changes',
+            disabled=not pending,
+        )
 
     @reactive.calc
     def annotations():
         """Return (query_ann, target_ann) with the user's type/colour choices."""
         _rows, _slugs, shared = gff_type_index()
-        chosen = gff_type_choices()
+        chosen = gff_type_applied()
         hidden = feature_hidden()
         feat_colors = feature_colors()
         result = {}
@@ -1677,6 +1782,10 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         focus.set(None)
         order_cache.clear()
         figure_ctx_cache.clear()
+        # focus.set(None) is a no-op when the user re-runs from the overview,
+        # so the focus-event clear below never fires and match lookups would
+        # keep resolving against the previous run's records.
+        paf_pair_index.clear()
 
     @reactive.effect
     @reactive.event(focus)
@@ -1995,7 +2104,19 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         if result() is None:
             return None
         pair = focus()
-        toolbar = []
+        # The fullscreen button is a plain client-side toggle (state lives
+        # as a class on <html>, wired in www/fullscreen.js, so it survives
+        # this output's frequent re-renders); no Shiny input involved.
+        toolbar = [
+            ui.tags.button(
+                ui.HTML(_FS_EXPAND_SVG),
+                ui.HTML(_FS_COLLAPSE_SVG),
+                class_='rd-fs-btn',
+                type='button',
+                title='Toggle fullscreen (Esc exits)',
+                aria_label='Toggle fullscreen plot',
+            )
+        ]
         if pair is not None:
             toolbar.append(
                 ui.input_action_button(
@@ -2016,14 +2137,14 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         )
         if pair is None or not feature_rows():
             return ui.div(
-                ui.div(*toolbar, class_='rd-plot-toolbar') if toolbar else None,
+                ui.div(*toolbar, class_='rd-plot-toolbar'),
                 body,
                 hint,
                 class_='rd-plot-area',
             )
         # Tabs only in the drill-down, so the overview path is untouched.
         return ui.div(
-            ui.div(*toolbar, class_='rd-plot-toolbar') if toolbar else None,
+            ui.div(*toolbar, class_='rd-plot-toolbar'),
             ui.navset_tab(
                 ui.nav_panel('Plot', body, hint),
                 ui.nav_panel(
@@ -2056,9 +2177,26 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             return []
         # Both roles are always listed: on a self panel the two axes carry
         # the same sequence but may still hold different uploads.
-        return build_feature_rows(
-            gff_raw_for('query'), pair[0], 'query'
-        ) + build_feature_rows(gff_raw_for('target'), pair[1], 'target')
+        q_ann = gff_raw_for('query')
+        t_ann = gff_raw_for('target')
+        rows = build_feature_rows(q_ann, pair[0], 'query')
+        if t_ann is not None:
+            rows += build_feature_rows(t_ann, pair[1], 'target')
+        elif pair[1] != pair[0]:
+            # No target sources (self-alignment clears them): the target
+            # axis still carries the query assembly, so its features live
+            # in the query annotation set.  uids stay query-role so
+            # show/hide/colour edits hit the records that are drawn; only
+            # the displayed axis says where the feature sits in this pair.
+            fallback = build_feature_rows(q_ann, pair[1], 'query')
+            for r in fallback:
+                r['axis'] = 'target'
+            rows += fallback
+        if pair[0] == pair[1]:
+            # Same sequence on both axes: the same upload under both roles
+            # would list every feature twice.
+            rows = dedupe_feature_rows(rows)
+        return rows
 
     @reactive.effect
     @reactive.event(input.feature_table_change)
@@ -2120,15 +2258,15 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             disabled=not pending,
         )
 
-    @render.ui
-    def annotation_table():
+    def _feature_table_payload() -> dict | None:
+        """Everything feature-table.js needs to build the table body."""
         rows = feature_rows()
         pair = focus()
         if not rows or pair is None:
             return None
-        # Isolated: the table shows the pending edits whenever it *does*
-        # render, but must not re-render on every toggle -- ~600 rows per
-        # sequence rebuilt per click is the freeze this design avoids.
+        # Isolated: the table shows the pending edits whenever it *is*
+        # rebuilt, but must not be re-sent on every toggle -- the client
+        # already painted the change it posted.
         with reactive.isolate():
             hidden = feature_hidden_pending()
             overrides = feature_colors_pending()
@@ -2137,44 +2275,57 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         def type_color(ft: str) -> str:
             return shared.get(normalise_type(ft), '#888888')
 
-        body = []
-        for idx, r in enumerate(rows):
-            checked = '' if r['uid'] in hidden else ' checked'
-            color = overrides.get(r['uid']) or type_color(r['type'])
-            meta = ' · '.join(f'{k}={v}' for k, v in list(r['attributes'].items())[:6])
-            body.append(
-                '<tr data-uid="{uid}" data-idx="{idx}" data-type="{type}" '
-                'data-source="{src}">'
-                '<td><input type="checkbox" data-uid="{uid}" data-kind="vis"{ck}></td>'
-                '<td><input type="color" data-uid="{uid}" data-kind="color" '
-                'value="{color}" data-type-color="{type_color}" '
-                'class="rd-color-input"></td>'
-                '<td class="rd-ft-role">{role}</td>'
-                '<td class="rd-ft-type">{type}</td>'
-                '<td class="rd-ft-name">{name}</td>'
-                '<td class="rd-ft-num">{start:,}</td>'
-                '<td class="rd-ft-num">{end:,}</td>'
-                '<td class="rd-ft-num">{length:,}</td>'
-                '<td>{strand}</td>'
-                '<td class="rd-ft-src">{src}</td>'
-                '<td class="rd-ft-attrs" title="{meta}">{meta}</td>'
-                '</tr>'.format(
-                    uid=_esc(r['uid']),
-                    idx=idx,
-                    ck=checked,
-                    color=_esc(color),
-                    type_color=_esc(type_color(r['type'])),
-                    role=_esc(r['role']),
-                    type=_esc(r['type']),
-                    name=_esc(r['name'] or ''),
-                    start=r['start'],
-                    end=r['end'],
-                    length=r['length'],
-                    strand=_esc(r['strand']),
-                    src=_esc(r['source_file'] or r['source'] or ''),
-                    meta=_esc(meta),
-                )
-            )
+        return {
+            'pair': [pair[0], pair[1]],
+            'rows': [
+                {
+                    'uid': r['uid'],
+                    # Which axis of the focused pair the feature sits on;
+                    # usually the role, but self-alignments list the query
+                    # set on both axes.
+                    'role': r.get('axis', r['role']),
+                    'contig': r['seqname'],
+                    'type': r['type'],
+                    'name': r['name'] or '',
+                    'start': r['start'],
+                    'end': r['end'],
+                    'length': r['length'],
+                    'strand': r['strand'],
+                    'source': r['source_file'] or r['source'] or '',
+                    'attrs': ' · '.join(
+                        f'{k}={v}' for k, v in list(r['attributes'].items())[:6]
+                    ),
+                    'visible': r['uid'] not in hidden,
+                    'color': overrides.get(r['uid']) or type_color(r['type']),
+                    'type_color': type_color(r['type']),
+                }
+                for r in rows
+            ],
+        }
+
+    @reactive.effect
+    async def _push_feature_rows():
+        """Ship the focused pair's feature rows to the browser.
+
+        The table body is built client-side from this message: rendering
+        ~600 rows per sequence as raw HTML through a ``@render.ui`` was
+        what made the Plot <-> Annotations tab switch stall, since Shiny
+        re-inserted and re-scanned the whole blob on every re-show.
+        """
+        payload = _feature_table_payload()
+        if payload is None:
+            return
+        await session.send_custom_message('rd_feature_rows', payload)
+
+    @output(suspend_when_hidden=False)
+    @render.ui
+    def annotation_table():
+        # Static shell only -- caption and body rows arrive through the
+        # 'rd_feature_rows' custom message and are built by
+        # www/feature-table.js.  suspend_when_hidden=False so returning to
+        # the tab re-shows the already-built DOM instead of re-rendering.
+        if not feature_rows() or focus() is None:
+            return None
         # Each header carries how its column compares, so the client can
         # sort without a round trip -- the table deliberately does not
         # re-render, and re-rendering would drop the pending edits.
@@ -2189,27 +2340,35 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             + '</tr></thead>'
         )
         return ui.div(
+            ui.div('', class_='rd-ft-caption'),
             ui.div(
                 ui.HTML(
-                    f'<b>{len(rows)}</b> feature(s) on '
-                    f'<b>{_esc(pair[0])}</b> and <b>{_esc(pair[1])}</b>. '
-                    'Coordinates are 1-based inclusive, as in the source file.'
-                ),
-                class_='rd-ft-caption',
-            ),
-            ui.div(
-                ui.HTML(
+                    '<span class="rd-ft-filters">'
+                    '<select id="rd-ft-filter-col" '
+                    'title="Column the filter applies to"></select>'
                     '<input type="search" id="rd-ft-filter" '
-                    'placeholder="Filter by type, name or source…">'
+                    'placeholder="Filter text…">'
+                    '<button type="button" id="rd-ft-filter-add">'
+                    'Add filter</button>'
+                    '<button type="button" id="rd-ft-filter-apply">'
+                    'Apply filters</button>'
+                    '</span>'
                     '<button type="button" data-bulk="show">Show all</button>'
                     '<button type="button" data-bulk="hide">Hide all</button>'
                     '<button type="button" data-bulk="reset">Reset colours</button>'
                 ),
                 class_='rd-ft-tools',
             ),
+            ui.div(ui.HTML(''), id='rd-ft-chips', class_='rd-ft-chips'),
             ui.HTML(
                 f'<div class="rd-ft-scroll"><table id="rd-feature-table">'
-                f'{header}<tbody>{"".join(body)}</tbody></table></div>'
+                f'{header}<tbody></tbody></table></div>'
+            ),
+            ui.div(
+                'Click a row to select it (⌘/Ctrl-click for several); '
+                'click a selected row again or press Esc to clear. '
+                'Selected features are banded on the Plot tab.',
+                class_='rd-ft-hint',
             ),
             class_='rd-ft-panel',
         )

@@ -355,6 +355,7 @@
     // Only drags starting inside a panel arm region select.
     var panel = closestPanel(evt.target);
     if (!panel) return;
+    var pm = panel.id.match(/^rd-panel-(\d+)-(\d+)$/);
     drag = {
       cx0: evt.clientX,
       cy0: evt.clientY,
@@ -362,6 +363,11 @@
       panelBox: bboxInRootSpace(panel),
       active: false,
       rect: null,
+      // Shift turns the gesture into a box select of match segments in
+      // the origin panel; without it the drag zooms as before.
+      shift: evt.shiftKey,
+      row: pm ? parseInt(pm[1], 10) : -1,
+      col: pm ? parseInt(pm[2], 10) : -1,
     };
   });
 
@@ -374,7 +380,10 @@
       // Passed the threshold: this gesture is a region select, not a click.
       drag.active = true;
       drag.rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      drag.rect.setAttribute('class', 'rd-drag-rect');
+      drag.rect.setAttribute(
+        'class',
+        drag.shift ? 'rd-select-rect' : 'rd-drag-rect'
+      );
       svg.appendChild(drag.rect);
     }
     evt.preventDefault();
@@ -385,14 +394,81 @@
     drag.rect.setAttribute('height', r.h);
   });
 
+  function rectsIntersect(a, b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  }
+
+  function segBox(entry) {
+    if (!entry.bbox) entry.bbox = bboxInRootSpace(entry.el);
+    return entry.bbox;
+  }
+
+  /* Liang-Barsky line/rect clip: does the segment (x1,y1)-(x2,y2) touch
+   * rect r?  Needed because a long diagonal's bounding box covers most of
+   * its panel -- bbox overlap alone would select it from a small box
+   * dragged in the empty corner. */
+  function segIntersectsRect(x1, y1, x2, y2, r) {
+    var dx = x2 - x1;
+    var dy = y2 - y1;
+    var p = [-dx, dx, -dy, dy];
+    var q = [x1 - r.x, r.x + r.w - x1, y1 - r.y, r.y + r.h - y1];
+    var t0 = 0;
+    var t1 = 1;
+    for (var i = 0; i < 4; i++) {
+      if (p[i] === 0) {
+        if (q[i] < 0) return false;
+        continue;
+      }
+      var t = q[i] / p[i];
+      if (p[i] < 0) {
+        if (t > t1) return false;
+        if (t > t0) t0 = t;
+      } else {
+        if (t < t0) return false;
+        if (t < t1) t1 = t;
+      }
+    }
+    return t0 <= t1;
+  }
+
+  /* A match is drawn along one diagonal of its bbox: forward matches run
+   * top-left to bottom-right (query and target advance together, y grows
+   * downward), reverse matches along the other diagonal. */
+  function segTouchesRegion(entry, region) {
+    var b = segBox(entry);
+    if (!rectsIntersect(region, b)) return false;
+    if (entry.strand === '-') {
+      return segIntersectsRect(b.x, b.y + b.h, b.x + b.w, b.y, region);
+    }
+    return segIntersectsRect(b.x, b.y, b.x + b.w, b.y + b.h, region);
+  }
+
   document.addEventListener('mouseup', function (evt) {
     if (!drag) return;
     var wasActive = drag.active;
     var region = wasActive ? dragRegion(evt) : null;
+    var isSelect = drag.shift;
+    var row = drag.row;
+    var col = drag.col;
     cancelDrag();
     if (!wasActive) return; // plain click: let the click handlers run
     suppressNextClick = true;
-    if (region.w > 0 && region.h > 0) {
+    if (!(region.w > 0 && region.h > 0)) return;
+    if (isSelect) {
+      // Box select: highlight every match segment intersecting the box
+      // (bbox approximation) without opening the detail bar or fetching
+      // sequences.  An empty box clears the selection.
+      var hits = segmentRegistry.filter(function (e) {
+        return (
+          e.row === row &&
+          e.col === col &&
+          !e.el.classList.contains('rd-len-hidden') &&
+          segTouchesRegion(e, region)
+        );
+      });
+      closeDetailBar();
+      setMatchSelection(hits);
+    } else {
       setViewBox(fitAspect(region));
     }
   });
@@ -400,9 +476,16 @@
   document.addEventListener('keydown', function (evt) {
     if (evt.key === 'Escape') {
       cancelDrag();
+      // First Escape clears selections/bands (and resets the view); only
+      // an Escape with nothing left to clear asks the embedding app to
+      // leave fullscreen.
+      var hadSelection = hasAnySelection();
       resetView();
-      hideDetail();
+      clearAllSelection();
       clearBands();
+      if (!hadSelection && window.parent !== window) {
+        window.parent.postMessage({ type: 'rd-esc' }, '*');
+      }
     }
   });
 
@@ -416,7 +499,13 @@
   var detailActions = document.getElementById('rd-detail-actions');
   var copyQueryBtn = document.getElementById('rd-copy-query');
   var copyTargetBtn = document.getElementById('rd-copy-target');
-  var selectedMatch = null;
+  // Match selection persists after the detail bar closes and can hold
+  // several segments (Shift+drag box select).  Keyed "row:col:layer:idx"
+  // onto segmentRegistry entries.  Annotation/track features keep their
+  // own single slot so a feature click never silently drops a match
+  // selection's row/column highlights (and vice versa).
+  var selectedSegs = {};
+  var selectedFeatureEl = null;
   // Key ("row:col:layer:idx") of the aligned-sequence request in flight;
   // guards against stale 'rd-seq-response' messages after another click.
   var pendingSeqKey = null;
@@ -557,26 +646,85 @@
     }
   }
 
-  function hideDetail() {
+  /* Close the bar without touching the selection: the × keeps the match
+   * highlighted so its row/column stay marked across the grid. */
+  function closeDetailBar() {
     detail.hidden = true;
     pendingSeqKey = null;
     currentSeg = null;
     setCopyState(false, false, null, null);
-    if (selectedMatch) {
-      selectedMatch.classList.remove('rd-selected-match');
-      selectedMatch = null;
+  }
+
+  function clearMatchSelection() {
+    Object.keys(selectedSegs).forEach(function (k) {
+      selectedSegs[k].el.classList.remove('rd-selected-match');
+    });
+    selectedSegs = {};
+    updateRowColHighlights();
+  }
+
+  /* Replace the match selection with the given registry entries. */
+  function setMatchSelection(entries) {
+    clearMatchSelection();
+    entries.forEach(function (e) {
+      e.el.classList.add('rd-selected-match');
+      selectedSegs[e.key] = e;
+    });
+    updateRowColHighlights();
+  }
+
+  function clearAllSelection() {
+    closeDetailBar();
+    clearMatchSelection();
+    if (selectedFeatureEl) {
+      selectedFeatureEl.classList.remove('rd-selected-match');
+      selectedFeatureEl = null;
     }
+    notifySelectionState();
+  }
+
+  /* Anything Escape would clear before it should mean "exit fullscreen". */
+  function hasAnySelection() {
+    return (
+      Object.keys(selectedSegs).length > 0 ||
+      !!selectedFeatureEl ||
+      Object.keys(activeBands).length > 0
+    );
+  }
+
+  /* Keep the embedding app abreast of whether anything is selected: its
+   * own Escape handling clears selections first and exits fullscreen only
+   * when there is nothing left to clear. */
+  function notifySelectionState() {
+    if (window.parent === window) return;
+    window.parent.postMessage(
+      { type: 'rd-selection-state', any: hasAnySelection() },
+      '*'
+    );
   }
 
   document
     .getElementById('rd-detail-close')
-    .addEventListener('click', hideDetail);
+    .addEventListener('click', closeDetailBar);
 
   function showMatchDetail(panelGid, layer, idx, el) {
     var panel = payload.panels[panelGid];
     if (!panel) return;
     var seg = panel.segments[layer][idx];
     if (!seg) return;
+
+    var pm = panelGid.match(/^rd-panel-(\d+)-(\d+)$/);
+    if (!pm) return;
+    var row = parseInt(pm[1], 10);
+    var col = parseInt(pm[2], 10);
+    var key = row + ':' + col + ':' + layer + ':' + idx;
+    // Clicking the sole-selected match while its bar is open deselects;
+    // with the bar closed (after ×) the same click just reopens the bar.
+    if (!detail.hidden && selectedSegs[key] &&
+        Object.keys(selectedSegs).length === 1) {
+      clearAllSelection();
+      return;
+    }
 
     var strand = layer === 'rev' ? '-' : '+';
     var identity = null;
@@ -613,41 +761,36 @@
       // sequences (a CIGAR-based alignment when available, otherwise the
       // raw query/target slices).  The segment coordinates travel along
       // so non-identity layers need no server-side record lookup.
-      var pm = panelGid.match(/^rd-panel-(\d+)-(\d+)$/);
-      if (pm) {
-        var row = parseInt(pm[1], 10);
-        var col = parseInt(pm[2], 10);
-        pendingSeqKey = row + ':' + col + ':' + layer + ':' + idx;
-        currentSeg = {
-          row: row,
-          col: col,
-          layer: layer,
-          idx: idx,
-          qs: seg[0],
-          qe: seg[1],
-          ts: seg[2],
-          te: seg[3],
-          strand: strand,
-        };
-        detailSeq.textContent = 'Fetching sequences…';
-        detailSeq.hidden = false;
-        window.parent.postMessage(
-          Object.assign({ type: 'rd-match-select' }, currentSeg),
-          '*'
-        );
-      } else {
-        detailSeq.textContent = '';
-        detailSeq.hidden = true;
-      }
+      pendingSeqKey = key;
+      currentSeg = {
+        row: row,
+        col: col,
+        layer: layer,
+        idx: idx,
+        qs: seg[0],
+        qe: seg[1],
+        ts: seg[2],
+        te: seg[3],
+        strand: strand,
+      };
+      detailSeq.textContent = 'Fetching sequences…';
+      detailSeq.hidden = false;
+      window.parent.postMessage(
+        Object.assign({ type: 'rd-match-select' }, currentSeg),
+        '*'
+      );
     } else {
       detailSeq.textContent = '';
       detailSeq.hidden = true;
     }
     detail.hidden = false;
 
-    if (selectedMatch) selectedMatch.classList.remove('rd-selected-match');
-    selectedMatch = el;
-    el.classList.add('rd-selected-match');
+    if (selectedFeatureEl) {
+      selectedFeatureEl.classList.remove('rd-selected-match');
+      selectedFeatureEl = null;
+    }
+    var entry = registryByKey[key];
+    setMatchSelection(entry ? [entry] : [{ el: el, key: key, row: row, col: col }]);
   }
 
   /* Wire up every match group: index its drawable children in document
@@ -655,7 +798,8 @@
    * wide-stroke clone so hairline matches are easy to click.  Each segment
    * is also registered with its query-side length so the embedding app can
    * filter by minimum match length client-side (behaviour 6). */
-  var segmentRegistry = []; // {el, hit, qlen}
+  var segmentRegistry = []; // {el, hit, qlen, row, col, layer, idx, key, bbox}
+  var registryByKey = {};
   var matchGroups = Array.prototype.slice.call(
     svg.querySelectorAll('g[id^="rd-matches-"]')
   );
@@ -665,6 +809,8 @@
     if (!m) return;
     var panelGid = 'rd-panel-' + m[1] + '-' + m[2];
     var layer = m[3];
+    var row = parseInt(m[1], 10);
+    var col = parseInt(m[2], 10);
     var panel = payload.panels[panelGid];
     var segs = panel && panel.segments ? panel.segments[layer] : null;
 
@@ -691,15 +837,131 @@
       hit.addEventListener('click', onClick);
       group.appendChild(hit);
       if (segs && segs[idx]) {
-        // Query-side span, matching the server-side min_length semantics.
-        segmentRegistry.push({
+        var entry = {
           el: el,
           hit: hit,
+          // Query-side span, matching the server-side min_length semantics.
           qlen: segs[idx][1] - segs[idx][0],
-        });
+          row: row,
+          col: col,
+          layer: layer,
+          idx: idx,
+          // Which bbox diagonal the segment is drawn along (box select
+          // tests the actual line, not the bbox): identity segments carry
+          // their strand at [5], the fwd/rev layers imply it.
+          strand:
+            layer === 'rev'
+              ? '-'
+              : layer === 'identity' && segs[idx].length > 5
+                ? segs[idx][5]
+                : '+',
+          key: row + ':' + col + ':' + layer + ':' + idx,
+          // Root-space bbox, filled lazily on the first box select.  The
+          // screen-CTM composition cancels the current viewBox, so one
+          // computation stays valid at any zoom.
+          bbox: null,
+        };
+        segmentRegistry.push(entry);
+        registryByKey[entry.key] = entry;
       }
     });
   });
+
+  /* Axes backgrounds carry their own gid prefix (deliberately outside
+   * rd-panel- so they never masquerade as panels); selection bands are
+   * inserted right after them so they paint behind the match strokes. */
+  var plotBgs = [];
+  Array.prototype.forEach.call(
+    svg.querySelectorAll('[id^="rd-plotbg-"]'),
+    function (el) {
+      var m = el.id.match(/^rd-plotbg-(\d+)-(\d+)$/);
+      if (m) {
+        plotBgs.push({
+          el: el,
+          row: parseInt(m[1], 10),
+          col: parseInt(m[2], 10),
+          box: null, // root-space bbox, lazy (viewBox-independent)
+        });
+      }
+    }
+  );
+
+  function bgBox(bg) {
+    if (!bg.box) bg.box = bboxInRootSpace(bg.el);
+    return bg.box;
+  }
+
+  /* Merge overlapping/touching 1-D intervals ({a, b} with a <= b). */
+  function mergeRanges(ranges) {
+    ranges.sort(function (u, v) {
+      return u.a - v.a;
+    });
+    var out = [];
+    ranges.forEach(function (r) {
+      var last = out[out.length - 1];
+      if (last && r.a <= last.b) {
+        if (r.b > last.b) last.b = r.b;
+      } else {
+        out.push({ a: r.a, b: r.b });
+      }
+    });
+    return out;
+  }
+
+  /* Selection bands: each selected match paints its query range as a
+   * horizontal band through every panel in its grid row and its target
+   * range as a vertical band through every panel in its column (the same
+   * look as the drill-down track bands).  Rows share the query axis and
+   * columns the target axis, so the segment's own root-space extent is
+   * valid across its whole row/column.  Overlapping ranges are merged so
+   * a dense box-selection stays a handful of rects.  On a 1x1 drilldown
+   * this degenerates to a crosshair through the single panel. */
+  var selectionBandEls = [];
+
+  function updateRowColHighlights() {
+    selectionBandEls.forEach(function (el) {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    selectionBandEls = [];
+    var rowRanges = {}; // row -> [{a, b}] y extents (query)
+    var colRanges = {}; // col -> [{a, b}] x extents (target)
+    Object.keys(selectedSegs).forEach(function (k) {
+      var e = selectedSegs[k];
+      if (!e.el || !e.el.getBBox) return;
+      var b = segBox(e);
+      (rowRanges[e.row] = rowRanges[e.row] || []).push({ a: b.y, b: b.y + b.h });
+      (colRanges[e.col] = colRanges[e.col] || []).push({ a: b.x, b: b.x + b.w });
+    });
+    Object.keys(rowRanges).forEach(function (r) {
+      rowRanges[r] = mergeRanges(rowRanges[r]);
+    });
+    Object.keys(colRanges).forEach(function (c) {
+      colRanges[c] = mergeRanges(colRanges[c]);
+    });
+    plotBgs.forEach(function (bg) {
+      var pb = bgBox(bg);
+      (rowRanges[bg.row] || []).forEach(function (r) {
+        addSelectionBand(bg, pb.x, r.a, pb.w, r.b - r.a);
+      });
+      (colRanges[bg.col] || []).forEach(function (r) {
+        addSelectionBand(bg, r.a, pb.y, r.b - r.a, pb.h);
+      });
+    });
+    notifySelectionState();
+  }
+
+  function addSelectionBand(bg, x, y, w, h) {
+    var rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('class', 'rd-selband');
+    rect.setAttribute('x', x);
+    rect.setAttribute('y', y);
+    rect.setAttribute('width', w);
+    rect.setAttribute('height', h);
+    // Right after the background: behind the match strokes by document
+    // order, same trick as the track bands (.rd-band).
+    bg.el.parentNode.insertBefore(rect, bg.el.nextSibling);
+    selectionBandEls.push(rect);
+  }
 
   // ---------------------------------------------------------------------
   // 5. Annotation feature click -> detail bar
@@ -738,9 +1000,13 @@
     detailSeq.hidden = true;
     detail.hidden = false;
 
-    if (selectedMatch) selectedMatch.classList.remove('rd-selected-match');
-    selectedMatch = el;
+    // A feature click replaces any match selection (and its row/column
+    // marks) but lives in its own slot; Escape clears it.
+    clearMatchSelection();
+    if (selectedFeatureEl) selectedFeatureEl.classList.remove('rd-selected-match');
+    selectedFeatureEl = el;
     el.classList.add('rd-selected-match');
+    notifySelectionState();
   }
 
   /* Wire up every diagonal-annotation group: the n-th drawable child of
@@ -811,6 +1077,7 @@
       };
     });
     window.parent.postMessage({ type: 'rd-bands', bands: bands }, '*');
+    notifySelectionState();
   }
 
   function panelBackground() {
@@ -918,6 +1185,96 @@
     publishBands();
   }
 
+  // Bands driven by the embedding app's annotations-table selection
+  // ('rd-highlight-features' messages).  Kept in their own set so
+  // replacing the selection never removes a band the user click-toggled
+  // on a track glyph themselves.
+  var selectionGids = {};
+  var lastSelection = [];
+
+  function entryMatches(entry, f) {
+    // uid is decisive when it matches; on a mismatch the coordinates
+    // still decide, because a self panel draws the query's features on
+    // the x axis under target-role uids.
+    if (f.uid && entry.uid && entry.uid === f.uid) return true;
+    return (
+      entry.seqname === f.seqname &&
+      Number(entry.start) === Number(f.start) &&
+      Number(entry.end) === Number(f.end) &&
+      entry.type === f.type &&
+      entry.strand === f.strand
+    );
+  }
+
+  /* Whether the report currently has real layout.  Inside a hidden tab
+   * pane (display:none) every box measures zero, so bands drawn then
+   * would be degenerate -- and the hidden iframe's window keeps its old
+   * size, so size-based signals never fire. */
+  function panelVisible() {
+    var bg = panelBackground();
+    if (!bg) return false;
+    var r = bg.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  }
+
+  function applySelectionHighlights(features) {
+    lastSelection = Array.isArray(features) ? features : [];
+    Object.keys(selectionGids).forEach(function (gid) {
+      removeBand(gid);
+    });
+    selectionGids = {};
+    if (!panelVisible()) {
+      // Hidden: hold the selection; the visibility observer below
+      // redraws it as soon as the pane is shown again.
+      publishBands();
+      return;
+    }
+    if (trackData && Array.isArray(features)) {
+      features.forEach(function (f) {
+        if (!f) return;
+        // Both axes: a self panel draws the same sequence twice, and the
+        // role-prefixed uids plus seqnames keep cross pairs from
+        // over-matching.
+        ['x', 'y'].forEach(function (axis) {
+          (trackData[axis] || []).forEach(function (entry) {
+            if (!entryMatches(entry, f)) return;
+            if (activeBands[entry.gid]) return; // user's own band wins
+            addBand(entry.gid, entry, axis);
+            selectionGids[entry.gid] = true;
+          });
+        });
+      });
+    }
+    publishBands();
+  }
+
+  // A selection arriving while the report's tab pane is hidden cannot be
+  // drawn (see panelVisible); redraw it when the pane is shown again.
+  // IntersectionObserver is the one signal that reliably reports the
+  // display:none -> shown transition here: the hidden iframe's window
+  // keeps its stale size, so neither the resize event nor a
+  // ResizeObserver ever fires inside it.
+  var selectionRedrawTimer = null;
+
+  function redrawSelectionSoon() {
+    if (!lastSelection.length) return;
+    clearTimeout(selectionRedrawTimer);
+    selectionRedrawTimer = setTimeout(function () {
+      if (panelVisible() && !Object.keys(selectionGids).length) {
+        applySelectionHighlights(lastSelection);
+      }
+    }, 100);
+  }
+
+  window.addEventListener('resize', redrawSelectionSoon);
+  if (window.IntersectionObserver) {
+    new IntersectionObserver(function (entries) {
+      if (entries.some(function (e) { return e.isIntersecting; })) {
+        redrawSelectionSoon();
+      }
+    }).observe(svg);
+  }
+
   if (trackData) {
     ['x', 'y'].forEach(function (axis) {
       var entries = trackData[axis] || [];
@@ -992,6 +1349,25 @@
     if (!msg) return;
     if (msg.type === 'rd-display-opts') {
       applyDisplayOpts(msg);
+      return;
+    }
+    if (msg.type === 'rd-highlight-features') {
+      applySelectionHighlights(msg.features);
+      return;
+    }
+    if (msg.type === 'rd-fullscreen') {
+      // Embedding app entered/left fullscreen: scale the figure to fill
+      // the iframe viewport (CSS keys off this class).
+      document.body.classList.toggle('rd-fs', !!msg.on);
+      return;
+    }
+    if (msg.type === 'rd-clear-selection') {
+      // The app caught Escape while something was selected: clear here,
+      // exactly as an in-report Escape would.
+      cancelDrag();
+      resetView();
+      clearAllSelection();
+      clearBands();
       return;
     }
     if (msg.type === 'rd-seq-response') {

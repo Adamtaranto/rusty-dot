@@ -532,3 +532,16 @@ def test_stale_capture_does_not_leak_into_colorbar(html_index, tmp_path, monkeyp
         plotter.plot_identity_colorbar(output_path=tmp_path / 'cbar.html')
     plt.close('all')
     assert plotter._html_capture is None
+
+
+def test_track_entry_carries_stamped_uid():
+    from rusty_dot._html.serialize import _track_entry
+    from rusty_dot.annotation import GffAnnotation
+
+    ann = GffAnnotation.from_text('c1\tsrc\tgene\t1\t100\t.\t+\t.\tID=g1\n')
+    feat = ann.records[0]
+    # Standalone renders never stamp one; the payload still has the key.
+    assert _track_entry('x', 0, 0, feat)['uid'] == ''
+    # The app's override pass stamps the table's uid onto the record.
+    feat.uid = 'query:0'
+    assert _track_entry('x', 0, 0, feat)['uid'] == 'query:0'

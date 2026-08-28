@@ -1387,6 +1387,12 @@ class DotPlotter:
             cbar.set_label('Identity (%)')
             cbar.set_ticks([0.0, 0.25, 0.5, 0.75, 1.0])
             cbar.set_ticklabels(['0', '25', '50', '75', '100'])
+        if nrows == 1 and ncols == 1 and title and fig._suptitle is not None:
+            # The colorbar (and any figure legend outside the canvas) shifts
+            # the panel off figure-centre; centre the title on the panel, not
+            # the figure.  Must run after the colorbar has stolen its width.
+            pos = axes[0][0].get_position()
+            fig._suptitle.set_x((pos.x0 + pos.x1) / 2)
         if output_path is not None:
             self._save_figure(fig, output_path, dpi=dpi, format=format, title=title)
         return fig

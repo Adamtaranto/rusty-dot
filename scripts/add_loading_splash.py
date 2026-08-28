@@ -34,23 +34,35 @@ SPLASH = f"""{MARKER}
     transition: opacity 0.4s ease;
   }}
   #rd-splash.rd-hide {{ opacity: 0; pointer-events: none; }}
-  #rd-splash h1 {{ font-size: 1.4rem; font-weight: 600; margin: 0; }}
+  #rd-splash h1 {{
+    font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; margin: 0;
+  }}
+  #rd-splash h1 .rd-dot {{ color: #14847e; }}
+  #rd-splash .rd-tag {{
+    font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.14em;
+    color: #48627f; margin-top: -0.6rem;
+  }}
   #rd-splash .rd-sub {{ font-size: 0.95rem; color: #48627f; }}
   #rd-splash .rd-spinner {{
     width: 42px; height: 42px; border-radius: 50%;
-    border: 4px solid #d6e2f0; border-top-color: #2c6bb3;
+    border: 4px solid rgba(20, 132, 126, 0.18); border-top-color: #14847e;
     animation: rd-spin 0.9s linear infinite;
   }}
   @keyframes rd-spin {{ to {{ transform: rotate(360deg); }} }}
   @media (prefers-color-scheme: dark) {{
     #rd-splash {{ background: #14181d; color: #cfe1f5; }}
+    #rd-splash h1 .rd-dot {{ color: #2fb7b0; }}
+    #rd-splash .rd-tag {{ color: #8fa8c4; }}
     #rd-splash .rd-sub {{ color: #8fa8c4; }}
-    #rd-splash .rd-spinner {{ border-color: #2a3947; border-top-color: #5b9bd5; }}
+    #rd-splash .rd-spinner {{
+      border-color: rgba(47, 183, 176, 0.22); border-top-color: #2fb7b0;
+    }}
   }}
 </style>
 <div id="rd-splash">
   <div class="rd-spinner"></div>
-  <h1>rusty-dot &middot; assembly comparison</h1>
+  <h1>rusty<span class="rd-dot">&middot;dot</span></h1>
+  <div class="rd-tag">live assembly comparison</div>
   <div class="rd-sub" id="rd-splash-msg">Starting&hellip;</div>
   <div class="rd-sub" style="font-size: 0.8rem">
     Everything runs in your browser &mdash; your files never leave your machine.

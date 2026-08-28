@@ -97,6 +97,26 @@ g[id^='rd-matches-'] * { pointer-events: stroke; cursor: pointer; }
   pointer-events: none;
 }
 
+/* Rubber-band rectangle for Shift+drag match selection: same shape as the
+   zoom rect but amber, so the gesture reads as "select", not "zoom". */
+.rd-select-rect {
+  fill: rgba(245, 158, 11, 0.12);
+  stroke: #f59e0b;
+  stroke-width: 1.5px;
+  stroke-dasharray: 5 4;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+/* Selection bands: a selected match's query/target ranges drawn through
+   every panel in its grid row/column (mirrors .rd-band for track
+   features; amber to match the selected strokes). */
+.rd-selband {
+  fill: #f59e0b;
+  fill-opacity: 0.16;
+  pointer-events: none;
+}
+
 .rd-selected-match {
   /* !important so the highlight beats matplotlib's inline styles. */
   stroke: #f59e0b !important;
@@ -203,4 +223,20 @@ g[id^='rd-matches-'] * { pointer-events: stroke; cursor: pointer; }
 /* Segments hidden by the embedded min-match-length filter (behaviour 6). */
 .rd-len-hidden {
   display: none;
+}
+
+/* Embedding app is fullscreen ('rd-fullscreen' messages): scale the SVG
+   to fill the iframe viewport.  Width and height are both set, so the
+   default preserveAspectRatio letterboxes instead of distorting. */
+body.rd-fs {
+  padding-bottom: 0;
+}
+
+body.rd-fs #rd-figure {
+  padding: 0.5rem;
+}
+
+body.rd-fs #rd-figure svg {
+  width: 100%;
+  height: calc(100vh - 1rem);
 }
