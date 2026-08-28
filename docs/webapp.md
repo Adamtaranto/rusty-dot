@@ -32,17 +32,30 @@ from the docs site.
 
 ## Limits and notes
 
-- **Memory**: browser WebAssembly is capped at roughly 2 GB, so the app is
-  best suited to viral, bacterial, and fungal-scale assemblies. For large
-  plant or animal genomes, use rusty-dot [locally](installation.md) instead.
-  The sidebar shows the live wasm-heap usage against this cap.
-- **k-mer input limit**: the k-mer method refuses inputs beyond **~80 Mb
-  combined** (and warns above 40 Mb that big runs take minutes) — its index
-  would exhaust the browser heap beyond that. minimap2 / nucmer
-  handle larger inputs; they warn above ~200 MB combined.
-- **First load**: the app downloads roughly 45 MB of Python/wasm runtime
-  assets on first visit; they are cached by the browser, so subsequent loads
-  are fast.
+- **Memory**: the app's Python runtime can grow its WebAssembly heap to
+  4 GB — measured directly: the heap tops out at 4096 MB, with ~4.0 GB
+  allocatable before a clean `MemoryError` (a 90 Mb k-mer run peaked at
+  2.9 GB). The app is best suited to viral, bacterial, and fungal-scale
+  assemblies; for large plant or animal genomes, use rusty-dot
+  [locally](installation.md) instead. The sidebar shows the live wasm-heap
+  usage against this cap.
+- **Input size limits** (measured empirically in Chrome with synthetic
+  assembly pairs): the **k-mer** method completes at 90 Mb combined and
+  crashes the Python runtime at 100 Mb, so beyond **~80 Mb combined** the
+  app removes the k-mer method from the selector (and warns above 40 Mb
+  that big runs take minutes) — at that scale, use minimap2/nucmer here or
+  run the [rusty-dot Python library](tutorials/quickstart.md) locally.
+  **minimap2** and **nucmer** run in their own workers: minimap2
+  completed at **200 MB combined** and nucmer at **250 MB**; at 300 MB the
+  browser tab itself crashed (both tools), so above ~200 MB the app
+  suggests aligning locally and uploading the precomputed PAF via the
+  **Alignment (PAF)** input mode, which skips in-browser aligning
+  entirely.
+- **First load**: the app downloads about 26 MB of Python/wasm runtime
+  assets on first visit (52 files, 37 MB uncompressed — measured from a
+  cold load of the deployed export); the browser caches them, so subsequent
+  loads are fast. The biowasm aligner binaries are separate and fetch only
+  when an aligner is selected.
 - **Why no BLAST?** No production WebAssembly build of NCBI BLAST+ exists, so
   BLAST cannot run in the browser. MUMmer4's `nucmer` is offered as the
   closest substitute for sensitive genome-vs-genome alignment.
