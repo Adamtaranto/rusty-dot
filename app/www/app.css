@@ -22,6 +22,12 @@
   --rd-error-fg: #7a1c13;
   --rd-frame-bg: #ffffff;
 
+  /* Identity: translucent sidebar over a faint dot-grid page backdrop
+     (the dotplot motif), display face for the wordmark and headings. */
+  --rd-sidebar-bg: rgba(242, 246, 250, 0.72);
+  --rd-page-dot: rgba(34, 48, 60, 0.1);
+  --rd-font-display: 'Space Grotesk', var(--bs-body-font-family, sans-serif);
+
   /* Shape & motion. */
   --rd-radius: 8px;
   --rd-radius-sm: 5px;
@@ -29,8 +35,12 @@
   --rd-font-mono: var(--bs-font-monospace, monospace);
 }
 
+/* Dark palette.  The header toggle (ui.input_dark_mode) stamps
+   data-bs-theme on <html>; before the first toggle it mirrors the system
+   preference, so the media query is only a fallback that an explicit
+   'light' choice must beat. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-bs-theme='light']) {
     --rd-accent: #2fb7b0;
     --rd-accent-soft: rgba(47, 183, 176, 0.16);
     --rd-fg: #d5dee7;
@@ -43,19 +53,79 @@
     --rd-border-soft: #33404f;
     --rd-error-bg: #3d1d1d;
     --rd-error-fg: #f5cfcf;
+    --rd-sidebar-bg: rgba(28, 39, 51, 0.72);
+    --rd-page-dot: rgba(213, 222, 231, 0.09);
     /* The embedded report document is always light-themed; a light
        backdrop stops it flashing against a dark app while loading. */
     --rd-frame-bg: #f5f5f5;
   }
 }
 
+:root[data-bs-theme='dark'] {
+  --rd-accent: #2fb7b0;
+  --rd-accent-soft: rgba(47, 183, 176, 0.16);
+  --rd-fg: #d5dee7;
+  --rd-muted: #aabdd0;
+  --rd-faint: #8fa1b3;
+  --rd-surface: #1c2733;
+  --rd-surface-strong: #1d2b3d;
+  --rd-on-surface-strong: #cfe1f5;
+  --rd-border: rgba(160, 175, 190, 0.28);
+  --rd-border-soft: #33404f;
+  --rd-error-bg: #3d1d1d;
+  --rd-error-fg: #f5cfcf;
+  --rd-sidebar-bg: rgba(28, 39, 51, 0.72);
+  --rd-page-dot: rgba(213, 222, 231, 0.09);
+  --rd-frame-bg: #f5f5f5;
+}
+
 /* --- branding --------------------------------------------------------- */
 
-/* Page header: wordmark treatment for the app title with an accent rule. */
+/* The dotplot motif: a faint dot grid behind the whole page. The
+   translucent sidebar (below) floats over it. */
+body {
+  background-color: var(--bs-body-bg, #fff);
+  background-image: radial-gradient(var(--rd-page-dot) 1px, transparent 1.4px);
+  background-size: 22px 22px;
+}
+
+/* Page header: the title is a flex row — wordmark, tagline, and the
+   task-status readout pushed to the right end. */
+.rd-header-flex {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  width: 100%;
+  min-width: 0;
+}
+
 .navbar-brand,
 .bslib-page-title {
+  width: 100%;
+}
+
+/* The wordmark's middot is the brand: the one dot of the dotplot,
+   set in the accent colour. */
+.rd-wordmark {
+  font-family: var(--rd-font-display);
   font-weight: 700;
-  letter-spacing: 0.01em;
+  font-size: 1.3rem;
+  letter-spacing: -0.02em;
+  color: var(--rd-fg);
+  white-space: nowrap;
+}
+
+.rd-wordmark-dot {
+  color: var(--rd-accent);
+}
+
+.rd-wordmark-sub {
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--rd-muted);
+  white-space: nowrap;
 }
 
 .bslib-page-title::after,
@@ -71,6 +141,59 @@
     var(--rd-accent),
     var(--rd-accent-soft)
   );
+}
+
+/* Manual dark-mode toggle at the far right of the header. */
+.rd-theme-toggle {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--rd-muted);
+}
+
+.rd-theme-toggle .form-check,
+.rd-theme-toggle bslib-input-dark-mode {
+  margin: 0;
+}
+
+/* Active-task readout at the right end of the header, fed by
+   www/task-status.js from the (hidden) ui.Progress messages. */
+.rd-task-status {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--rd-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity var(--rd-transition);
+}
+
+.rd-task-status:not(:empty) {
+  opacity: 1;
+}
+
+.rd-task-status:not(:empty)::before {
+  content: '';
+  flex: none;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  border: 2px solid var(--rd-accent-soft);
+  border-top-color: var(--rd-accent);
+  animation: rd-spin 0.9s linear infinite;
+}
+
+/* The ui.Progress popup card duplicates the header readout and the busy
+   pill; task-status.js mirrors its text, so the card itself stays hidden.
+   Ordinary ui.notification_show toasts have no progress node and remain
+   visible. */
+.shiny-notification:has(.shiny-progress-notification),
+.shiny-progress-notification {
+  display: none;
 }
 
 /* --- base blocks ------------------------------------------------------ */
@@ -115,8 +238,23 @@
   border-color: var(--rd-accent);
 }
 
+/* Translucent sidebar floating over the dot-grid backdrop. bslib paints
+   the panel through its own --_sidebar-bg custom property; override both
+   that and the background so the rule survives bslib version drift. */
+.bslib-sidebar-layout {
+  --_sidebar-bg: var(--rd-sidebar-bg);
+}
+
+.bslib-sidebar-layout > .sidebar {
+  background-color: var(--rd-sidebar-bg);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  border-right: 1px solid var(--rd-border);
+}
+
 /* Sidebar sections: subtle separation and tighter headings. */
 .sidebar h5 {
+  font-family: var(--rd-font-display);
   margin-top: 0.5rem;
   margin-bottom: 0.5rem;
   font-weight: 600;
@@ -153,6 +291,24 @@
 
 /* --- plot area -------------------------------------------------------- */
 
+/* Drill-down tabs: quiet labels, accent underline on the active one. */
+.rd-plot-area .nav-tabs .nav-link {
+  font-family: var(--rd-font-display);
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: var(--rd-muted);
+}
+
+.rd-plot-area .nav-tabs .nav-link:hover {
+  color: var(--rd-fg);
+}
+
+.rd-plot-area .nav-tabs .nav-link.active {
+  color: var(--rd-fg);
+  background: transparent;
+  box-shadow: inset 0 -2px 0 var(--rd-accent);
+}
+
 .rd-plot-area {
   display: flex;
   flex-direction: column;
@@ -176,6 +332,39 @@
   font-family: var(--rd-font-mono);
   font-size: 0.9rem;
   color: var(--rd-fg);
+}
+
+/* Fullscreen toggle at the left end of the plot toolbar.  The icon pair
+   swaps on html.rd-fullscreen (toggled by www/fullscreen.js). */
+.rd-fs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem;
+  border: 1px solid var(--rd-border);
+  border-radius: var(--rd-radius);
+  background: var(--rd-surface);
+  color: var(--rd-muted);
+  cursor: pointer;
+  line-height: 0;
+  transition: color var(--rd-transition), border-color var(--rd-transition);
+}
+
+.rd-fs-btn:hover {
+  color: var(--rd-accent);
+  border-color: var(--rd-accent);
+}
+
+.rd-fs-btn .rd-fs-collapse {
+  display: none;
+}
+
+html.rd-fullscreen .rd-fs-btn .rd-fs-expand {
+  display: none;
+}
+
+html.rd-fullscreen .rd-fs-btn .rd-fs-collapse {
+  display: inline;
 }
 
 /* Compact 'how to navigate' hint below the interactive report. */
@@ -206,6 +395,55 @@
   background: var(--rd-frame-bg);
 }
 
+/* Fullscreen: the plot area becomes a fixed overlay covering the viewport;
+   the frame drops its fixed height and fills the remaining column. */
+html.rd-fullscreen .rd-plot-area {
+  position: fixed;
+  inset: 0;
+  z-index: 1055;
+  margin: 0;
+  padding: 0.75rem;
+  background: var(--bs-body-bg, #fff);
+  overflow: auto;
+}
+
+html.rd-fullscreen .rd-plot-area .rd-report-frame {
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Stretch the wrapper chain (shiny output div, tab panes) so the frame's
+   flex:1 actually reaches the viewport height. */
+html.rd-fullscreen .rd-plot-area #report_frame {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+html.rd-fullscreen .rd-plot-area .shiny-plot-output {
+  flex: 1 1 auto;
+  height: auto !important;
+  min-height: 0;
+}
+
+html.rd-fullscreen body {
+  overflow: hidden;
+}
+
+/* Fullscreen is the plot and its toolbar, nothing else: navigation
+   hints, the memory readout and the drill-down tab strip all disappear
+   (fullscreen.js activates the Plot tab on entry so the hidden strip can
+   never strand the user on the Annotations pane).  The back-to-overview
+   button stays: it swaps the view while fullscreen persists, since the
+   state lives as a class on <html>. */
+html.rd-fullscreen .rd-nav-hint,
+html.rd-fullscreen .rd-mem-fixed,
+html.rd-fullscreen .rd-plot-area .nav-tabs {
+  display: none !important;
+}
+
 /* The drill-down wraps the report in Bootstrap tab panes, which navset_tab
    leaves as plain block boxes.  Give the active pane the same flex column
    the overview uses, so the frame is measured the same way in both views --
@@ -225,6 +463,13 @@
   min-height: 0;
 }
 
+/* In fullscreen the tab panes must also grow, so the frame's flex:1 above
+   reaches the viewport height. */
+html.rd-fullscreen .rd-plot-area .tab-content,
+html.rd-fullscreen .rd-plot-area .tab-content > .tab-pane.active {
+  flex: 1 1 auto;
+}
+
 /* Loading states: dim outputs while Shiny recomputes them. */
 .recalculating,
 .rd-plot-area .recalculating {
@@ -232,56 +477,9 @@
   transition: opacity 250ms ease 250ms;
 }
 
-/* --- busy indicator --------------------------------------------------- */
-
-/* Pure-CSS processing pill: Shiny toggles the html.shiny-busy class while
-   any computation (aligners, index build, report render) is in flight. */
-.rd-busy-pill {
-  display: none;
-  align-items: center;
-  gap: 0.45rem;
-  position: fixed;
-  right: 1rem;
-  /* Sits above the fixed memory note in the bottom-right corner. */
-  bottom: 3.2rem;
-  z-index: 2000;
-  padding: 0.35rem 0.8rem;
-  border-radius: 999px;
-  background: var(--rd-surface-strong);
-  color: var(--rd-on-surface-strong);
-  border: 1px solid var(--rd-border);
-  font-size: 0.8rem;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
-  animation: rd-pulse 1.6s ease-in-out infinite;
-}
-
-html.shiny-busy .rd-busy-pill {
-  display: flex;
-}
-
-.rd-busy-pill::before {
-  content: '';
-  width: 0.85rem;
-  height: 0.85rem;
-  border-radius: 50%;
-  border: 2px solid var(--rd-accent);
-  border-top-color: transparent;
-  animation: rd-spin 0.8s linear infinite;
-}
-
 @keyframes rd-spin {
   to {
     transform: rotate(360deg);
-  }
-}
-
-@keyframes rd-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.75;
   }
 }
 
@@ -337,6 +535,12 @@ html.shiny-busy .rd-busy-pill {
   margin: 0.3rem 0;
   font-size: 0.8rem;
   color: var(--rd-muted);
+}
+
+/* Sidebar Apply for the feature-type toggles; its state is driven by
+   ui.update_action_button, never by a re-render. */
+.rd-gff-section .rd-gff-apply {
+  margin-top: 0.45rem;
 }
 
 .rd-gff-type-row {
@@ -450,6 +654,72 @@ html.shiny-busy .rd-busy-pill {
 
 .rd-ft-tools button:hover {
   border-color: var(--rd-accent);
+}
+
+/* Per-column filter builder: a column picker, the text box, and the
+   chips showing which filters are active. */
+.rd-ft-filters {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex: 1 1 22rem;
+  min-width: 14rem;
+}
+
+.rd-ft-filters select {
+  padding: 0.22rem 0.3rem;
+  border: 1px solid var(--rd-border-soft);
+  border-radius: 4px;
+  background: var(--rd-surface);
+  color: var(--rd-fg);
+  font-size: 0.78rem;
+}
+
+.rd-ft-chips {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.rd-ft-chips:empty {
+  display: none;
+}
+
+.rd-ft-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.3rem 0.1rem 0.5rem;
+  border: 1px solid var(--rd-border-soft);
+  border-radius: 999px;
+  background: var(--rd-accent-soft);
+  font-size: 0.75rem;
+  color: var(--rd-fg);
+}
+
+.rd-ft-chip button {
+  border: none;
+  background: none;
+  padding: 0 0.15rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: var(--rd-muted);
+  cursor: pointer;
+}
+
+.rd-ft-chip button:hover {
+  color: var(--rd-accent);
+}
+
+/* Selected rows, banded on the Plot tab. */
+#rd-feature-table tbody tr.rd-row-selected {
+  background: var(--rd-accent-soft);
+  box-shadow: inset 3px 0 0 var(--rd-accent);
+}
+
+.rd-ft-hint {
+  font-size: 0.75rem;
+  color: var(--rd-muted);
 }
 
 /* The table scrolls inside its own box so the page never scrolls sideways,

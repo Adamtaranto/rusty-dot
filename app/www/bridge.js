@@ -31,15 +31,57 @@
  *   'rd-copy-response' {row, col, layer, idx, side, seq?, error?} — one
  *       full match sequence for a prior 'rd-copy-request'; arrives from
  *       the server via the 'rd_copy_seq' custom message.
+ *   'rd-fullscreen' {on} — the app entered/left plot fullscreen
+ *       (fullscreen.js announces it via the 'rd-fs-change' CustomEvent);
+ *       the report scales its figure to the viewport while on.
  */
 (function () {
   'use strict';
 
   var lastOpts = { dot_size: 0.5, min_length: 0 };
+  // Features the annotations table currently has selected, held so a
+  // re-rendered iframe gets them again (feature-table.js announces them
+  // through the 'rd-ft-selection' CustomEvent).
+  var lastHighlights = [];
+  // Whether the app is in fullscreen (fullscreen.js announces changes via
+  // the 'rd-fs-change' CustomEvent); the report scales its figure to the
+  // viewport while set, and a re-rendered iframe must be told again.
+  var lastFullscreen = false;
 
   function reportFrame() {
     return document.querySelector('iframe.rd-report-frame');
   }
+
+  function pushHighlightsToReport() {
+    var frame = reportFrame();
+    if (frame && frame.contentWindow) {
+      frame.contentWindow.postMessage(
+        { type: 'rd-highlight-features', features: lastHighlights },
+        '*'
+      );
+    }
+  }
+
+  document.addEventListener('rd-ft-selection', function (ev) {
+    var features = ev && ev.detail && ev.detail.features;
+    lastHighlights = Array.isArray(features) ? features : [];
+    pushHighlightsToReport();
+  });
+
+  function pushFullscreenToReport() {
+    var frame = reportFrame();
+    if (frame && frame.contentWindow) {
+      frame.contentWindow.postMessage(
+        { type: 'rd-fullscreen', on: lastFullscreen },
+        '*'
+      );
+    }
+  }
+
+  document.addEventListener('rd-fs-change', function (ev) {
+    lastFullscreen = !!(ev && ev.detail && ev.detail.on);
+    pushFullscreenToReport();
+  });
 
   function pushOptsToReport() {
     var frame = reportFrame();
@@ -65,6 +107,8 @@
       var frame = reportFrame();
       if (frame && ev.source === frame.contentWindow) {
         pushOptsToReport();
+        if (lastHighlights.length) pushHighlightsToReport();
+        if (lastFullscreen) pushFullscreenToReport();
       }
       return;
     }

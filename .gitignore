@@ -58,3 +58,8 @@ target/
 
 # rusty-dot browser app: wasm wheel dropped in at export time, never committed
 app/wheels/
+
+# Node deps pulled in by scripts/wasm_smoke_test.mjs (pyodide npm package)
+node_modules/
+package.json
+package-lock.json

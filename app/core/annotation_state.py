@@ -208,6 +208,48 @@ def build_feature_rows(
     return rows
 
 
+def dedupe_feature_rows(rows: list[dict]) -> list[dict]:
+    """Drop repeated features from a self-panel's combined row list.
+
+    A self panel puts the same sequence on both axes, so when the same
+    annotation set is loaded under both roles every feature would list
+    twice.  Rows are compared on what identifies a feature in its source
+    file; the first occurrence wins, which keeps the query-role row —
+    its uid is the one the override state tracks.
+
+    Deliberate duplicates *within* one role (the same feature from a
+    GenBank file and an uploaded GFF) have different ``source_file``
+    values and are kept.
+
+    Parameters
+    ----------
+    rows : list[dict]
+        Combined rows from :func:`build_feature_rows` for both roles.
+
+    Returns
+    -------
+    list[dict]
+        Rows with cross-role duplicates removed, original order kept.
+    """
+    seen: set[tuple] = set()
+    out = []
+    for r in rows:
+        key = (
+            r['seqname'],
+            r['start'],
+            r['end'],
+            r['type'],
+            r['strand'],
+            r['source_file'],
+            r['name'],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
+    return out
+
+
 def apply_feature_overrides(
     annotation: 'GffAnnotation | None',
     hidden_uids: frozenset[str],
@@ -252,6 +294,10 @@ def apply_feature_overrides(
     kept = []
     for i, rec in enumerate(annotation.records):
         uid = f'{role}:{i}'
+        # Stamped so the report payload can name the feature; the
+        # drill-down table selects rows by this same uid and the report
+        # matches its track entries against it when banding them.
+        rec.uid = uid
         if uid in hidden_uids:
             continue
         override = colors.get(uid)
@@ -360,3 +406,41 @@ def count_pending_overrides(
         if colors_pending.get(uid) != colors_applied.get(uid):
             changed.add(uid)
     return len(changed)
+
+
+#: Default per-type state: visible, no colour override.
+_TYPE_DEFAULT: tuple[bool, str] = (True, '')
+
+
+def count_pending_type_changes(
+    live: Mapping[str, tuple],
+    applied: Mapping[str, tuple],
+) -> int:
+    """Count feature types whose sidebar controls differ from the plot.
+
+    Drives the sidebar's "Apply changes" button, the per-type sibling of
+    :func:`count_pending_overrides`.  A type missing from either mapping
+    counts as the default (visible, type colour), so a freshly-seeded
+    empty ``applied`` shows no phantom changes against all-default
+    controls.
+
+    Parameters
+    ----------
+    live, applied : Mapping[str, tuple]
+        ``type -> (visible, colour)`` — the controls' current values and
+        what the plot was last drawn with.
+
+    Returns
+    -------
+    int
+        Number of types that would change on apply.
+    """
+
+    def norm(state: tuple) -> tuple[bool, str]:
+        on, color = state
+        return bool(on), str(color or '')
+
+    return sum(
+        norm(live.get(key, _TYPE_DEFAULT)) != norm(applied.get(key, _TYPE_DEFAULT))
+        for key in set(live) | set(applied)
+    )

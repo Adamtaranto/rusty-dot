@@ -696,6 +696,20 @@ def test_report_frame_is_not_suspended_when_hidden():
     assert 'suspend_when_hidden=False' in head.rsplit('@output', 1)[1]
 
 
+def test_new_result_clears_the_paf_pair_index():
+    """A re-run from the overview must drop the previous run's records.
+
+    ``paf_pair_index`` is otherwise cleared only on a ``focus`` change, and
+    ``focus.set(None)`` is a no-op when the user is already in the overview
+    -- sequence previews then resolved CIGARs (or their absence) from the
+    stale records of the previous aligner run.
+    """
+    app_py = (APP_DIR / 'app.py').read_text()
+    body = app_py.split('def _reset_focus_on_new_result')[1]
+    body = body.split('@reactive.effect')[0]
+    assert 'paf_pair_index.clear()' in body
+
+
 # ------------------------------------------------------ annotation sources
 
 
@@ -967,22 +981,32 @@ def test_self_align_drops_target_annotations_but_spares_paf():
     )
 
 
-def test_feature_type_toggles_are_debounced():
+def test_feature_type_toggles_are_held_until_apply():
     """Each toggle otherwise re-renders the whole figure.
 
-    Unticking six types in a row rebuilt six times over, and the later
-    clicks landed on a UI still drawing the earlier ones.
+    Choices made before the first plot apply themselves when it is
+    generated; afterwards they wait for the sidebar's Apply button.
     """
     app_py = (APP_DIR / 'app.py').read_text()
 
-    head = app_py.split('def gff_type_choices')[0]
-    assert '@debounce(_GFF_TYPE_DEBOUNCE_S)' in head.rsplit('\n\n', 1)[-1]
-
-    # annotations() must go through the settled values, not the raw inputs.
+    # annotations() must go through the applied values, not the raw inputs.
     body = app_py.split('def annotations')[1].split('# --- end GFF')[0]
-    assert 'gff_type_choices()' in body
-    for raw in ('gtyp_', 'gcol_'):
+    assert 'gff_type_applied()' in body
+    for raw in ('gtyp_', 'gcol_', 'gff_type_choices_live'):
         assert raw not in body, f'annotations() still reads {raw}* directly'
+
+    # The commit runs on the button press and nothing else.
+    apply_fn = app_py.split('def _apply_gff_types')[1].split('@reactive.effect')[0]
+    assert 'gff_type_applied.set(live)' in apply_fn
+    head = app_py.split('def _apply_gff_types')[0].rsplit('@reactive.effect', 1)[1]
+    assert '@reactive.event(input.apply_gff_types' in head
+
+    # Before the first plot the live values flow straight through; the
+    # mirror backs off as soon as a result exists.
+    auto = app_py.split('def _sync_types_before_first_plot')[1]
+    auto = auto.split('@reactive.effect')[0]
+    assert 'if result() is not None:' in auto and 'return' in auto
+    assert 'gff_type_applied.set(live)' in auto
 
 
 # ------------------------------------------------ pending feature overrides
@@ -1054,16 +1078,22 @@ def test_feature_edits_are_held_until_apply():
 
 
 def test_annotation_table_does_not_rerender_on_every_edit():
-    """It reads the pending values under isolate() for exactly this reason."""
+    """The row payload reads pending values under isolate() for this reason."""
     app_py = (APP_DIR / 'app.py').read_text()
-    body = app_py.split('def annotation_table')[1].split('\n    @')[0]
+    body = app_py.split('def _feature_table_payload')[1].split('\n    @')[0]
     assert 'with reactive.isolate():' in body
     assert 'feature_hidden_pending()' in body
 
+    # The rows themselves are built client-side; the shell must not loop
+    # over them (that render cost is what stalled the tab switch).
+    shell = app_py.split('def annotation_table')[1].split('\n    @')[0]
+    assert 'for r in rows' not in shell
+    assert '<tbody></tbody>' in shell
+
     # With no re-render, the reset button has to repaint the swatches, so
     # each one carries the type colour it falls back to.
-    assert 'data-type-color=' in body
     js = (APP_DIR / 'www' / 'feature-table.js').read_text()
+    assert 'data-type-color=' in js
     reset = js.split("action === 'reset'")[1]
     assert 'dataset.typeColor' in reset
 
@@ -1088,13 +1118,15 @@ def test_feature_table_headers_declare_how_they_sort():
     assert kinds['Start'] == kinds['End'] == kinds['Length'] == 'num'
     assert kinds['Show'] == 'check'
     assert kinds['Colour'] == 'color'
-    assert kinds['Type'] == kinds['Name'] == 'text'
+    assert kinds['Type'] == kinds['Name'] == kinds['Contig'] == 'text'
 
     app_py = (APP_DIR / 'app.py').read_text()
     body = app_py.split('def annotation_table')[1].split('\n    @')[0]
     assert 'data-sort=' in body and 'aria-sort=' in body
-    # Rows remember their file position so the sort can be undone.
-    assert 'data-idx=' in body
+    # Rows remember their file position so the sort can be undone; they
+    # are built client-side, so the marker lives in the row template.
+    js = (APP_DIR / 'www' / 'feature-table.js').read_text()
+    assert 'data-idx=' in js
 
 
 def test_feature_table_sorts_on_the_client():
@@ -1160,3 +1192,61 @@ def test_drilldown_plot_pane_is_a_flex_column_like_the_overview():
         body = rule(selector)
         assert 'flex: 1 1 auto;' in body, f'{selector} does not grow/shrink'
         assert 'min-height: 0;' in body, f'{selector} cannot shrink'
+
+
+# ------------------------------------------------- feature-row dedupe / uids
+
+
+def test_apply_feature_overrides_stamps_uids_on_records():
+    from core.annotation_state import apply_feature_overrides
+
+    ann = _feature_ann()
+    out = apply_feature_overrides(ann, frozenset(), {}, 'query')
+    assert [r.uid for r in out.records] == ['query:0', 'query:1', 'query:2']
+    # keep_feature_types reuses the record objects, so the uid survives the
+    # type filter that runs after the override pass.
+    filtered = out.keep_feature_types(['gene'])
+    assert [r.uid for r in filtered.records] == ['query:0', 'query:2']
+
+
+def test_dedupe_feature_rows_drops_cross_role_copies():
+    from core.annotation_state import build_feature_rows, dedupe_feature_rows
+
+    q = build_feature_rows(_feature_ann(), 'c1', 'query')
+    t = build_feature_rows(_feature_ann(), 'c1', 'target')
+    # Self panel with the same upload under both roles: every feature
+    # would list twice; the first (query-role) copy wins.
+    assert dedupe_feature_rows(q + t) == q
+
+
+def test_dedupe_feature_rows_keeps_distinct_sources():
+    from core.annotation_state import build_feature_rows, dedupe_feature_rows
+
+    a = _feature_ann()
+    b = _feature_ann()
+    for rec in a.records:
+        rec.source_file = 'genes.gb'
+    for rec in b.records:
+        rec.source_file = 'genes.gff'
+    rows = build_feature_rows(a, 'c1', 'query') + build_feature_rows(b, 'c1', 'target')
+    # Same coordinates from different files is deliberate (GenBank + GFF
+    # both loaded); both copies stay.
+    assert dedupe_feature_rows(rows) == rows
+
+
+def test_count_pending_type_changes():
+    from core.annotation_state import count_pending_type_changes
+
+    assert count_pending_type_changes({}, {}) == 0
+    live = {'gene': (True, ''), 'cds': (False, '#112233')}
+    assert count_pending_type_changes(live, dict(live)) == 0
+    # A missing key means the default (visible, type colour), so all-default
+    # controls against a freshly reset applied side show nothing pending.
+    assert count_pending_type_changes({'gene': (True, '')}, {}) == 0
+    assert count_pending_type_changes(live, {}) == 1
+    assert count_pending_type_changes(live, {'gene': (False, '')}) == 2
+    # A colour-only edit counts as a change.
+    assert (
+        count_pending_type_changes({'gene': (True, '#ffffff')}, {'gene': (True, '')})
+        == 1
+    )
