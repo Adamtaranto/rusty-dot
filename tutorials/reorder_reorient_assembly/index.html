@@ -1,0 +1,1568 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Fast dot plot comparisons of DNA sequences using a rolling-hash k-mer index">
+      
+      
+      
+        <link rel="canonical" href="https://adamtaranto.github.io/rusty-dot/tutorials/reorder_reorient_assembly/">
+      
+      
+        <link rel="prev" href="../minimap2_paf_tutorial/">
+      
+      
+        <link rel="next" href="../../api/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="zensical-0.0.57">
+    
+    
+      
+        <title>Reordering and Reorienting One Assembly to Match Another - rusty-dot</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.5da3a30f.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.812a03bb.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7CJetBrains+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#reordering-and-reorienting-one-assembly-to-match-another" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rusty-dot" class="md-header__button md-logo" aria-label="rusty-dot" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 5v16M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rusty-dot
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Reordering and Reorienting One Assembly to Match Another
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search" aria-label="Search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/Adamtaranto/rusty-dot" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Adamtaranto/rusty-dot
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../webapp/" class="md-tabs__link">
+        
+  
+  Web App
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../installation/" class="md-tabs__link">
+        
+  
+  Installation
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../development/" class="md-tabs__link">
+        
+  
+  Development Guide
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+      
+    
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../quickstart/" class="md-tabs__link">
+          
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+      
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rusty-dot" class="md-nav__button md-logo" aria-label="rusty-dot" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 5v16M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/></svg>
+
+    </a>
+    rusty-dot
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Adamtaranto/rusty-dot" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Adamtaranto/rusty-dot
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Home
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../webapp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Web App
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Installation
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Development Guide
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Tutorials
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+  Tutorials
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Quick Start
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dotplot_tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Dotplot Visualization
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../paf_workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  PAF Workflow
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../all_vs_all_two_indices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  All-vs-All Between Two Indices
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../write_reordered_fasta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Writing Reordered FASTA
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../minimap2_paf_tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Minimap2 PAF Visualization
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Reorder & Reorient an Assembly
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Reorder & Reorient an Assembly
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-build-two-toy-assemblies" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        1. Build two toy assemblies
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-load-both-assemblies-into-a-crossindex" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        2. Load both assemblies into a <code>CrossIndex</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-compute-matches-and-plot-the-messy-baseline" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        3. Compute matches and plot the messy baseline
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-reorder-and-reorient-the-draft-against-the-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        4. Reorder and reorient the draft against the reference
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-re-plot-the-clean-near-diagonal-picture" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        5. Re-plot: the clean, near-diagonal picture
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-export-the-corrected-draft-as-fasta" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        6. Export the corrected draft as FASTA
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Summary
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-tutorials" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Related tutorials
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  API Reference
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+  API Reference
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Overview
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/sequence_index/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  SequenceIndex
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dotplot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  DotPlotter
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/cross_index/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  CrossIndex
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/paf_io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  PAF I/O
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Plot Style
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Low-Level Functions
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-build-two-toy-assemblies" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        1. Build two toy assemblies
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-load-both-assemblies-into-a-crossindex" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        2. Load both assemblies into a <code>CrossIndex</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-compute-matches-and-plot-the-messy-baseline" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        3. Compute matches and plot the messy baseline
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-reorder-and-reorient-the-draft-against-the-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        4. Reorder and reorient the draft against the reference
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-re-plot-the-clean-near-diagonal-picture" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        5. Re-plot: the clean, near-diagonal picture
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-export-the-corrected-draft-as-fasta" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        6. Export the corrected draft as FASTA
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Summary
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-tutorials" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Related tutorials
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+  
+  
+
+
+<h1 id="reordering-and-reorienting-one-assembly-to-match-another">Reordering and Reorienting One Assembly to Match Another<a class="headerlink" href="#reordering-and-reorienting-one-assembly-to-match-another" title="Permanent link">&para;</a></h1>
+<p>A freshly assembled genome rarely comes out tidy: contigs are emitted in an
+arbitrary order, and roughly half of them are written on the opposite strand to
+the reference you want to compare against.  The resulting dotplot is a mess of
+off-diagonal blocks and anti-diagonal (reverse-strand) lines that is hard to
+interpret.</p>
+<p>This tutorial walks through cleaning that up with <code>CrossIndex</code>:</p>
+<ol>
+<li>Load a <strong>reference</strong> and a scrambled <strong>draft</strong> assembly into one <code>CrossIndex</code>
+   (one group each).</li>
+<li>Compute cross-group k-mer matches and plot the messy baseline dotplot.</li>
+<li>Call <code>reorder_for_colinearity('draft', 'ref', reorder_target=False)</code> to sort
+   the draft contigs along the reference and detect reverse-oriented ones.</li>
+<li>Re-plot with <code>reverse_contigs=</code> to see the clean, near-diagonal layout.</li>
+<li>Export the corrected draft as a FASTA file with <code>write_fasta</code> — contigs
+   written in the new order, with reversed contigs reverse-complemented.</li>
+</ol>
+<blockquote>
+<p><strong>Orientation is relative.</strong> A contig is only "reversed" <em>with respect to a
+reference</em>.  Here the reference (<code>'ref'</code> group) is the fixed forward frame:
+its contigs never move or flip; only the draft is reordered and reoriented.</p>
+</blockquote>
+<h2 id="1-build-two-toy-assemblies">1. Build two toy assemblies<a class="headerlink" href="#1-build-two-toy-assemblies" title="Permanent link">&para;</a></h2>
+<p>The <strong>reference</strong> has three chromosomes of random (non-repetitive) DNA.  The
+<strong>draft</strong> contains the same sequence content, but scrambled the way a real
+assembler might leave it:</p>
+<ul>
+<li><code>chr1</code> is split into two contigs, and the second piece is
+  <strong>reverse-complemented</strong>;</li>
+<li><code>chr2</code> comes back as a single <strong>reverse-complemented</strong> contig;</li>
+<li><code>chr3</code> is intact and forward;</li>
+<li>the contig names (<code>tig...</code>) carry no hint of where anything belongs.</li>
+</ul>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.paf_io</span><span class="w"> </span><span class="kn">import</span> <span class="n">CrossIndex</span><span class="p">,</span> <span class="n">reverse_complement</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="k">def</span><span class="w"> </span><span class="nf">random_dna</span><span class="p">(</span><span class="n">length</span><span class="p">,</span> <span class="n">seed</span><span class="p">):</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">rng</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="k">return</span> <span class="s1">''</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="s1">'ACGT'</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">length</span><span class="p">))</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="c1"># Reference assembly: three chromosomes.</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">chr1</span> <span class="o">=</span> <span class="n">random_dna</span><span class="p">(</span><span class="mi">500</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">11</span><span class="p">)</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="n">chr2</span> <span class="o">=</span> <span class="n">random_dna</span><span class="p">(</span><span class="mi">400</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">22</span><span class="p">)</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="n">chr3</span> <span class="o">=</span> <span class="n">random_dna</span><span class="p">(</span><span class="mi">300</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">33</span><span class="p">)</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="n">reference</span> <span class="o">=</span> <span class="p">{</span><span class="s1">'chr1'</span><span class="p">:</span> <span class="n">chr1</span><span class="p">,</span> <span class="s1">'chr2'</span><span class="p">:</span> <span class="n">chr2</span><span class="p">,</span> <span class="s1">'chr3'</span><span class="p">:</span> <span class="n">chr3</span><span class="p">}</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="c1"># Draft assembly: same content, shuffled and partly reverse-oriented.</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="n">draft</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>    <span class="s1">'tig1'</span><span class="p">:</span> <span class="n">chr3</span><span class="p">,</span>                            <span class="c1"># chr3, forward</span>
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>    <span class="s1">'tig2'</span><span class="p">:</span> <span class="n">reverse_complement</span><span class="p">(</span><span class="n">chr1</span><span class="p">[</span><span class="mi">250</span><span class="p">:]),</span>  <span class="c1"># second half of chr1, REVERSED</span>
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>    <span class="s1">'tig3'</span><span class="p">:</span> <span class="n">reverse_complement</span><span class="p">(</span><span class="n">chr2</span><span class="p">),</span>        <span class="c1"># chr2, REVERSED</span>
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>    <span class="s1">'tig4'</span><span class="p">:</span> <span class="n">chr1</span><span class="p">[:</span><span class="mi">250</span><span class="p">],</span>                      <span class="c1"># first half of chr1, forward</span>
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="p">}</span>
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="nb">print</span><span class="p">(</span><span class="s1">'Reference order:'</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">reference</span><span class="p">))</span>
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="nb">print</span><span class="p">(</span><span class="s1">'Draft order    :'</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">draft</span><span class="p">))</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>Reference order: ['chr1', 'chr2', 'chr3']
+Draft order    : ['tig1', 'tig2', 'tig3', 'tig4']
+</code></pre></div>
+<h2 id="2-load-both-assemblies-into-a-crossindex">2. Load both assemblies into a <code>CrossIndex</code><a class="headerlink" href="#2-load-both-assemblies-into-a-crossindex" title="Permanent link">&para;</a></h2>
+<p>Each assembly goes into its own group (<code>'ref'</code> and <code>'draft'</code>).  With real data
+you would call <code>cross.load_fasta('reference.fasta', group='ref')</code> and
+<code>cross.load_fasta('draft.fasta', group='draft')</code> instead of <code>add_sequence</code>.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">cross</span> <span class="o">=</span> <span class="n">CrossIndex</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">13</span><span class="p">)</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">seq</span> <span class="ow">in</span> <span class="n">reference</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">cross</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">seq</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="s1">'ref'</span><span class="p">)</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">seq</span> <span class="ow">in</span> <span class="n">draft</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">cross</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">seq</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="s1">'draft'</span><span class="p">)</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="nb">print</span><span class="p">(</span><span class="n">cross</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>CrossIndex (k=13)
+  Total sequences : 7
+  Group 'ref'       :      3 sequences
+  Group 'draft'     :      4 sequences
+  Computed pairs  : none (call compute_matches() first)
+  PAF records     : 0
+</code></pre></div>
+<h2 id="3-compute-matches-and-plot-the-messy-baseline">3. Compute matches and plot the messy baseline<a class="headerlink" href="#3-compute-matches-and-plot-the-messy-baseline" title="Permanent link">&para;</a></h2>
+<p><code>compute_matches()</code> is the explicit step that computes and caches cross-group
+k-mer matches — it is required before reordering.  We compute the
+<code>('draft', 'ref')</code> pair: the draft is the <strong>query</strong> (rows) and the reference is
+the <strong>target</strong> (columns), i.e. the reference is the fixed frame the draft will
+be aligned to.</p>
+<p>The baseline many-vs-many dotplot shows the problem: matches are scattered
+across off-diagonal panels, and the reverse-oriented contigs (<code>tig2</code>, <code>tig3</code>)
+appear as red anti-diagonal lines.</p>
+<blockquote>
+<p><strong>Plotting note.</strong> With <code>query_group=</code> / <code>target_group=</code>, <code>DotPlotter</code>
+renders directly from the stranded matches cached by <code>compute_matches()</code> —
+forward matches in blue, reverse-strand matches in red — with each group's
+rows and columns following its current <code>contig_order</code>.</p>
+</blockquote>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.dotplot</span><span class="w"> </span><span class="kn">import</span> <span class="n">DotPlotter</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">cross</span><span class="o">.</span><span class="n">compute_matches</span><span class="p">(</span><span class="n">query_group</span><span class="o">=</span><span class="s1">'draft'</span><span class="p">,</span> <span class="n">target_group</span><span class="o">=</span><span class="s1">'ref'</span><span class="p">)</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="nb">print</span><span class="p">(</span><span class="s1">'Computed group pairs:'</span><span class="p">,</span> <span class="n">cross</span><span class="o">.</span><span class="n">computed_group_pairs</span><span class="p">)</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">plotter</span> <span class="o">=</span> <span class="n">DotPlotter</span><span class="p">(</span><span class="n">cross</span><span class="p">)</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">fig</span> <span class="o">=</span> <span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">query_group</span><span class="o">=</span><span class="s1">'draft'</span><span class="p">,</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">target_group</span><span class="o">=</span><span class="s1">'ref'</span><span class="p">,</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="n">figsize_per_panel</span><span class="o">=</span><span class="mf">1.8</span><span class="p">,</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">scale_sequences</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="n">title</span><span class="o">=</span><span class="s1">'Baseline — draft vs reference (as assembled)'</span><span class="p">,</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="n">dpi</span><span class="o">=</span><span class="mi">80</span><span class="p">,</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>Computed group pairs: [('draft', 'ref')]
+</code></pre></div>
+<p><img alt="png" src="../reorder_reorient_assembly_files/output_6_1.png" /></p>
+<p>Reading this grid: <code>tig4</code> and <code>tig2</code> both hit <code>chr1</code> (<code>tig4</code> forward in blue,
+<code>tig2</code> as a red reverse-strand anti-diagonal), <code>tig3</code> hits <code>chr2</code> on the
+reverse strand (red), and <code>tig1</code> hits <code>chr3</code> forward — but nothing lines up
+along the main diagonal of the grid.</p>
+<h2 id="4-reorder-and-reorient-the-draft-against-the-reference">4. Reorder and reorient the draft against the reference<a class="headerlink" href="#4-reorder-and-reorient-the-draft-against-the-reference" title="Permanent link">&para;</a></h2>
+<p><code>reorder_for_colinearity(query_group, target_group, reorder_target=False)</code> uses
+the d-genies gravity algorithm: each draft contig is assigned to its
+best-matching reference chromosome, ordered by its gravity centre there, and
+flagged if it aligns predominantly on the reverse strand.</p>
+<p>Passing <code>reorder_target=False</code> keeps the reference group's order <strong>fixed</strong> —
+exactly what you want when aligning a draft to an established reference.  The
+new order is stored in <code>contig_order</code> and the flagged contigs are available via
+<code>reversed_contigs('draft')</code>.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">cross</span><span class="o">.</span><span class="n">reorder_for_colinearity</span><span class="p">(</span><span class="s1">'draft'</span><span class="p">,</span> <span class="s1">'ref'</span><span class="p">,</span> <span class="n">reorder_target</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nb">print</span><span class="p">(</span><span class="s1">'Reference order (unchanged):'</span><span class="p">,</span> <span class="n">cross</span><span class="o">.</span><span class="n">contig_order</span><span class="p">[</span><span class="s1">'ref'</span><span class="p">])</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="nb">print</span><span class="p">(</span><span class="s1">'Draft order (optimised)    :'</span><span class="p">,</span> <span class="n">cross</span><span class="o">.</span><span class="n">contig_order</span><span class="p">[</span><span class="s1">'draft'</span><span class="p">])</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nb">print</span><span class="p">(</span><span class="s1">'Draft reverse-oriented     :'</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">cross</span><span class="o">.</span><span class="n">reversed_contigs</span><span class="p">(</span><span class="s1">'draft'</span><span class="p">)))</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>Reference order (unchanged): ['chr1', 'chr2', 'chr3']
+Draft order (optimised)    : ['tig4', 'tig2', 'tig3', 'tig1']
+Draft reverse-oriented     : ['tig2', 'tig3']
+</code></pre></div>
+<p>The draft now mirrors the reference: the two <code>chr1</code> pieces come first (<code>tig4</code>
+then <code>tig2</code>, matching their positions along <code>chr1</code>), followed by the <code>chr2</code>
+contig (<code>tig3</code>) and the <code>chr3</code> contig (<code>tig1</code>).  <code>tig2</code> and <code>tig3</code> are
+correctly detected as reverse-oriented.</p>
+<h2 id="5-re-plot-the-clean-near-diagonal-picture">5. Re-plot: the clean, near-diagonal picture<a class="headerlink" href="#5-re-plot-the-clean-near-diagonal-picture" title="Permanent link">&para;</a></h2>
+<p>Groups are plotted in their current <code>contig_order</code>, so the draft rows follow
+the <strong>optimised</strong> order automatically.  Passing the detected set as
+<code>reverse_contigs=</code> renders those contigs reverse-complemented, so their matches
+read along the <strong>main diagonal</strong> (in blue) instead of the red anti-diagonal.
+The underlying coordinates are never modified — only the rendering.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">fig</span> <span class="o">=</span> <span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">query_group</span><span class="o">=</span><span class="s1">'draft'</span><span class="p">,</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">target_group</span><span class="o">=</span><span class="s1">'ref'</span><span class="p">,</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">figsize_per_panel</span><span class="o">=</span><span class="mf">1.8</span><span class="p">,</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">scale_sequences</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">title</span><span class="o">=</span><span class="s1">'After reorder_for_colinearity — draft matches the reference'</span><span class="p">,</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">dpi</span><span class="o">=</span><span class="mi">80</span><span class="p">,</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">reverse_contigs</span><span class="o">=</span><span class="n">cross</span><span class="o">.</span><span class="n">reversed_contigs</span><span class="p">(</span><span class="s1">'draft'</span><span class="p">),</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="p">)</span>
+</span></code></pre></div>
+<p><img alt="png" src="../reorder_reorient_assembly_files/output_11_0.png" /></p>
+<p>All matches now sit on the main diagonal of the grid, and the previously red
+anti-diagonal lines are rendered forward (blue): the draft reads like the
+reference, top-left to bottom-right.</p>
+<h2 id="6-export-the-corrected-draft-as-fasta">6. Export the corrected draft as FASTA<a class="headerlink" href="#6-export-the-corrected-draft-as-fasta" title="Permanent link">&para;</a></h2>
+<p><code>write_fasta(path, group)</code> persists this layout: contigs are written in the
+group's current <code>contig_order</code>, and every contig in <code>reversed_contigs(group)</code> is
+reverse-complemented so it reads forward.  Flipped records carry a
+<code>reverse_complement</code> note in their header.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">outdir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">tempfile</span><span class="o">.</span><span class="n">mkdtemp</span><span class="p">())</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">out_fasta</span> <span class="o">=</span> <span class="n">outdir</span> <span class="o">/</span> <span class="s1">'draft_corrected.fasta'</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">cross</span><span class="o">.</span><span class="n">write_fasta</span><span class="p">(</span><span class="n">out_fasta</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="s1">'draft'</span><span class="p">)</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="nb">print</span><span class="p">(</span><span class="s1">'--- draft_corrected.fasta headers (in file order) ---'</span><span class="p">)</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">out_fasta</span><span class="o">.</span><span class="n">read_text</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">'&gt;'</span><span class="p">):</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>--- draft_corrected.fasta headers (in file order) ---
+&gt;tig4
+&gt;tig2 reverse_complement
+&gt;tig3 reverse_complement
+&gt;tig1
+</code></pre></div>
+<p>The headers confirm the new contig order, and <code>tig2</code> / <code>tig3</code> are marked as
+reverse-complemented.  A quick check that the flipped sequences now equal the
+forward reference:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">written</span> <span class="o">=</span> <span class="p">{}</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">out_fasta</span><span class="o">.</span><span class="n">read_text</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">'&gt;'</span><span class="p">):</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">block</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>        <span class="k">continue</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">header</span><span class="p">,</span> <span class="o">*</span><span class="n">seq_lines</span> <span class="o">=</span> <span class="n">block</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="n">written</span><span class="p">[</span><span class="n">header</span><span class="o">.</span><span class="n">split</span><span class="p">()[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">=</span> <span class="s1">''</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">seq_lines</span><span class="p">)</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="k">assert</span> <span class="n">written</span><span class="p">[</span><span class="s1">'tig2'</span><span class="p">]</span> <span class="o">==</span> <span class="n">chr1</span><span class="p">[</span><span class="mi">250</span><span class="p">:]</span>  <span class="c1"># flipped back to forward chr1 second half</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="k">assert</span> <span class="n">written</span><span class="p">[</span><span class="s1">'tig3'</span><span class="p">]</span> <span class="o">==</span> <span class="n">chr2</span>        <span class="c1"># flipped back to forward chr2</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="k">assert</span> <span class="n">written</span><span class="p">[</span><span class="s1">'tig4'</span><span class="p">]</span> <span class="o">==</span> <span class="n">chr1</span><span class="p">[:</span><span class="mi">250</span><span class="p">]</span>  <span class="c1"># untouched</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="k">assert</span> <span class="n">written</span><span class="p">[</span><span class="s1">'tig1'</span><span class="p">]</span> <span class="o">==</span> <span class="n">chr3</span>        <span class="c1"># untouched</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="nb">print</span><span class="p">(</span><span class="s1">'All draft contigs now read in the forward reference orientation.'</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>All draft contigs now read in the forward reference orientation.
+</code></pre></div>
+<h2 id="summary">Summary<a class="headerlink" href="#summary" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Load two assemblies into one <code>CrossIndex</code> (groups <code>'ref'</code> and <code>'draft'</code>),
+  then <code>compute_matches()</code> for the pair.</li>
+<li><code>reorder_for_colinearity('draft', 'ref', reorder_target=False)</code> sorts the
+  draft along the fixed reference and flags reverse-oriented contigs
+  (<code>reversed_contigs('draft')</code>).</li>
+<li><code>DotPlotter.plot(..., reverse_contigs=...)</code> renders the flagged contigs
+  flipped, turning the messy baseline into a near-diagonal plot.</li>
+<li><code>write_fasta(path, group='draft')</code> exports the corrected assembly: reordered,
+  with reversed contigs reverse-complemented.</li>
+</ul>
+<h2 id="related-tutorials">Related tutorials<a class="headerlink" href="#related-tutorials" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../all_vs_all_two_indices.ipynb">All-vs-All Between Two Indices</a> — the
+  <code>CrossIndex</code> / <code>compute_matches</code> workflow in more depth.</li>
+<li><a href="../write_reordered_fasta.ipynb">Writing Reordered FASTA</a> — more <code>write_fasta</code>
+  scenarios, including reordering both assemblies at once.</li>
+<li><a href="../paf_workflow.ipynb">PAF Workflow</a> — working with PAF records directly.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-circle-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../minimap2_paf_tutorial/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Minimap2 PAF Visualization">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Minimap2 PAF Visualization
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../api/" class="md-footer__link md-footer__link--next" aria-label="Next: Overview">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Overview
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["content.code.annotate","content.code.copy","navigation.expand","navigation.footer","navigation.sections","navigation.tabs","navigation.top","navigation.tracking","search.highlight","search.suggest","toc.follow"],"search":"../../assets/javascripts/workers/search.7d14d953.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.49251538.min.js"></script>
+      
+    
+  </body>
+</html>

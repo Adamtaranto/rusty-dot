@@ -1,0 +1,2223 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Fast dot plot comparisons of DNA sequences using a rolling-hash k-mer index">
+      
+      
+      
+        <link rel="canonical" href="https://adamtaranto.github.io/rusty-dot/tutorials/dotplot_tutorial/">
+      
+      
+        <link rel="prev" href="../quickstart/">
+      
+      
+        <link rel="next" href="../paf_workflow/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="zensical-0.0.57">
+    
+    
+      
+        <title>Dotplot Visualization Tutorial - rusty-dot</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.5da3a30f.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.812a03bb.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7CJetBrains+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#dotplot-visualization-tutorial" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rusty-dot" class="md-header__button md-logo" aria-label="rusty-dot" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 5v16M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rusty-dot
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Dotplot Visualization Tutorial
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search" aria-label="Search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/Adamtaranto/rusty-dot" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Adamtaranto/rusty-dot
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../webapp/" class="md-tabs__link">
+        
+  
+  Web App
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../installation/" class="md-tabs__link">
+        
+  
+  Installation
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../development/" class="md-tabs__link">
+        
+  
+  Development Guide
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+      
+    
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../quickstart/" class="md-tabs__link">
+          
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+      
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rusty-dot" class="md-nav__button md-logo" aria-label="rusty-dot" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 5v16M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/></svg>
+
+    </a>
+    rusty-dot
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Adamtaranto/rusty-dot" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Adamtaranto/rusty-dot
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Home
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../webapp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Web App
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Installation
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Development Guide
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Tutorials
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+  Tutorials
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Quick Start
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Dotplot Visualization
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Dotplot Visualization
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-build-a-test-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        1. Build a test index
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-inline-rendering-in-jupyter-notebooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        2. Inline rendering in Jupyter notebooks
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-all-vs-all-dotplot-default-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        3. All-vs-all dotplot (default settings)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-subset-specific-query-and-target-sets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        4. Subset: specific query and target sets
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-single-pair-dotplot" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        5. Single-pair dotplot
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-customising-dot-appearance" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        6. Customising dot appearance
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-controlling-merge-behaviour" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        7. Controlling merge behaviour
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-output-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        8. Output resolution
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-panel-size-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        9. Panel size control
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-saving-to-different-file-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        10. Saving to different file formats
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-minimum-alignment-length-filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        11. Minimum alignment length filter
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-colour-alignments-by-identity-paf-alignments" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        12. Colour alignments by identity (PAF alignments)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-high-resolution-vector-output-rasterized" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        13. High-resolution vector output (<code>rasterized</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-chaining-co-linear-matches-chain_gap" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        14. Chaining co-linear matches (<code>chain_gap</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary-of-dotplotter-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Summary of DotPlotter parameters
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gff-annotation-overlays" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        GFF annotation overlays
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../paf_workflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  PAF Workflow
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../all_vs_all_two_indices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  All-vs-All Between Two Indices
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../write_reordered_fasta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Writing Reordered FASTA
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../minimap2_paf_tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Minimap2 PAF Visualization
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reorder_reorient_assembly/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Reorder & Reorient an Assembly
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  API Reference
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+  API Reference
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Overview
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/sequence_index/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  SequenceIndex
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dotplot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  DotPlotter
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/cross_index/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  CrossIndex
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/paf_io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  PAF I/O
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Plot Style
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Low-Level Functions
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-build-a-test-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        1. Build a test index
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-inline-rendering-in-jupyter-notebooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        2. Inline rendering in Jupyter notebooks
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-all-vs-all-dotplot-default-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        3. All-vs-all dotplot (default settings)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-subset-specific-query-and-target-sets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        4. Subset: specific query and target sets
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-single-pair-dotplot" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        5. Single-pair dotplot
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-customising-dot-appearance" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        6. Customising dot appearance
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-controlling-merge-behaviour" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        7. Controlling merge behaviour
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-output-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        8. Output resolution
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-panel-size-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        9. Panel size control
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-saving-to-different-file-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        10. Saving to different file formats
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-minimum-alignment-length-filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        11. Minimum alignment length filter
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-colour-alignments-by-identity-paf-alignments" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        12. Colour alignments by identity (PAF alignments)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-high-resolution-vector-output-rasterized" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        13. High-resolution vector output (<code>rasterized</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-chaining-co-linear-matches-chain_gap" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        14. Chaining co-linear matches (<code>chain_gap</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary-of-dotplotter-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Summary of DotPlotter parameters
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gff-annotation-overlays" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        GFF annotation overlays
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+  
+  
+
+
+<h1 id="dotplot-visualization-tutorial">Dotplot Visualization Tutorial<a class="headerlink" href="#dotplot-visualization-tutorial" title="Permanent link">&para;</a></h1>
+<p>This notebook explores all visualisation options provided by the <code>DotPlotter</code> class.</p>
+<p>A <em>dot plot</em> (or <em>dotplot</em>) is a classic bioinformatics visualisation that displays all shared
+subsequences between two sequences.  Each dot represents a shared k-mer; diagonal runs of
+dots indicate conserved regions.  Inversions appear as anti-diagonal lines.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot</span><span class="w"> </span><span class="kn">import</span> <span class="n">SequenceIndex</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.dotplot</span><span class="w"> </span><span class="kn">import</span> <span class="n">DotPlotter</span>
+</span></code></pre></div>
+<h2 id="1-build-a-test-index">1. Build a test index<a class="headerlink" href="#1-build-a-test-index" title="Permanent link">&para;</a></h2>
+<p>We create three artificial sequences with different overlap patterns:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Helper to create a reverse complement</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">revcomp</span><span class="p">(</span><span class="n">seq</span><span class="p">):</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">table</span> <span class="o">=</span> <span class="nb">str</span><span class="o">.</span><span class="n">maketrans</span><span class="p">(</span><span class="s1">'ACGTacgt'</span><span class="p">,</span> <span class="s1">'TGCAtgca'</span><span class="p">)</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="k">return</span> <span class="n">seq</span><span class="o">.</span><span class="n">translate</span><span class="p">(</span><span class="n">table</span><span class="p">)[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">unit</span> <span class="o">=</span> <span class="s1">'ACGTACGTACGT'</span>  <span class="c1"># 12 bp repeat unit</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="n">seq_a</span> <span class="o">=</span> <span class="n">unit</span> <span class="o">*</span> <span class="mi">10</span>  <span class="c1"># 120 bp  — the reference</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="n">seq_b</span> <span class="o">=</span> <span class="s1">'T'</span> <span class="o">+</span> <span class="n">unit</span> <span class="o">*</span> <span class="mi">9</span> <span class="o">+</span> <span class="s1">'T'</span>  <span class="c1"># 120 bp  — shifted by 1</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="n">seq_c</span> <span class="o">=</span> <span class="n">revcomp</span><span class="p">(</span><span class="n">unit</span> <span class="o">*</span> <span class="mi">5</span><span class="p">)</span> <span class="o">+</span> <span class="n">unit</span> <span class="o">*</span> <span class="mi">5</span>  <span class="c1"># 120 bp  — half inverted</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="n">idx</span> <span class="o">=</span> <span class="n">SequenceIndex</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="n">idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s1">'reference'</span><span class="p">,</span> <span class="n">seq_a</span><span class="p">)</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="n">idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s1">'shifted'</span><span class="p">,</span> <span class="n">seq_b</span><span class="p">)</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="n">idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s1">'partial_inv'</span><span class="p">,</span> <span class="n">seq_c</span><span class="p">)</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Index: </span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>Index: SequenceIndex(k=8, sequences=3)
+</code></pre></div>
+<h2 id="2-inline-rendering-in-jupyter-notebooks">2. Inline rendering in Jupyter notebooks<a class="headerlink" href="#2-inline-rendering-in-jupyter-notebooks" title="Permanent link">&para;</a></h2>
+<p>Both <code>plot()</code> and <code>plot_single()</code> return a <code>matplotlib.figure.Figure</code>.  In a
+Jupyter notebook the returned figure is automatically displayed inline — no
+file path is required.</p>
+<p>Call <code>matplotlib.pyplot.close(fig)</code> when you are done with the figure to
+free memory.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">plotter</span> <span class="o">=</span> <span class="n">DotPlotter</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># No output_path: the figure is returned and displayed inline in Jupyter</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">fig</span> <span class="o">=</span> <span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">title</span><span class="o">=</span><span class="s1">'All vs All — inline display'</span><span class="p">)</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>  <span class="c1"># free memory when no longer needed</span>
+</span></code></pre></div>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Inline display for a single pair</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">fig</span> <span class="o">=</span> <span class="n">plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">query_name</span><span class="o">=</span><span class="s1">'reference'</span><span class="p">,</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">target_name</span><span class="o">=</span><span class="s1">'partial_inv'</span><span class="p">,</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">title</span><span class="o">=</span><span class="s1">'reference vs partial_inv — inline'</span><span class="p">,</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="p">)</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+</span></code></pre></div>
+<h2 id="3-all-vs-all-dotplot-default-settings">3. All-vs-all dotplot (default settings)<a class="headerlink" href="#3-all-vs-all-dotplot-default-settings" title="Permanent link">&para;</a></h2>
+<p><code>DotPlotter.plot()</code> without arguments produces an all-vs-all grid using all sequences
+in the index.  Passing <code>output_path</code> saves the figure to disk in addition to
+returning it.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">all_vs_all_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">fig</span> <span class="o">=</span> <span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">output_path</span><span class="o">=</span><span class="n">all_vs_all_path</span><span class="p">,</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">title</span><span class="o">=</span><span class="s1">'All vs All'</span><span class="p">,</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="p">)</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Saved: </span><span class="si">{</span><span class="n">all_vs_all_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">all_vs_all_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>Saved: /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmpf90vdgho.png  (1219303 bytes)
+</code></pre></div>
+<h2 id="4-subset-specific-query-and-target-sets">4. Subset: specific query and target sets<a class="headerlink" href="#4-subset-specific-query-and-target-sets" title="Permanent link">&para;</a></h2>
+<p>Pass <code>query_names</code> and <code>target_names</code> to restrict the grid to a subset of sequences.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">subset_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">query_names</span><span class="o">=</span><span class="p">[</span><span class="s1">'reference'</span><span class="p">,</span> <span class="s1">'shifted'</span><span class="p">],</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">target_names</span><span class="o">=</span><span class="p">[</span><span class="s1">'partial_inv'</span><span class="p">],</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">output_path</span><span class="o">=</span><span class="n">subset_path</span><span class="p">,</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">title</span><span class="o">=</span><span class="s1">'Reference &amp; Shifted vs Partial Inversion'</span><span class="p">,</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="p">)</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Subset plot saved: </span><span class="si">{</span><span class="n">subset_path</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>Subset plot saved: /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmpugi13g_r.png
+</code></pre></div>
+<h2 id="5-single-pair-dotplot">5. Single-pair dotplot<a class="headerlink" href="#5-single-pair-dotplot" title="Permanent link">&para;</a></h2>
+<p><code>plot_single</code> renders one comparison panel with its own figure size and title.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="n">single_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">query_name</span><span class="o">=</span><span class="s1">'reference'</span><span class="p">,</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="n">target_name</span><span class="o">=</span><span class="s1">'shifted'</span><span class="p">,</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="n">output_path</span><span class="o">=</span><span class="n">single_path</span><span class="p">,</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="n">title</span><span class="o">=</span><span class="s1">'reference vs shifted'</span><span class="p">,</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="p">)</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Single-pair plot saved: </span><span class="si">{</span><span class="n">single_path</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>Single-pair plot saved: /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmp4_m8i50u.png
+</code></pre></div>
+<h2 id="6-customising-dot-appearance">6. Customising dot appearance<a class="headerlink" href="#6-customising-dot-appearance" title="Permanent link">&para;</a></h2>
+<p>All plotting methods accept <code>dot_size</code> and <code>dot_color</code> to control the appearance of match lines.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">styled_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">output_path</span><span class="o">=</span><span class="n">styled_path</span><span class="p">,</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    <span class="n">dot_size</span><span class="o">=</span><span class="mf">1.5</span><span class="p">,</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>    <span class="n">dot_color</span><span class="o">=</span><span class="s1">'crimson'</span><span class="p">,</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>    <span class="n">dpi</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>    <span class="n">title</span><span class="o">=</span><span class="s1">'Custom style: crimson, dpi=200'</span><span class="p">,</span>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="p">)</span>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Styled plot saved: </span><span class="si">{</span><span class="n">styled_path</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>Styled plot saved: /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmpu2iyd0xx.png
+</code></pre></div>
+<h2 id="7-controlling-merge-behaviour">7. Controlling merge behaviour<a class="headerlink" href="#7-controlling-merge-behaviour" title="Permanent link">&para;</a></h2>
+<p>When <code>merge=True</code> (default), consecutive co-linear k-mer hits are merged into single lines.
+Set <code>merge=False</code> to display every individual k-mer hit as its own point — useful for
+inspecting raw k-mer density.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">unmerged_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">query_name</span><span class="o">=</span><span class="s1">'reference'</span><span class="p">,</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">target_name</span><span class="o">=</span><span class="s1">'shifted'</span><span class="p">,</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>    <span class="n">output_path</span><span class="o">=</span><span class="n">unmerged_path</span><span class="p">,</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>    <span class="n">merge</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="n">title</span><span class="o">=</span><span class="s1">'reference vs shifted (unmerged k-mer hits)'</span><span class="p">,</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="p">)</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Unmerged plot saved: </span><span class="si">{</span><span class="n">unmerged_path</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>Unmerged plot saved: /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmpa7u82i2y.png
+</code></pre></div>
+<h2 id="8-output-resolution">8. Output resolution<a class="headerlink" href="#8-output-resolution" title="Permanent link">&para;</a></h2>
+<p>Use the <code>dpi</code> parameter to control the resolution of the saved image.
+Higher DPI is better for print-quality figures.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">for</span> <span class="n">dpi</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">72</span><span class="p">,</span> <span class="mi">150</span><span class="p">,</span> <span class="mi">300</span><span class="p">]:</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="sa">f</span><span class="s1">'_dpi</span><span class="si">{</span><span class="n">dpi</span><span class="si">}</span><span class="s1">.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>        <span class="n">path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>        <span class="s1">'reference'</span><span class="p">,</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>        <span class="s1">'shifted'</span><span class="p">,</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>        <span class="n">output_path</span><span class="o">=</span><span class="n">path</span><span class="p">,</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>        <span class="n">dpi</span><span class="o">=</span><span class="n">dpi</span><span class="p">,</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>        <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s1">'DPI = </span><span class="si">{</span><span class="n">dpi</span><span class="si">}</span><span class="s1">'</span><span class="p">,</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>    <span class="p">)</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>    <span class="n">size_kb</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">/</span> <span class="mi">1024</span>
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'DPI=</span><span class="si">{</span><span class="n">dpi</span><span class="si">:</span><span class="s1">4d</span><span class="si">}</span><span class="s1">  file size=</span><span class="si">{</span><span class="n">size_kb</span><span class="si">:</span><span class="s1">.1f</span><span class="si">}</span><span class="s1"> kB  path=</span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>DPI=  72  file size=94.5 kB  path=/var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmpxff484pi_dpi72.png
+DPI= 150  file size=239.3 kB  path=/var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmpz_luld5c_dpi150.png
+
+
+DPI= 300  file size=762.9 kB  path=/var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmpljyjnk3p_dpi300.png
+</code></pre></div>
+<h2 id="9-panel-size-control">9. Panel size control<a class="headerlink" href="#9-panel-size-control" title="Permanent link">&para;</a></h2>
+<p>For all-vs-all grids, <code>figsize_per_panel</code> controls the size (in inches) of each subplot panel.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>    <span class="n">large_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="n">output_path</span><span class="o">=</span><span class="n">large_path</span><span class="p">,</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>    <span class="n">figsize_per_panel</span><span class="o">=</span><span class="mf">6.0</span><span class="p">,</span>  <span class="c1"># each panel is 6×6 inches</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    <span class="n">title</span><span class="o">=</span><span class="s1">'Large panels (6 inches each)'</span><span class="p">,</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="p">)</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Large-panel plot saved: </span><span class="si">{</span><span class="n">large_path</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>Large-panel plot saved: /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmpny42extt.png
+</code></pre></div>
+<h2 id="10-saving-to-different-file-formats">10. Saving to different file formats<a class="headerlink" href="#10-saving-to-different-file-formats" title="Permanent link">&para;</a></h2>
+<p>rusty-dot passes the <code>format</code> argument directly to <code>matplotlib.savefig</code>, so
+you can produce PNG, SVG, PDF, or any other matplotlib-supported format.</p>
+<p>The simplest approach is to use the matching file extension — matplotlib
+infers the format automatically.  You can also pass <code>format='svg'</code> (or
+<code>'pdf'</code>, <code>'png'</code>, …) explicitly to override the extension.</p>
+<table>
+<thead>
+<tr>
+<th>Extension / <code>format=</code></th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.png</code> / <code>'png'</code></td>
+<td>Raster; good default for screen and web</td>
+</tr>
+<tr>
+<td><code>.svg</code> / <code>'svg'</code></td>
+<td>Vector; infinitely scalable, ideal for publications</td>
+</tr>
+<tr>
+<td><code>.pdf</code> / <code>'pdf'</code></td>
+<td>Vector; embeds cleanly into LaTeX and Word documents</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Rendering, resolution and file size.</strong> By default (<code>rasterized='auto'</code>) the match layer is drawn as <strong>true vector</strong> — infinitely zoomable in SVG/PDF — until a panel exceeds <code>rasterization_threshold</code> segments, above which just that layer is rasterised at <code>dpi</code> to keep the file small (axes, ticks and labels always stay vector). Force the choice with <code>rasterized=True</code>/<code>False</code>. For dense, genome-scale plots, enable co-linear chaining with <code>chain_gap=&lt;bp&gt;</code> to merge broken diagonals into a few long lines — far fewer segments means faster rendering, smaller files, and true-vector output even at scale.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># PNG (default raster format)</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="n">png_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="n">fig</span> <span class="o">=</span> <span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">output_path</span><span class="o">=</span><span class="n">png_path</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s1">'PNG output'</span><span class="p">)</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'PNG:  </span><span class="si">{</span><span class="n">png_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">png_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>
+</span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="c1"># SVG via file extension</span>
+</span><span id="__span-11-10"><a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.svg'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-11-11"><a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>    <span class="n">svg_ext_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-11-12"><a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>
+</span><span id="__span-11-13"><a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="n">fig</span> <span class="o">=</span> <span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">output_path</span><span class="o">=</span><span class="n">svg_ext_path</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s1">'SVG via extension'</span><span class="p">)</span>
+</span><span id="__span-11-14"><a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a><span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+</span><span id="__span-11-15"><a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'SVG (ext):     </span><span class="si">{</span><span class="n">svg_ext_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">svg_ext_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+</span><span id="__span-11-16"><a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a>
+</span><span id="__span-11-17"><a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a><span class="c1"># SVG via explicit format parameter (output path need not end in .svg)</span>
+</span><span id="__span-11-18"><a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.out'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-11-19"><a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a>    <span class="n">svg_fmt_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-11-20"><a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a>
+</span><span id="__span-11-21"><a id="__codelineno-11-21" name="__codelineno-11-21" href="#__codelineno-11-21"></a><span class="n">fig</span> <span class="o">=</span> <span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">output_path</span><span class="o">=</span><span class="n">svg_fmt_path</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s1">'svg'</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s1">'SVG via format param'</span><span class="p">)</span>
+</span><span id="__span-11-22"><a id="__codelineno-11-22" name="__codelineno-11-22" href="#__codelineno-11-22"></a><span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+</span><span id="__span-11-23"><a id="__codelineno-11-23" name="__codelineno-11-23" href="#__codelineno-11-23"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'SVG (fmt):     </span><span class="si">{</span><span class="n">svg_fmt_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">svg_fmt_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+</span><span id="__span-11-24"><a id="__codelineno-11-24" name="__codelineno-11-24" href="#__codelineno-11-24"></a>
+</span><span id="__span-11-25"><a id="__codelineno-11-25" name="__codelineno-11-25" href="#__codelineno-11-25"></a><span class="c1"># PDF — vector format suitable for LaTeX / Word</span>
+</span><span id="__span-11-26"><a id="__codelineno-11-26" name="__codelineno-11-26" href="#__codelineno-11-26"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.pdf'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-11-27"><a id="__codelineno-11-27" name="__codelineno-11-27" href="#__codelineno-11-27"></a>    <span class="n">pdf_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-11-28"><a id="__codelineno-11-28" name="__codelineno-11-28" href="#__codelineno-11-28"></a>
+</span><span id="__span-11-29"><a id="__codelineno-11-29" name="__codelineno-11-29" href="#__codelineno-11-29"></a><span class="n">fig</span> <span class="o">=</span> <span class="n">plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">output_path</span><span class="o">=</span><span class="n">pdf_path</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s1">'PDF output'</span><span class="p">)</span>
+</span><span id="__span-11-30"><a id="__codelineno-11-30" name="__codelineno-11-30" href="#__codelineno-11-30"></a><span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+</span><span id="__span-11-31"><a id="__codelineno-11-31" name="__codelineno-11-31" href="#__codelineno-11-31"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'PDF:  </span><span class="si">{</span><span class="n">pdf_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">pdf_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+</span><span id="__span-11-32"><a id="__codelineno-11-32" name="__codelineno-11-32" href="#__codelineno-11-32"></a>
+</span><span id="__span-11-33"><a id="__codelineno-11-33" name="__codelineno-11-33" href="#__codelineno-11-33"></a><span class="c1"># Verify SVG header</span>
+</span><span id="__span-11-34"><a id="__codelineno-11-34" name="__codelineno-11-34" href="#__codelineno-11-34"></a><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">svg_ext_path</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+</span><span id="__span-11-35"><a id="__codelineno-11-35" name="__codelineno-11-35" href="#__codelineno-11-35"></a>    <span class="n">snippet</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">80</span><span class="p">)</span>
+</span><span id="__span-11-36"><a id="__codelineno-11-36" name="__codelineno-11-36" href="#__codelineno-11-36"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="se">\n</span><span class="s1">SVG file header: </span><span class="si">{</span><span class="n">snippet</span><span class="si">!r}</span><span class="s1">'</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>PNG:  /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmpo__ki677.png  (1220388 bytes)
+
+
+SVG (ext):     /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmprdqtstws.svg  (4875427 bytes)
+
+
+SVG (fmt):     /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmpjwa_zoht.out  (4875998 bytes)
+
+
+PDF:  /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmp5gffulip.pdf  (219407 bytes)
+
+SVG file header: '&lt;?xml version="1.0" encoding="utf-8" standalone="no"?&gt;\n&lt;!DOCTYPE svg PUBLIC "-//'
+</code></pre></div>
+<h2 id="11-minimum-alignment-length-filter">11. Minimum alignment length filter<a class="headerlink" href="#11-minimum-alignment-length-filter" title="Permanent link">&para;</a></h2>
+<p>Pass <code>min_length</code> to suppress alignments shorter than a given number of base pairs.
+This applies to merged k-mer runs (which may be longer than the original k-mer size after merging)
+and to any pre-computed PAF alignments that are loaded later.</p>
+<p>The filter is applied per match segment; only the length of the query span is checked:
+<code>query_end - query_start &gt;= min_length</code>.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Without filtering: all merged hits are drawn</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="n">unfiltered_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="n">plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>    <span class="s1">'reference'</span><span class="p">,</span> <span class="s1">'shifted'</span><span class="p">,</span> <span class="n">output_path</span><span class="o">=</span><span class="n">unfiltered_path</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s1">'No min_length filter'</span>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="p">)</span>
+</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>
+</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="c1"># With filtering: only hits of at least 24 bp are drawn</span>
+</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>    <span class="n">filtered_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="n">plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span>
+</span><span id="__span-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>    <span class="s1">'reference'</span><span class="p">,</span>
+</span><span id="__span-12-13"><a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>    <span class="s1">'shifted'</span><span class="p">,</span>
+</span><span id="__span-12-14"><a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>    <span class="n">output_path</span><span class="o">=</span><span class="n">filtered_path</span><span class="p">,</span>
+</span><span id="__span-12-15"><a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a>    <span class="n">min_length</span><span class="o">=</span><span class="mi">24</span><span class="p">,</span>
+</span><span id="__span-12-16"><a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a>    <span class="n">title</span><span class="o">=</span><span class="s1">'min_length=24'</span><span class="p">,</span>
+</span><span id="__span-12-17"><a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a><span class="p">)</span>
+</span><span id="__span-12-18"><a id="__codelineno-12-18" name="__codelineno-12-18" href="#__codelineno-12-18"></a>
+</span><span id="__span-12-19"><a id="__codelineno-12-19" name="__codelineno-12-19" href="#__codelineno-12-19"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Unfiltered: </span><span class="si">{</span><span class="n">unfiltered_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">unfiltered_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+</span><span id="__span-12-20"><a id="__codelineno-12-20" name="__codelineno-12-20" href="#__codelineno-12-20"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Filtered:   </span><span class="si">{</span><span class="n">filtered_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">filtered_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>Unfiltered: /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmphs6tqwws.png  (255579 bytes)
+Filtered:   /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmptkp13px0.png  (225927 bytes)
+</code></pre></div>
+<h2 id="12-colour-alignments-by-identity-paf-alignments">12. Colour alignments by identity (PAF alignments)<a class="headerlink" href="#12-colour-alignments-by-identity-paf-alignments" title="Permanent link">&para;</a></h2>
+<p>When alignments are loaded from a PAF file (e.g. produced by minimap2),
+each record carries a <code>residue_matches</code> count and an <code>alignment_block_len</code>
+that together define sequence identity.  Pass <code>color_by_identity=True</code> to
+<code>plot()</code> or <code>plot_single()</code> to render each alignment segment with a colour
+drawn from the chosen Matplotlib colormap (<code>identity_palette</code>, default
+<code>'viridis'</code>).</p>
+<blockquote>
+<p><strong>Note:</strong> Individual k-mer matches are always 100 % identical (exact
+matches), so <code>color_by_identity</code> only makes sense with PAF-sourced
+alignments.  If you pass <code>color_by_identity=True</code> without supplying a
+<code>PafAlignment</code> a warning is logged and the plot falls back to the default
+strand colours.</p>
+</blockquote>
+<p>Use <code>DotPlotter.plot_identity_colorbar()</code> to generate a standalone colorbar
+figure for the identity scale.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.paf_io</span><span class="w"> </span><span class="kn">import</span> <span class="n">PafAlignment</span><span class="p">,</span> <span class="n">PafRecord</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="c1"># Build synthetic PAF records with varying identity values to illustrate</span>
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="c1"># the colour-by-identity feature without needing a real aligner.</span>
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="n">paf_records</span> <span class="o">=</span> <span class="p">[]</span>
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">):</span>
+</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>    <span class="n">block_len</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">30</span><span class="p">)</span>
+</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>    <span class="n">identity</span> <span class="o">=</span> <span class="mf">0.6</span> <span class="o">+</span> <span class="mf">0.04</span> <span class="o">*</span> <span class="n">i</span>  <span class="c1"># 60 % … 88 %</span>
+</span><span id="__span-13-12"><a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a>    <span class="n">residue_matches</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">block_len</span> <span class="o">*</span> <span class="n">identity</span><span class="p">)</span>
+</span><span id="__span-13-13"><a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a>    <span class="n">q_start</span> <span class="o">=</span> <span class="n">i</span> <span class="o">*</span> <span class="mi">12</span>
+</span><span id="__span-13-14"><a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a>    <span class="n">paf_records</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+</span><span id="__span-13-15"><a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a>        <span class="n">PafRecord</span><span class="p">(</span>
+</span><span id="__span-13-16"><a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a>            <span class="n">query_name</span><span class="o">=</span><span class="s1">'reference'</span><span class="p">,</span>
+</span><span id="__span-13-17"><a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a>            <span class="n">query_len</span><span class="o">=</span><span class="mi">144</span><span class="p">,</span>
+</span><span id="__span-13-18"><a id="__codelineno-13-18" name="__codelineno-13-18" href="#__codelineno-13-18"></a>            <span class="n">query_start</span><span class="o">=</span><span class="n">q_start</span><span class="p">,</span>
+</span><span id="__span-13-19"><a id="__codelineno-13-19" name="__codelineno-13-19" href="#__codelineno-13-19"></a>            <span class="n">query_end</span><span class="o">=</span><span class="n">q_start</span> <span class="o">+</span> <span class="n">block_len</span><span class="p">,</span>
+</span><span id="__span-13-20"><a id="__codelineno-13-20" name="__codelineno-13-20" href="#__codelineno-13-20"></a>            <span class="n">strand</span><span class="o">=</span><span class="s1">'+'</span><span class="p">,</span>
+</span><span id="__span-13-21"><a id="__codelineno-13-21" name="__codelineno-13-21" href="#__codelineno-13-21"></a>            <span class="n">target_name</span><span class="o">=</span><span class="s1">'shifted'</span><span class="p">,</span>
+</span><span id="__span-13-22"><a id="__codelineno-13-22" name="__codelineno-13-22" href="#__codelineno-13-22"></a>            <span class="n">target_len</span><span class="o">=</span><span class="mi">144</span><span class="p">,</span>
+</span><span id="__span-13-23"><a id="__codelineno-13-23" name="__codelineno-13-23" href="#__codelineno-13-23"></a>            <span class="n">target_start</span><span class="o">=</span><span class="n">q_start</span><span class="p">,</span>
+</span><span id="__span-13-24"><a id="__codelineno-13-24" name="__codelineno-13-24" href="#__codelineno-13-24"></a>            <span class="n">target_end</span><span class="o">=</span><span class="n">q_start</span> <span class="o">+</span> <span class="n">block_len</span><span class="p">,</span>
+</span><span id="__span-13-25"><a id="__codelineno-13-25" name="__codelineno-13-25" href="#__codelineno-13-25"></a>            <span class="n">residue_matches</span><span class="o">=</span><span class="n">residue_matches</span><span class="p">,</span>
+</span><span id="__span-13-26"><a id="__codelineno-13-26" name="__codelineno-13-26" href="#__codelineno-13-26"></a>            <span class="n">alignment_block_len</span><span class="o">=</span><span class="n">block_len</span><span class="p">,</span>
+</span><span id="__span-13-27"><a id="__codelineno-13-27" name="__codelineno-13-27" href="#__codelineno-13-27"></a>            <span class="n">mapping_quality</span><span class="o">=</span><span class="mi">255</span><span class="p">,</span>
+</span><span id="__span-13-28"><a id="__codelineno-13-28" name="__codelineno-13-28" href="#__codelineno-13-28"></a>        <span class="p">)</span>
+</span><span id="__span-13-29"><a id="__codelineno-13-29" name="__codelineno-13-29" href="#__codelineno-13-29"></a>    <span class="p">)</span>
+</span><span id="__span-13-30"><a id="__codelineno-13-30" name="__codelineno-13-30" href="#__codelineno-13-30"></a>
+</span><span id="__span-13-31"><a id="__codelineno-13-31" name="__codelineno-13-31" href="#__codelineno-13-31"></a><span class="n">paf_aln</span> <span class="o">=</span> <span class="n">PafAlignment</span><span class="p">(</span><span class="n">paf_records</span><span class="p">)</span>
+</span><span id="__span-13-32"><a id="__codelineno-13-32" name="__codelineno-13-32" href="#__codelineno-13-32"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">paf_aln</span><span class="p">)</span><span class="si">}</span><span class="s1"> records loaded'</span><span class="p">)</span>
+</span><span id="__span-13-33"><a id="__codelineno-13-33" name="__codelineno-13-33" href="#__codelineno-13-33"></a>
+</span><span id="__span-13-34"><a id="__codelineno-13-34" name="__codelineno-13-34" href="#__codelineno-13-34"></a><span class="c1"># Create a DotPlotter with the PAF alignment attached</span>
+</span><span id="__span-13-35"><a id="__codelineno-13-35" name="__codelineno-13-35" href="#__codelineno-13-35"></a><span class="n">identity_plotter</span> <span class="o">=</span> <span class="n">DotPlotter</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="n">paf_alignment</span><span class="o">=</span><span class="n">paf_aln</span><span class="p">)</span>
+</span><span id="__span-13-36"><a id="__codelineno-13-36" name="__codelineno-13-36" href="#__codelineno-13-36"></a>
+</span><span id="__span-13-37"><a id="__codelineno-13-37" name="__codelineno-13-37" href="#__codelineno-13-37"></a><span class="c1"># ── Plot coloured by identity ─────────────────────────────────────────────</span>
+</span><span id="__span-13-38"><a id="__codelineno-13-38" name="__codelineno-13-38" href="#__codelineno-13-38"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-13-39"><a id="__codelineno-13-39" name="__codelineno-13-39" href="#__codelineno-13-39"></a>    <span class="n">identity_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-13-40"><a id="__codelineno-13-40" name="__codelineno-13-40" href="#__codelineno-13-40"></a>
+</span><span id="__span-13-41"><a id="__codelineno-13-41" name="__codelineno-13-41" href="#__codelineno-13-41"></a><span class="n">fig</span> <span class="o">=</span> <span class="n">identity_plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span>
+</span><span id="__span-13-42"><a id="__codelineno-13-42" name="__codelineno-13-42" href="#__codelineno-13-42"></a>    <span class="s1">'reference'</span><span class="p">,</span>
+</span><span id="__span-13-43"><a id="__codelineno-13-43" name="__codelineno-13-43" href="#__codelineno-13-43"></a>    <span class="s1">'shifted'</span><span class="p">,</span>
+</span><span id="__span-13-44"><a id="__codelineno-13-44" name="__codelineno-13-44" href="#__codelineno-13-44"></a>    <span class="n">output_path</span><span class="o">=</span><span class="n">identity_path</span><span class="p">,</span>
+</span><span id="__span-13-45"><a id="__codelineno-13-45" name="__codelineno-13-45" href="#__codelineno-13-45"></a>    <span class="n">color_by_identity</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-13-46"><a id="__codelineno-13-46" name="__codelineno-13-46" href="#__codelineno-13-46"></a>    <span class="n">identity_palette</span><span class="o">=</span><span class="s1">'viridis'</span><span class="p">,</span>
+</span><span id="__span-13-47"><a id="__codelineno-13-47" name="__codelineno-13-47" href="#__codelineno-13-47"></a>    <span class="n">title</span><span class="o">=</span><span class="s1">'Coloured by identity (viridis)'</span><span class="p">,</span>
+</span><span id="__span-13-48"><a id="__codelineno-13-48" name="__codelineno-13-48" href="#__codelineno-13-48"></a><span class="p">)</span>
+</span><span id="__span-13-49"><a id="__codelineno-13-49" name="__codelineno-13-49" href="#__codelineno-13-49"></a><span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+</span><span id="__span-13-50"><a id="__codelineno-13-50" name="__codelineno-13-50" href="#__codelineno-13-50"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Identity plot: </span><span class="si">{</span><span class="n">identity_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">identity_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+</span><span id="__span-13-51"><a id="__codelineno-13-51" name="__codelineno-13-51" href="#__codelineno-13-51"></a>
+</span><span id="__span-13-52"><a id="__codelineno-13-52" name="__codelineno-13-52" href="#__codelineno-13-52"></a><span class="c1"># ── Colorbar (standalone scale figure) ───────────────────────────────────</span>
+</span><span id="__span-13-53"><a id="__codelineno-13-53" name="__codelineno-13-53" href="#__codelineno-13-53"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-13-54"><a id="__codelineno-13-54" name="__codelineno-13-54" href="#__codelineno-13-54"></a>    <span class="n">colorbar_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-13-55"><a id="__codelineno-13-55" name="__codelineno-13-55" href="#__codelineno-13-55"></a>
+</span><span id="__span-13-56"><a id="__codelineno-13-56" name="__codelineno-13-56" href="#__codelineno-13-56"></a><span class="n">fig_cb</span> <span class="o">=</span> <span class="n">identity_plotter</span><span class="o">.</span><span class="n">plot_identity_colorbar</span><span class="p">(</span>
+</span><span id="__span-13-57"><a id="__codelineno-13-57" name="__codelineno-13-57" href="#__codelineno-13-57"></a>    <span class="n">palette</span><span class="o">=</span><span class="s1">'viridis'</span><span class="p">,</span>
+</span><span id="__span-13-58"><a id="__codelineno-13-58" name="__codelineno-13-58" href="#__codelineno-13-58"></a>    <span class="n">output_path</span><span class="o">=</span><span class="n">colorbar_path</span><span class="p">,</span>
+</span><span id="__span-13-59"><a id="__codelineno-13-59" name="__codelineno-13-59" href="#__codelineno-13-59"></a><span class="p">)</span>
+</span><span id="__span-13-60"><a id="__codelineno-13-60" name="__codelineno-13-60" href="#__codelineno-13-60"></a><span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig_cb</span><span class="p">)</span>
+</span><span id="__span-13-61"><a id="__codelineno-13-61" name="__codelineno-13-61" href="#__codelineno-13-61"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Colorbar:      </span><span class="si">{</span><span class="n">colorbar_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">colorbar_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+</span><span id="__span-13-62"><a id="__codelineno-13-62" name="__codelineno-13-62" href="#__codelineno-13-62"></a>
+</span><span id="__span-13-63"><a id="__codelineno-13-63" name="__codelineno-13-63" href="#__codelineno-13-63"></a><span class="c1"># ── Try a different palette ───────────────────────────────────────────────</span>
+</span><span id="__span-13-64"><a id="__codelineno-13-64" name="__codelineno-13-64" href="#__codelineno-13-64"></a><span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.png'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-13-65"><a id="__codelineno-13-65" name="__codelineno-13-65" href="#__codelineno-13-65"></a>    <span class="n">plasma_path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-13-66"><a id="__codelineno-13-66" name="__codelineno-13-66" href="#__codelineno-13-66"></a>
+</span><span id="__span-13-67"><a id="__codelineno-13-67" name="__codelineno-13-67" href="#__codelineno-13-67"></a><span class="n">fig_p</span> <span class="o">=</span> <span class="n">identity_plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span>
+</span><span id="__span-13-68"><a id="__codelineno-13-68" name="__codelineno-13-68" href="#__codelineno-13-68"></a>    <span class="s1">'reference'</span><span class="p">,</span>
+</span><span id="__span-13-69"><a id="__codelineno-13-69" name="__codelineno-13-69" href="#__codelineno-13-69"></a>    <span class="s1">'shifted'</span><span class="p">,</span>
+</span><span id="__span-13-70"><a id="__codelineno-13-70" name="__codelineno-13-70" href="#__codelineno-13-70"></a>    <span class="n">output_path</span><span class="o">=</span><span class="n">plasma_path</span><span class="p">,</span>
+</span><span id="__span-13-71"><a id="__codelineno-13-71" name="__codelineno-13-71" href="#__codelineno-13-71"></a>    <span class="n">color_by_identity</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-13-72"><a id="__codelineno-13-72" name="__codelineno-13-72" href="#__codelineno-13-72"></a>    <span class="n">identity_palette</span><span class="o">=</span><span class="s1">'plasma'</span><span class="p">,</span>
+</span><span id="__span-13-73"><a id="__codelineno-13-73" name="__codelineno-13-73" href="#__codelineno-13-73"></a>    <span class="n">title</span><span class="o">=</span><span class="s1">'Coloured by identity (plasma)'</span><span class="p">,</span>
+</span><span id="__span-13-74"><a id="__codelineno-13-74" name="__codelineno-13-74" href="#__codelineno-13-74"></a><span class="p">)</span>
+</span><span id="__span-13-75"><a id="__codelineno-13-75" name="__codelineno-13-75" href="#__codelineno-13-75"></a><span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig_p</span><span class="p">)</span>
+</span><span id="__span-13-76"><a id="__codelineno-13-76" name="__codelineno-13-76" href="#__codelineno-13-76"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Plasma plot:   </span><span class="si">{</span><span class="n">plasma_path</span><span class="si">}</span><span class="s1">  (</span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">plasma_path</span><span class="p">)</span><span class="si">}</span><span class="s1"> bytes)'</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>8 records loaded
+
+
+Identity plot: /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmp2gcl2q1d.png  (31977 bytes)
+Colorbar:      /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmpbnupzape.png  (8181 bytes)
+Plasma plot:   /var/folders/ht/f4psx_9j31934bxvs87wqk1h0000gn/T/tmp8sqfbsxl.png  (31466 bytes)
+</code></pre></div>
+<h2 id="13-high-resolution-vector-output-rasterized">13. High-resolution vector output (<code>rasterized</code>)<a class="headerlink" href="#13-high-resolution-vector-output-rasterized" title="Permanent link">&para;</a></h2>
+<p>Dotplot matches are drawn as vector line segments.  By default
+(<code>rasterized='auto'</code>) the match layer is written as <strong>true vector</strong> paths —
+infinitely zoomable in SVG/PDF — until a panel exceeds
+<code>rasterization_threshold</code> segments (default <code>50_000</code>), above which only that
+match layer is rasterised at <code>dpi</code> to keep the file small.  Axes, ticks and
+labels always remain vector.</p>
+<ul>
+<li><code>rasterized=False</code> — always true vector (best zoom; larger files when dense).</li>
+<li><code>rasterized=True</code> — always rasterise the match layer (smallest, fixed resolution).</li>
+<li><code>rasterized='auto'</code> — vector until <code>rasterization_threshold</code>, then rasterise.</li>
+</ul>
+<p>To make the differences visible we build a larger, divergent pair: a reference
+and a 3%-mutated copy.  The point mutations break the main diagonal into many
+short exact-match blocks, giving a segment-rich panel.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="c1"># Reference and a 3%-divergent copy.  SNPs break the diagonal into many short</span>
+</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="c1"># exact-match k-mer blocks, producing a segment-rich panel.</span>
+</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+</span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="n">bases</span> <span class="o">=</span> <span class="s1">'ACGT'</span>
+</span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="n">ref</span> <span class="o">=</span> <span class="s1">''</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">bases</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8000</span><span class="p">))</span>
+</span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="n">mut</span> <span class="o">=</span> <span class="s1">''</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">bases</span><span class="p">)</span> <span class="k">if</span> <span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">()</span> <span class="o">&lt;</span> <span class="mf">0.03</span> <span class="k">else</span> <span class="n">b</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">ref</span><span class="p">)</span>
+</span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>
+</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="n">div_idx</span> <span class="o">=</span> <span class="n">SequenceIndex</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">15</span><span class="p">)</span>
+</span><span id="__span-14-11"><a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a><span class="n">div_idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s1">'ref'</span><span class="p">,</span> <span class="n">ref</span><span class="p">)</span>
+</span><span id="__span-14-12"><a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a><span class="n">div_idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s1">'mut'</span><span class="p">,</span> <span class="n">mut</span><span class="p">)</span>
+</span><span id="__span-14-13"><a id="__codelineno-14-13" name="__codelineno-14-13" href="#__codelineno-14-13"></a><span class="n">div_plotter</span> <span class="o">=</span> <span class="n">DotPlotter</span><span class="p">(</span><span class="n">div_idx</span><span class="p">)</span>
+</span><span id="__span-14-14"><a id="__codelineno-14-14" name="__codelineno-14-14" href="#__codelineno-14-14"></a>
+</span><span id="__span-14-15"><a id="__codelineno-14-15" name="__codelineno-14-15" href="#__codelineno-14-15"></a>
+</span><span id="__span-14-16"><a id="__codelineno-14-16" name="__codelineno-14-16" href="#__codelineno-14-16"></a><span class="k">def</span><span class="w"> </span><span class="nf">count_segments</span><span class="p">(</span><span class="n">fig</span><span class="p">):</span>
+</span><span id="__span-14-17"><a id="__codelineno-14-17" name="__codelineno-14-17" href="#__codelineno-14-17"></a><span class="w">    </span><span class="sd">"""Count drawn match segments across all panels of a figure."""</span>
+</span><span id="__span-14-18"><a id="__codelineno-14-18" name="__codelineno-14-18" href="#__codelineno-14-18"></a>    <span class="kn">from</span><span class="w"> </span><span class="nn">matplotlib.collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">LineCollection</span>
+</span><span id="__span-14-19"><a id="__codelineno-14-19" name="__codelineno-14-19" href="#__codelineno-14-19"></a>
+</span><span id="__span-14-20"><a id="__codelineno-14-20" name="__codelineno-14-20" href="#__codelineno-14-20"></a>    <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span>
+</span><span id="__span-14-21"><a id="__codelineno-14-21" name="__codelineno-14-21" href="#__codelineno-14-21"></a>        <span class="nb">len</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get_segments</span><span class="p">())</span>
+</span><span id="__span-14-22"><a id="__codelineno-14-22" name="__codelineno-14-22" href="#__codelineno-14-22"></a>        <span class="k">for</span> <span class="n">ax</span> <span class="ow">in</span> <span class="n">fig</span><span class="o">.</span><span class="n">axes</span>
+</span><span id="__span-14-23"><a id="__codelineno-14-23" name="__codelineno-14-23" href="#__codelineno-14-23"></a>        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">ax</span><span class="o">.</span><span class="n">collections</span>
+</span><span id="__span-14-24"><a id="__codelineno-14-24" name="__codelineno-14-24" href="#__codelineno-14-24"></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">LineCollection</span><span class="p">)</span>
+</span><span id="__span-14-25"><a id="__codelineno-14-25" name="__codelineno-14-25" href="#__codelineno-14-25"></a>    <span class="p">)</span>
+</span><span id="__span-14-26"><a id="__codelineno-14-26" name="__codelineno-14-26" href="#__codelineno-14-26"></a>
+</span><span id="__span-14-27"><a id="__codelineno-14-27" name="__codelineno-14-27" href="#__codelineno-14-27"></a>
+</span><span id="__span-14-28"><a id="__codelineno-14-28" name="__codelineno-14-28" href="#__codelineno-14-28"></a><span class="k">def</span><span class="w"> </span><span class="nf">svg_is_vector</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+</span><span id="__span-14-29"><a id="__codelineno-14-29" name="__codelineno-14-29" href="#__codelineno-14-29"></a><span class="w">    </span><span class="sd">"""True when the SVG has no embedded raster &lt;image&gt; (match layer is vector)."""</span>
+</span><span id="__span-14-30"><a id="__codelineno-14-30" name="__codelineno-14-30" href="#__codelineno-14-30"></a>    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-14-31"><a id="__codelineno-14-31" name="__codelineno-14-31" href="#__codelineno-14-31"></a>        <span class="k">return</span> <span class="s1">'&lt;image'</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">fh</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+</span><span id="__span-14-32"><a id="__codelineno-14-32" name="__codelineno-14-32" href="#__codelineno-14-32"></a>
+</span><span id="__span-14-33"><a id="__codelineno-14-33" name="__codelineno-14-33" href="#__codelineno-14-33"></a>
+</span><span id="__span-14-34"><a id="__codelineno-14-34" name="__codelineno-14-34" href="#__codelineno-14-34"></a><span class="c1"># Same data, three rasterization policies (plus an 'auto' with a low threshold</span>
+</span><span id="__span-14-35"><a id="__codelineno-14-35" name="__codelineno-14-35" href="#__codelineno-14-35"></a><span class="c1"># to show the automatic switch to a rasterised layer).</span>
+</span><span id="__span-14-36"><a id="__codelineno-14-36" name="__codelineno-14-36" href="#__codelineno-14-36"></a><span class="n">cases</span> <span class="o">=</span> <span class="p">[</span>
+</span><span id="__span-14-37"><a id="__codelineno-14-37" name="__codelineno-14-37" href="#__codelineno-14-37"></a>    <span class="p">(</span><span class="s1">'auto (default)'</span><span class="p">,</span> <span class="p">{}),</span>
+</span><span id="__span-14-38"><a id="__codelineno-14-38" name="__codelineno-14-38" href="#__codelineno-14-38"></a>    <span class="p">(</span><span class="s1">'force vector'</span><span class="p">,</span> <span class="p">{</span><span class="s1">'rasterized'</span><span class="p">:</span> <span class="kc">False</span><span class="p">}),</span>
+</span><span id="__span-14-39"><a id="__codelineno-14-39" name="__codelineno-14-39" href="#__codelineno-14-39"></a>    <span class="p">(</span><span class="s1">'force raster'</span><span class="p">,</span> <span class="p">{</span><span class="s1">'rasterized'</span><span class="p">:</span> <span class="kc">True</span><span class="p">}),</span>
+</span><span id="__span-14-40"><a id="__codelineno-14-40" name="__codelineno-14-40" href="#__codelineno-14-40"></a>    <span class="p">(</span><span class="s1">'auto, thresh=100'</span><span class="p">,</span> <span class="p">{</span><span class="s1">'rasterization_threshold'</span><span class="p">:</span> <span class="mi">100</span><span class="p">}),</span>
+</span><span id="__span-14-41"><a id="__codelineno-14-41" name="__codelineno-14-41" href="#__codelineno-14-41"></a><span class="p">]</span>
+</span><span id="__span-14-42"><a id="__codelineno-14-42" name="__codelineno-14-42" href="#__codelineno-14-42"></a><span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">kwargs</span> <span class="ow">in</span> <span class="n">cases</span><span class="p">:</span>
+</span><span id="__span-14-43"><a id="__codelineno-14-43" name="__codelineno-14-43" href="#__codelineno-14-43"></a>    <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.svg'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-14-44"><a id="__codelineno-14-44" name="__codelineno-14-44" href="#__codelineno-14-44"></a>        <span class="n">path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-14-45"><a id="__codelineno-14-45" name="__codelineno-14-45" href="#__codelineno-14-45"></a>    <span class="n">fig</span> <span class="o">=</span> <span class="n">div_plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span><span class="s1">'ref'</span><span class="p">,</span> <span class="s1">'mut'</span><span class="p">,</span> <span class="n">output_path</span><span class="o">=</span><span class="n">path</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+</span><span id="__span-14-46"><a id="__codelineno-14-46" name="__codelineno-14-46" href="#__codelineno-14-46"></a>    <span class="n">n</span> <span class="o">=</span> <span class="n">count_segments</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+</span><span id="__span-14-47"><a id="__codelineno-14-47" name="__codelineno-14-47" href="#__codelineno-14-47"></a>    <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+</span><span id="__span-14-48"><a id="__codelineno-14-48" name="__codelineno-14-48" href="#__codelineno-14-48"></a>    <span class="n">kb</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">/</span> <span class="mi">1024</span>
+</span><span id="__span-14-49"><a id="__codelineno-14-49" name="__codelineno-14-49" href="#__codelineno-14-49"></a>    <span class="n">kind</span> <span class="o">=</span> <span class="s1">'vector'</span> <span class="k">if</span> <span class="n">svg_is_vector</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="k">else</span> <span class="s1">'raster'</span>
+</span><span id="__span-14-50"><a id="__codelineno-14-50" name="__codelineno-14-50" href="#__codelineno-14-50"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'</span><span class="si">{</span><span class="n">label</span><span class="si">:</span><span class="s1">18s</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">n</span><span class="si">:</span><span class="s1">6d</span><span class="si">}</span><span class="s1"> segments  </span><span class="si">{</span><span class="n">kb</span><span class="si">:</span><span class="s1">8.1f</span><span class="si">}</span><span class="s1"> kB  </span><span class="si">{</span><span class="n">kind</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>auto (default)    :    138 segments      44.9 kB  vector
+
+
+force vector      :    138 segments      44.9 kB  vector
+
+
+force raster      :    138 segments      39.1 kB  raster
+auto, thresh=100  :    138 segments      39.1 kB  raster
+</code></pre></div>
+<h2 id="14-chaining-co-linear-matches-chain_gap">14. Chaining co-linear matches (<code>chain_gap</code>)<a class="headerlink" href="#14-chaining-co-linear-matches-chain_gap" title="Permanent link">&para;</a></h2>
+<p>Exact k-mer matching breaks a conserved diagonal wherever a SNP or indel
+occurs, producing many short segments.  <code>chain_gap</code> (in bp) joins blocks that
+lie on the same diagonal and are separated by no more than that many bases
+into a single line.  Larger gaps merge more aggressively, giving <strong>fewer
+segments, smaller files and faster rendering</strong> — and make true-vector output
+practical even for dense, genome-scale plots.</p>
+<p>Below, the same divergent pair is rendered as vector SVG across a range of gap
+lengths.  Note how the segment count and file size fall as <code>chain_gap</code> grows.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># Sweep chain_gap; keep rasterized=False so file size tracks the segment count.</span>
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="k">for</span> <span class="n">gap</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">25</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="mi">1000</span><span class="p">]:</span>
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>    <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">suffix</span><span class="o">=</span><span class="s1">'.svg'</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>        <span class="n">path</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">name</span>
+</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>    <span class="n">fig</span> <span class="o">=</span> <span class="n">div_plotter</span><span class="o">.</span><span class="n">plot_single</span><span class="p">(</span>
+</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>        <span class="s1">'ref'</span><span class="p">,</span>
+</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>        <span class="s1">'mut'</span><span class="p">,</span>
+</span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>        <span class="n">output_path</span><span class="o">=</span><span class="n">path</span><span class="p">,</span>
+</span><span id="__span-15-9"><a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>        <span class="n">chain_gap</span><span class="o">=</span><span class="n">gap</span><span class="p">,</span>
+</span><span id="__span-15-10"><a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>        <span class="n">rasterized</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+</span><span id="__span-15-11"><a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>        <span class="n">title</span><span class="o">=</span><span class="sa">f</span><span class="s1">'chain_gap = </span><span class="si">{</span><span class="n">gap</span><span class="si">}</span><span class="s1">'</span><span class="p">,</span>
+</span><span id="__span-15-12"><a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>    <span class="p">)</span>
+</span><span id="__span-15-13"><a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a>    <span class="n">n</span> <span class="o">=</span> <span class="n">count_segments</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+</span><span id="__span-15-14"><a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a>    <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+</span><span id="__span-15-15"><a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a>    <span class="n">kb</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">/</span> <span class="mi">1024</span>
+</span><span id="__span-15-16"><a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">'chain_gap=</span><span class="si">{</span><span class="n">gap</span><span class="si">:</span><span class="s1">5d</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="n">n</span><span class="si">:</span><span class="s1">6d</span><span class="si">}</span><span class="s1"> segments  </span><span class="si">{</span><span class="n">kb</span><span class="si">:</span><span class="s1">8.1f</span><span class="si">}</span><span class="s1"> kB (vector)'</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-text highlight"><pre><span></span><code>chain_gap=    0:    138 segments      47.8 kB (vector)
+
+
+chain_gap=   25:      3 segments      25.2 kB (vector)
+
+
+chain_gap=  100:      1 segments      24.9 kB (vector)
+
+
+chain_gap= 1000:      1 segments      25.0 kB (vector)
+</code></pre></div>
+<h2 id="summary-of-dotplotter-parameters">Summary of DotPlotter parameters<a class="headerlink" href="#summary-of-dotplotter-parameters" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>query_names</code></td>
+<td><code>None</code></td>
+<td>List of query sequence names (rows); <code>None</code> = all</td>
+</tr>
+<tr>
+<td><code>target_names</code></td>
+<td><code>None</code></td>
+<td>List of target sequence names (columns); <code>None</code> = all</td>
+</tr>
+<tr>
+<td><code>output_path</code></td>
+<td><code>None</code></td>
+<td>Output file path; <code>None</code> = no file written (inline display only)</td>
+</tr>
+<tr>
+<td><code>format</code></td>
+<td><code>None</code></td>
+<td>Output format (e.g. <code>'svg'</code>, <code>'png'</code>, <code>'pdf'</code>); inferred from extension when <code>None</code></td>
+</tr>
+<tr>
+<td><code>figsize_per_panel</code></td>
+<td><code>4.0</code></td>
+<td>Inches per subplot panel (all-vs-all only)</td>
+</tr>
+<tr>
+<td><code>figsize</code></td>
+<td><code>(6, 6)</code></td>
+<td>Total figure size for <code>plot_single</code></td>
+</tr>
+<tr>
+<td><code>dot_size</code></td>
+<td><code>0.5</code></td>
+<td>Line/marker size for each match</td>
+</tr>
+<tr>
+<td><code>dot_color</code></td>
+<td><code>"blue"</code></td>
+<td>Colour of forward-strand match lines</td>
+</tr>
+<tr>
+<td><code>rc_color</code></td>
+<td><code>"red"</code></td>
+<td>Colour of reverse-complement match lines</td>
+</tr>
+<tr>
+<td><code>merge</code></td>
+<td><code>True</code></td>
+<td>Merge co-linear k-mer runs into blocks</td>
+</tr>
+<tr>
+<td><code>min_length</code></td>
+<td><code>0</code></td>
+<td>Minimum alignment length to display; <code>0</code> = show all</td>
+</tr>
+<tr>
+<td><code>title</code></td>
+<td><code>None</code></td>
+<td>Figure title</td>
+</tr>
+<tr>
+<td><code>dpi</code></td>
+<td><code>150</code></td>
+<td>Output image resolution</td>
+</tr>
+<tr>
+<td><code>chain_gap</code></td>
+<td><code>0</code></td>
+<td>Chain co-linear matches within this many bp into single lines; <code>0</code> = off</td>
+</tr>
+<tr>
+<td><code>rasterized</code></td>
+<td><code>'auto'</code></td>
+<td>Rasterise the match layer: <code>'auto'</code> (vector until threshold), <code>True</code>, or <code>False</code></td>
+</tr>
+<tr>
+<td><code>rasterization_threshold</code></td>
+<td><code>50_000</code></td>
+<td>Segment count above which <code>'auto'</code> rasterises the match layer</td>
+</tr>
+<tr>
+<td><code>color_by_identity</code></td>
+<td><code>False</code></td>
+<td>Colour alignments by identity fraction when a <code>PafAlignment</code> is loaded</td>
+</tr>
+<tr>
+<td><code>identity_palette</code></td>
+<td><code>'viridis'</code></td>
+<td>Matplotlib colormap for identity colouring (any valid colormap name)</td>
+</tr>
+<tr>
+<td><code>query_group</code> / <code>target_group</code></td>
+<td><code>None</code></td>
+<td><code>CrossIndex</code> group labels: look up each axis's sequences from a group (overrides <code>query_names</code>/<code>target_names</code>)</td>
+</tr>
+<tr>
+<td><code>scale_sequences</code></td>
+<td><code>True</code></td>
+<td>Scale each panel's width/height by relative sequence length</td>
+</tr>
+<tr>
+<td><code>contig_order</code></td>
+<td><code>None</code></td>
+<td>Plot-time ordering: <code>'length'</code> or <code>'colinearity'</code></td>
+</tr>
+<tr>
+<td><code>auto_reverse</code></td>
+<td><code>False</code></td>
+<td>With <code>contig_order</code>, flip contigs detected as reverse-oriented</td>
+</tr>
+<tr>
+<td><code>reverse_contigs</code></td>
+<td><code>None</code></td>
+<td>Explicit set of query contigs to render reverse-complemented</td>
+</tr>
+<tr>
+<td><code>hide_internal_axes</code></td>
+<td><code>False</code></td>
+<td>Remove internal ticks/spines so the grid reads as one plot</td>
+</tr>
+<tr>
+<td><code>identity_colorbar</code></td>
+<td><code>False</code></td>
+<td>With <code>color_by_identity</code>, append a 0–100 % identity colour key</td>
+</tr>
+<tr>
+<td><code>annotation</code></td>
+<td><code>None</code></td>
+<td><code>GffAnnotation</code> shaded on self-vs-self diagonal panels</td>
+</tr>
+<tr>
+<td><code>annotation_query</code> / <code>annotation_target</code></td>
+<td><code>None</code></td>
+<td>Per-axis annotations for the side tracks</td>
+</tr>
+<tr>
+<td><code>annotation_tracks</code></td>
+<td><code>False</code></td>
+<td>Draw side annotation tracks (single-pair plots only)</td>
+</tr>
+<tr>
+<td><code>annotation_track_size</code></td>
+<td><code>0.6</code></td>
+<td>Side-track thickness in inches</td>
+</tr>
+<tr>
+<td><code>annotation_legend</code></td>
+<td><code>True</code></td>
+<td>Add a feature-type colour legend when annotations are drawn</td>
+</tr>
+</tbody>
+</table>
+<p>Both <code>plot()</code> and <code>plot_single()</code> return a <code>matplotlib.figure.Figure</code>.
+In a Jupyter notebook the figure is displayed inline automatically.
+Call <code>matplotlib.pyplot.close(fig)</code> to release memory when finished.
+<code>DotPlotter.plot_annotation_legend()</code> renders the feature-type colour
+legend as a standalone figure.</p>
+<h2 id="gff-annotation-overlays">GFF annotation overlays<a class="headerlink" href="#gff-annotation-overlays" title="Permanent link">&para;</a></h2>
+<p>Load a GFF3 annotation with <code>GffAnnotation</code> (from a file, text, or raw bytes — gzip is detected automatically) and pass it to <code>plot()</code>:</p>
+<ul>
+<li><code>annotation=</code> shades features as transparent squares on self-vs-self diagonal panels, drawn behind the alignments;</li>
+<li><code>annotation_tracks=True</code> adds side tracks on focused single-pair plots, with strand arrows for gene/mRNA/exon/CDS/ORF features, lane stacking for overlaps, and connector lines through multi-part CDS groups;</li>
+<li>a feature-type colour legend is added automatically (<code>annotation_legend=False</code> to disable).</li>
+</ul>
+<p>HTML reports (<code>to_html</code>) make the diagonal features clickable, showing each feature's name, type, coordinates, strand and parent.</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1"># Build a small demo index and a GFF3 annotation.</span>
+</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
+</span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot</span><span class="w"> </span><span class="kn">import</span> <span class="n">DotPlotter</span><span class="p">,</span> <span class="n">SequenceIndex</span>
+</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">rusty_dot.annotation</span><span class="w"> </span><span class="kn">import</span> <span class="n">GffAnnotation</span>
+</span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>
+</span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">11</span><span class="p">)</span>
+</span><span id="__span-16-8"><a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="n">seq</span> <span class="o">=</span> <span class="s2">""</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="s2">"ACGT"</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">4000</span><span class="p">))</span>
+</span><span id="__span-16-9"><a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a><span class="n">ann_idx</span> <span class="o">=</span> <span class="n">SequenceIndex</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">13</span><span class="p">)</span>
+</span><span id="__span-16-10"><a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a><span class="n">ann_idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s2">"chrA"</span><span class="p">,</span> <span class="n">seq</span><span class="p">)</span>
+</span><span id="__span-16-11"><a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a><span class="n">ann_idx</span><span class="o">.</span><span class="n">add_sequence</span><span class="p">(</span><span class="s2">"chrB"</span><span class="p">,</span> <span class="n">seq</span><span class="p">[</span><span class="mi">2000</span><span class="p">:]</span> <span class="o">+</span> <span class="n">seq</span><span class="p">[:</span><span class="mi">2000</span><span class="p">])</span>
+</span><span id="__span-16-12"><a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a>
+</span><span id="__span-16-13"><a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a><span class="n">gff_text</span> <span class="o">=</span> <span class="s2">"""</span><span class="se">\</span>
+</span><span id="__span-16-14"><a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a><span class="s2">chrA</span><span class="se">\t</span><span class="s2">demo</span><span class="se">\t</span><span class="s2">gene</span><span class="se">\t</span><span class="s2">201</span><span class="se">\t</span><span class="s2">1400</span><span class="se">\t</span><span class="s2">.</span><span class="se">\t</span><span class="s2">+</span><span class="se">\t</span><span class="s2">.</span><span class="se">\t</span><span class="s2">ID=gene1;Name=GeneA</span>
+</span><span id="__span-16-15"><a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a><span class="s2">chrA</span><span class="se">\t</span><span class="s2">demo</span><span class="se">\t</span><span class="s2">CDS</span><span class="se">\t</span><span class="s2">201</span><span class="se">\t</span><span class="s2">600</span><span class="se">\t</span><span class="s2">.</span><span class="se">\t</span><span class="s2">+</span><span class="se">\t</span><span class="s2">0</span><span class="se">\t</span><span class="s2">ID=cds1;Parent=gene1</span>
+</span><span id="__span-16-16"><a id="__codelineno-16-16" name="__codelineno-16-16" href="#__codelineno-16-16"></a><span class="s2">chrA</span><span class="se">\t</span><span class="s2">demo</span><span class="se">\t</span><span class="s2">CDS</span><span class="se">\t</span><span class="s2">901</span><span class="se">\t</span><span class="s2">1400</span><span class="se">\t</span><span class="s2">.</span><span class="se">\t</span><span class="s2">+</span><span class="se">\t</span><span class="s2">0</span><span class="se">\t</span><span class="s2">ID=cds1;Parent=gene1</span>
+</span><span id="__span-16-17"><a id="__codelineno-16-17" name="__codelineno-16-17" href="#__codelineno-16-17"></a><span class="s2">chrA</span><span class="se">\t</span><span class="s2">demo</span><span class="se">\t</span><span class="s2">gene</span><span class="se">\t</span><span class="s2">1201</span><span class="se">\t</span><span class="s2">2400</span><span class="se">\t</span><span class="s2">.</span><span class="se">\t</span><span class="s2">-</span><span class="se">\t</span><span class="s2">.</span><span class="se">\t</span><span class="s2">ID=gene2;Name=GeneB</span>
+</span><span id="__span-16-18"><a id="__codelineno-16-18" name="__codelineno-16-18" href="#__codelineno-16-18"></a><span class="s2">chrA</span><span class="se">\t</span><span class="s2">demo</span><span class="se">\t</span><span class="s2">repeat_region</span><span class="se">\t</span><span class="s2">2801</span><span class="se">\t</span><span class="s2">3600</span><span class="se">\t</span><span class="s2">.</span><span class="se">\t</span><span class="s2">.</span><span class="se">\t</span><span class="s2">.</span><span class="se">\t</span><span class="s2">ID=rep1</span>
+</span><span id="__span-16-19"><a id="__codelineno-16-19" name="__codelineno-16-19" href="#__codelineno-16-19"></a><span class="s2">chrB</span><span class="se">\t</span><span class="s2">demo</span><span class="se">\t</span><span class="s2">gene</span><span class="se">\t</span><span class="s2">501</span><span class="se">\t</span><span class="s2">1800</span><span class="se">\t</span><span class="s2">.</span><span class="se">\t</span><span class="s2">-</span><span class="se">\t</span><span class="s2">.</span><span class="se">\t</span><span class="s2">ID=gene3;Name=GeneC</span>
+</span><span id="__span-16-20"><a id="__codelineno-16-20" name="__codelineno-16-20" href="#__codelineno-16-20"></a><span class="s2">"""</span>
+</span><span id="__span-16-21"><a id="__codelineno-16-21" name="__codelineno-16-21" href="#__codelineno-16-21"></a><span class="n">ann</span> <span class="o">=</span> <span class="n">GffAnnotation</span><span class="o">.</span><span class="n">from_text</span><span class="p">(</span><span class="n">gff_text</span><span class="p">)</span>
+</span><span id="__span-16-22"><a id="__codelineno-16-22" name="__codelineno-16-22" href="#__codelineno-16-22"></a><span class="n">ann_plotter</span> <span class="o">=</span> <span class="n">DotPlotter</span><span class="p">(</span><span class="n">ann_idx</span><span class="p">)</span>
+</span><span id="__span-16-23"><a id="__codelineno-16-23" name="__codelineno-16-23" href="#__codelineno-16-23"></a>
+</span><span id="__span-16-24"><a id="__codelineno-16-24" name="__codelineno-16-24" href="#__codelineno-16-24"></a><span class="c1"># Diagonal squares: features shade self-vs-self panels *behind* the</span>
+</span><span id="__span-16-25"><a id="__codelineno-16-25" name="__codelineno-16-25" href="#__codelineno-16-25"></a><span class="c1"># alignments (one colour per feature type).</span>
+</span><span id="__span-16-26"><a id="__codelineno-16-26" name="__codelineno-16-26" href="#__codelineno-16-26"></a><span class="n">fig</span> <span class="o">=</span> <span class="n">ann_plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">annotation</span><span class="o">=</span><span class="n">ann</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">"Annotated all-vs-all grid"</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># Focused single-pair view with side annotation tracks: lane-packed</span>
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="c1"># features left of the y axis and below the x axis, direction arrows for</span>
+</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="c1"># stranded types and connectors joining multi-part CDS groups.</span>
+</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="n">fig</span> <span class="o">=</span> <span class="n">ann_plotter</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>    <span class="n">query_names</span><span class="o">=</span><span class="p">[</span><span class="s2">"chrB"</span><span class="p">],</span>
+</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>    <span class="n">target_names</span><span class="o">=</span><span class="p">[</span><span class="s2">"chrA"</span><span class="p">],</span>
+</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a>    <span class="n">annotation_query</span><span class="o">=</span><span class="n">ann</span><span class="p">,</span>
+</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>    <span class="n">annotation_target</span><span class="o">=</span><span class="n">ann</span><span class="p">,</span>
+</span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a>    <span class="n">annotation_tracks</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="p">)</span>
+</span></code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-circle-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../quickstart/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Quick Start">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Quick Start
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../paf_workflow/" class="md-footer__link md-footer__link--next" aria-label="Next: PAF Workflow">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                PAF Workflow
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["content.code.annotate","content.code.copy","navigation.expand","navigation.footer","navigation.sections","navigation.tabs","navigation.top","navigation.tracking","search.highlight","search.suggest","toc.follow"],"search":"../../assets/javascripts/workers/search.7d14d953.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.49251538.min.js"></script>
+      
+    
+  </body>
+</html>
