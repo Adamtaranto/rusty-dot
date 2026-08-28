@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import logging
+import os
 from pathlib import Path
 import re
 import sys
@@ -281,7 +282,21 @@ def debounce(delay_secs: float):
     return wrapper
 
 
-_HIDE_REPORT_HEADER_CSS = '<style>#rd-header{display:none}</style>'
+# Injected into embedded reports: hide the report's own header, and fit
+# the SVG to the iframe viewport.  Without the fit, a figure taller than
+# the frame keeps its intrinsic size and the page scrolls — a drag-zoomed
+# region then fills the whole (mostly off-screen) element and appears
+# shifted up.  Sizing the SVG to the viewport (as fullscreen already did)
+# letterboxes via preserveAspectRatio, so every zoom lands exactly where
+# it was drawn.  Standalone to_html exports are unaffected.
+_HIDE_REPORT_HEADER_CSS = (
+    '<style>'
+    '#rd-header{display:none}'
+    'body{padding-bottom:0}'
+    '#rd-figure{padding:0.5rem}'
+    '#rd-figure svg{width:100%;height:calc(100vh - 1rem)}'
+    '</style>'
+)
 
 # Fullscreen-toggle icons (expand / collapse corners); www/app.css shows
 # exactly one of the pair depending on the html.rd-fullscreen class.
@@ -842,12 +857,12 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             progress.set(1, message='Parsing target assembly…')
         return query, _parse_seq_upload('target')
 
-    # The canonical CSR k-mer index costs ~13-16 bytes/bp (both strands);
-    # a real 74 Mb pair completes in the browser (verified), so the guard
-    # sits at ~80 Mb combined under Pyodide's 2 GB heap.  Exceeding the
-    # heap does not fail gracefully — the wasm allocator aborts and takes
-    # the whole Python runtime down — so refuse up front with a way
-    # forward, and warn earlier that big k-mer runs take minutes.
+    # The canonical CSR k-mer index costs ~13-16 bytes/bp (both strands).
+    # Measured in Chrome with Pyodide 0.27 (synthetic pairs, 1% SNPs):
+    # 90 Mb combined completes with the wasm heap peaking at ~2.9 GB;
+    # 100 Mb aborts the interpreter, and the abort is silent — the worker
+    # restarts, all session state is lost, and no error is ever shown.
+    # The guard sits at 80 Mb for headroom over that measured ceiling.
     _KMER_HARD_LIMIT = 80 * 1024 * 1024
     _KMER_WARN_LIMIT = 40 * 1024 * 1024
 
@@ -869,6 +884,96 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 type='warning',
                 duration=10,
             )
+
+    _TUTORIALS_URL = 'https://adamtaranto.github.io/rusty-dot/tutorials/quickstart/'
+
+    def _combined_upload_size() -> int | None:
+        """Return the combined uploaded-assembly size from file metadata.
+
+        Raw file bytes approximate sequence length well for plain FASTA
+        (gzip uploads under-count; the parse-time check in
+        ``_check_kmer_memory`` stays as the exact backstop).  ``None``
+        until both required uploads are present, and in PAF mode.
+        """
+        mode = input.input_mode()
+        if mode == 'paf':
+            return None
+        q_in = input.query_gbk if mode == 'genbank' else input.query_fasta
+        t_in = input.target_gbk if mode == 'genbank' else input.target_fasta
+        q = q_in()
+        if not q:
+            return None
+        total = int(q[0].get('size') or 0)
+        if not input.self_align():
+            t = t_in()
+            if not t:
+                return None
+            total += int(t[0].get('size') or 0)
+        return total
+
+    # Upload-size gating: beyond the measured k-mer ceiling the method is
+    # removed from the selector entirely (running it would silently kill
+    # the Python runtime), and past the biowasm comfort zone the user is
+    # pointed at precomputed-PAF input.  Both react to uploads, so the
+    # guidance appears before Run is ever pressed.
+    kmer_gated = reactive.value(False)
+    paf_hint_shown = reactive.value(False)
+
+    @reactive.effect
+    def _gate_kmer_on_size():
+        # RD_FORCE_GATE exercises the gate on native runs (for testing);
+        # otherwise native is bounded by system RAM, not the wasm heap.
+        if sys.platform != 'emscripten' and not os.environ.get('RD_FORCE_GATE'):
+            return
+        total = _combined_upload_size()
+        too_big = total is not None and total > _KMER_HARD_LIMIT
+        with reactive.isolate():
+            changed = too_big != kmer_gated()
+        if changed:
+            kmer_gated.set(too_big)
+            if too_big:
+                choices = {k: v for k, v in _method_choices().items() if k != 'kmer'}
+                with reactive.isolate():
+                    selected = input.method()
+                if selected == 'kmer':
+                    selected = 'minimap2'
+                ui.update_select('method', choices=choices, selected=selected)
+                ui.notification_show(
+                    ui.HTML(
+                        f'Combined upload is ~{total / 1e6:.0f} MB — beyond '
+                        'the ~80 Mb the in-browser k-mer index can handle, '
+                        'so that method is disabled here. Use minimap2 or '
+                        'nucmer, or run the rusty-dot Python library '
+                        'locally — see the '
+                        f'<a href="{_TUTORIALS_URL}" target="_blank" '
+                        'rel="noopener">tutorial notebooks</a>.'
+                    ),
+                    type='warning',
+                    duration=15,
+                )
+            else:
+                with reactive.isolate():
+                    selected = input.method()
+                ui.update_select('method', choices=_method_choices(), selected=selected)
+        if total is not None and total > _BIOWASM_SIZE_WARN:
+            with reactive.isolate():
+                already = paf_hint_shown()
+            if not already:
+                paf_hint_shown.set(True)
+                ui.notification_show(
+                    f'Inputs this large (~{total / 1e6:.0f} MB) can crash '
+                    'the browser tab even with minimap2 / nucmer. If you '
+                    'can align locally, switch the input mode to '
+                    '"Alignment (PAF)" and upload the precomputed PAF '
+                    'instead — plotting handles large alignments far '
+                    'better than in-browser aligning does.',
+                    type='warning',
+                    duration=15,
+                )
+        elif total is not None:
+            with reactive.isolate():
+                if paf_hint_shown():
+                    paf_hint_shown.set(False)
 
     @reactive.effect
     @reactive.event(input.run)
@@ -935,7 +1040,10 @@ def server(input, output, session) -> None:  # noqa: A002, D103
     # 'rd_run_aligner' custom message to www/aligners.js, and receives the
     # tool's text output back through the 'aligner_result' input.
 
-    # All biowasm tools share one 2 GB wasm heap cap; warn above ~200 MB.
+    # biowasm tools run in their own workers with separate memory.
+    # Measured in Chrome: minimap2 completes at 200 MB combined and nucmer
+    # at 250 MB (Pyodide heap under 1 GB); at 300 MB the entire browser
+    # tab crashed, for both tools.  Warn above 200 MB.
     _BIOWASM_SIZE_WARN = 200 * 1024 * 1024
     _NOTIF_ID = 'rd_aligner_progress'
     # Extra budget granted each time the user chooses to keep waiting.
@@ -1052,8 +1160,10 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             return
         if query.total_length + target.total_length > _BIOWASM_SIZE_WARN:
             ui.notification_show(
-                'Combined input exceeds ~200 MB — browser aligners share a '
-                '2 GB memory cap and may fail on inputs this large.',
+                'Combined input exceeds ~200 MB — inputs this large can '
+                'crash the browser tab outright (300 MB did in testing). '
+                'Consider aligning locally and uploading the PAF via the '
+                '"Alignment (PAF)" input mode instead.',
                 type='warning',
                 duration=12,
             )
@@ -2654,8 +2764,8 @@ def server(input, output, session) -> None:  # noqa: A002, D103
                 'Upload two assemblies (or a PAF file) and press '
                 '"Run comparison". Everything runs in your browser — '
                 'files are never uploaded to a server. Large genomes are '
-                'limited by browser memory (≈2 GB); bacterial/fungal-scale '
-                'assemblies work best.',
+                'limited by browser memory (the Python heap can grow to '
+                '≈4 GB); bacterial/fungal-scale assemblies work best.',
                 class_='rd-status',
             )
         return None
@@ -2668,8 +2778,9 @@ def server(input, output, session) -> None:  # noqa: A002, D103
         # hidden output — leaving it permanently empty (and hidden).
         # Refresh every 5 s.  The wasm linear memory only ever grows, so
         # this reports the high-water mark of the Python runtime's heap —
-        # the resource the ~2 GB browser cap actually constrains.  Native
-        # runs (and non-Pyodide environments) show nothing.
+        # the constrained resource (Pyodide 0.27 can grow it to ~4 GB;
+        # a 90 Mb k-mer run was observed at 2.9 GB before the ceiling).
+        # Native runs (and non-Pyodide environments) show nothing.
         reactive.invalidate_later(5)
         if sys.platform != 'emscripten':
             return ''
@@ -2679,7 +2790,7 @@ def server(input, output, session) -> None:  # noqa: A002, D103
             used = int(pyodide_js._module.HEAPU8.length)
         except Exception:  # noqa: BLE001 - internals unavailable -> hide
             return ''
-        return f'App memory: {used / 1048576:.0f} MB of ~2048 MB wasm heap'
+        return f'App memory: {used / 1048576:.0f} MB of ~4096 MB wasm heap'
 
     @output(suspend_when_hidden=False)
     @render.text

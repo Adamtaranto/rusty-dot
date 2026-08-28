@@ -91,6 +91,19 @@ and this project adheres to
   heap.
 - A **Min contig length** setting hides short contigs from the plot (the
   reordered-FASTA download keeps them).
+- Cmd/Ctrl+click adds matches to (or removes them from) the selection one
+  by one, in the overview and the drill-down. Selections — matches and the
+  selected annotation feature — persist across overview <-> drill-down
+  swaps: the app holds them in view-independent terms (names + data
+  coordinates) and re-applies them to each rebuilt report, keeping
+  selections on pairs a narrower view does not show.
+- Upload-size guidance, from empirically measured ceilings (synthetic
+  pairs in Chrome): beyond ~80 Mb combined the k-mer method is removed
+  from the selector (90 Mb completes at a 2.9 GB heap peak; 100 Mb
+  silently kills the Python runtime), with a pointer to the tutorial
+  notebooks for running the library locally; above ~200 MB the app
+  suggests uploading a precomputed PAF instead (minimap2 completed at
+  200 MB, nucmer at 250 MB; 300 MB crashed the browser tab for both).
 
 ### Changed
 
@@ -121,6 +134,15 @@ and this project adheres to
 
 ### Fixed
 
+- Drag-zoom in the embedded overview lands exactly where the box was
+  drawn. A figure taller than the iframe kept its intrinsic size and
+  scrolled, so the zoomed viewBox filled a mostly off-screen element and
+  appeared shifted up; embedded reports now fit the SVG to the iframe
+  viewport (as fullscreen already did).
+- The memory readout and docs no longer claim a 2 GB wasm cap: the
+  Pyodide heap measurably grows to 4096 MB (~4.0 GB allocatable before a
+  clean MemoryError), and the first-load download is 26 MB compressed
+  (37 MB of assets), replacing the stale 30/45 MB claims.
 - Sequence previews no longer go stale after re-running the aligner with
   different settings: the per-pair record cache is cleared on every new
   result, so a run without `-c` stops showing the previous run's base-level

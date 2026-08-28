@@ -680,6 +680,7 @@
       selectedFeatureEl.classList.remove('rd-selected-match');
       selectedFeatureEl = null;
     }
+    announceFeatureSelection(null);
     notifySelectionState();
   }
 
@@ -703,11 +704,58 @@
     );
   }
 
+  /* Every (query, target) pair this report displays.  Sent with selection
+   * updates so the app can keep selections on pairs a narrower view (the
+   * drill-down) does not show, and merge in the changes for those it does. */
+  var reportPairs = Object.keys(payload.panels || {}).map(function (gid) {
+    var p = payload.panels[gid];
+    return [p.query, p.target];
+  });
+
+  /* Mirror the match selection to the app in view-independent terms so it
+   * survives the iframe being rebuilt (overview <-> drill-down swaps). */
+  function announceMatchSelection() {
+    if (window.parent === window) return;
+    var matches = [];
+    Object.keys(selectedSegs).forEach(function (k) {
+      var e = selectedSegs[k];
+      if (e.q === undefined) return;
+      matches.push({
+        q: e.q, t: e.t, layer: e.layer,
+        qs: e.qs, qe: e.qe, ts: e.ts, te: e.te,
+      });
+    });
+    window.parent.postMessage(
+      { type: 'rd-match-selection', pairs: reportPairs, matches: matches },
+      '*'
+    );
+  }
+
+  /* Same for the (single) selected annotation/track feature. */
+  function announceFeatureSelection(feat) {
+    if (window.parent === window) return;
+    window.parent.postMessage(
+      {
+        type: 'rd-feature-selection',
+        feature: feat
+          ? {
+              seqname: feat.seqname,
+              start: feat.start,
+              end: feat.end,
+              type: feat.type,
+              strand: feat.strand,
+            }
+          : null,
+      },
+      '*'
+    );
+  }
+
   document
     .getElementById('rd-detail-close')
     .addEventListener('click', closeDetailBar);
 
-  function showMatchDetail(panelGid, layer, idx, el) {
+  function showMatchDetail(panelGid, layer, idx, el, additive) {
     var panel = payload.panels[panelGid];
     if (!panel) return;
     var seg = panel.segments[layer][idx];
@@ -718,9 +766,19 @@
     var row = parseInt(pm[1], 10);
     var col = parseInt(pm[2], 10);
     var key = row + ':' + col + ':' + layer + ':' + idx;
+    if (additive && selectedSegs[key]) {
+      // Cmd/Ctrl-click on a selected match drops just that match.
+      selectedSegs[key].el.classList.remove('rd-selected-match');
+      delete selectedSegs[key];
+      updateRowColHighlights();
+      if (!detail.hidden && currentSeg && segKey(currentSeg) === key) {
+        closeDetailBar();
+      }
+      return;
+    }
     // Clicking the sole-selected match while its bar is open deselects;
     // with the bar closed (after ×) the same click just reopens the bar.
-    if (!detail.hidden && selectedSegs[key] &&
+    if (!additive && !detail.hidden && selectedSegs[key] &&
         Object.keys(selectedSegs).length === 1) {
       clearAllSelection();
       return;
@@ -788,9 +846,21 @@
     if (selectedFeatureEl) {
       selectedFeatureEl.classList.remove('rd-selected-match');
       selectedFeatureEl = null;
+      announceFeatureSelection(null);
     }
-    var entry = registryByKey[key];
-    setMatchSelection(entry ? [entry] : [{ el: el, key: key, row: row, col: col }]);
+    var entry = registryByKey[key] || {
+      el: el, key: key, row: row, col: col, layer: layer,
+      q: panel.query, t: panel.target,
+      qs: seg[0], qe: seg[1], ts: seg[2], te: seg[3],
+    };
+    if (additive) {
+      // Cmd/Ctrl-click adds to the selection instead of replacing it.
+      entry.el.classList.add('rd-selected-match');
+      selectedSegs[entry.key] = entry;
+      updateRowColHighlights();
+    } else {
+      setMatchSelection([entry]);
+    }
   }
 
   /* Wire up every match group: index its drawable children in document
@@ -826,7 +896,7 @@
           return;
         }
         evt.stopPropagation();
-        showMatchDetail(panelGid, layer, idx, el);
+        showMatchDetail(panelGid, layer, idx, el, evt.metaKey || evt.ctrlKey);
       };
       el.addEventListener('click', onClick);
       // Invisible widened hit target stacked on top of the original.
@@ -856,6 +926,15 @@
                 ? segs[idx][5]
                 : '+',
           key: row + ':' + col + ':' + layer + ':' + idx,
+          // View-independent identity: display names plus data coords, so
+          // a selection made in the overview can be re-applied in the
+          // drill-down (whose grid position differs) and back.
+          q: panel.query,
+          t: panel.target,
+          qs: segs[idx][0],
+          qe: segs[idx][1],
+          ts: segs[idx][2],
+          te: segs[idx][3],
           // Root-space bbox, filled lazily on the first box select.  The
           // screen-CTM composition cancels the current viewBox, so one
           // computation stays valid at any zoom.
@@ -948,6 +1027,7 @@
       });
     });
     notifySelectionState();
+    announceMatchSelection();
   }
 
   function addSelectionBand(bg, x, y, w, h) {
@@ -1006,12 +1086,14 @@
     if (selectedFeatureEl) selectedFeatureEl.classList.remove('rd-selected-match');
     selectedFeatureEl = el;
     el.classList.add('rd-selected-match');
+    announceFeatureSelection(feat);
     notifySelectionState();
   }
 
   /* Wire up every diagonal-annotation group: the n-th drawable child of
    * 'rd-annot-<row>-<col>' corresponds to panels[gid].annotations[n]
    * (serialisation contract — patch draw order equals SVG child order). */
+  var annotRegistry = []; // {el, feat} — for re-applying a restored selection
   var annotGroups = Array.prototype.slice.call(
     svg.querySelectorAll('g[id^="rd-annot-"]')
   );
@@ -1019,12 +1101,14 @@
     var m = group.id.match(/^rd-annot-(\d+)-(\d+)$/);
     if (!m) return;
     var panelGid = 'rd-panel-' + m[1] + '-' + m[2];
+    var feats = (payload.panels[panelGid] || {}).annotations || [];
 
     var children = Array.prototype.slice.call(
       group.querySelectorAll('path, use')
     );
     children.forEach(function (el, idx) {
       el.classList.add('rd-annot');
+      if (feats[idx]) annotRegistry.push({ el: el, feat: feats[idx] });
       el.addEventListener('click', function (evt) {
         if (consumeDragClick()) {
           evt.stopPropagation();
@@ -1344,6 +1428,70 @@
     }
   }
 
+  /* Re-apply a selection the app held across an iframe rebuild (an
+   * overview <-> drill-down swap): resolve the view-independent match
+   * identities against this report's registry and the stored annotation
+   * feature against the diagonal squares and track entries.  Anything the
+   * current view does not display simply stays stored in the app. */
+  function applyRestoredSelection(msg) {
+    var matches = Array.isArray(msg.matches) ? msg.matches : [];
+    if (matches.length) {
+      var byIdentity = {};
+      segmentRegistry.forEach(function (e) {
+        var k = [e.q, e.t, e.layer, e.qs, e.qe, e.ts, e.te].join(' ');
+        (byIdentity[k] = byIdentity[k] || []).push(e);
+      });
+      var entries = [];
+      matches.forEach(function (m) {
+        var found = byIdentity[[m.q, m.t, m.layer, m.qs, m.qe, m.ts, m.te].join(' ')];
+        if (found) entries.push.apply(entries, found);
+      });
+      if (entries.length) setMatchSelection(entries);
+    }
+    var f = msg.feature;
+    if (f && typeof f === 'object') {
+      var el = findFeatureElement(f);
+      if (el) {
+        if (selectedFeatureEl) {
+          selectedFeatureEl.classList.remove('rd-selected-match');
+        }
+        selectedFeatureEl = el;
+        el.classList.add('rd-selected-match');
+        notifySelectionState();
+      }
+    }
+  }
+
+  function sameFeature(a, b) {
+    return (
+      a && b &&
+      a.seqname === b.seqname &&
+      a.type === b.type &&
+      a.start === b.start &&
+      a.end === b.end &&
+      a.strand === b.strand
+    );
+  }
+
+  function findFeatureElement(f) {
+    for (var i = 0; i < annotRegistry.length; i++) {
+      if (sameFeature(annotRegistry[i].feat, f)) return annotRegistry[i].el;
+    }
+    if (trackData) {
+      var axes = ['x', 'y'];
+      for (var a = 0; a < axes.length; a++) {
+        var entries = trackData[axes[a]] || [];
+        for (var j = 0; j < entries.length; j++) {
+          if (sameFeature(entries[j], f)) {
+            var el = document.getElementById(entries[j].gid);
+            if (el) return el;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
   window.addEventListener('message', function (ev) {
     var msg = ev && ev.data;
     if (!msg) return;
@@ -1359,6 +1507,10 @@
       // Embedding app entered/left fullscreen: scale the figure to fill
       // the iframe viewport (CSS keys off this class).
       document.body.classList.toggle('rd-fs', !!msg.on);
+      return;
+    }
+    if (msg.type === 'rd-restore-selection') {
+      applyRestoredSelection(msg);
       return;
     }
     if (msg.type === 'rd-clear-selection') {

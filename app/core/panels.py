@@ -191,6 +191,7 @@ def nav_tips(focused: bool, multi_panel: bool) -> list[tuple[str, str]]:
     if not focused and multi_panel:
         tips.append(('click panel', 'focus'))
     tips.append(('click match', 'details'))
+    tips.append(('Cmd/Ctrl+click match', 'multi-select'))
     tips.append(('Esc', 'reset'))
     if not focused:
         # Double-click drill-down works even on a single-panel overview.

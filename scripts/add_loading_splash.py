@@ -72,11 +72,11 @@ SPLASH = f"""{MARKER}
   (function () {{
     'use strict';
     var msgs = [
-      [0, 'Downloading the Python runtime (\\u224830 MB on first visit, cached afterwards)\\u2026'],
+      [0, 'Downloading the Python runtime (\\u224826 MB on first visit, cached afterwards)\\u2026'],
       [8, 'Starting Python in your browser\\u2026'],
       [16, 'Installing rusty-dot and matplotlib\\u2026'],
       [30, 'Almost there \\u2014 first visits take the longest\\u2026'],
-      [60, 'Still working. Slow connection? The runtime is \\u224830 MB\\u2026'],
+      [60, 'Still working. Slow connection? The runtime is \\u224826 MB\\u2026'],
     ];
     var start = Date.now();
     var msgEl = document.getElementById('rd-splash-msg');
